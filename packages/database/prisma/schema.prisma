@@ -1,0 +1,787 @@
+// ---------------------------------------------------------------------------
+// Admedic — veri modeli (PostgreSQL)
+// Faz 1 + 2: multi-tenant RBAC, Meta varlıkları, Insights, Deneyler, Autopilot
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------ Enums ------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  MEDIA_BUYER
+  ANALYST
+  VIEWER
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum MetaConnectionType {
+  BUSINESS_MANAGER
+  AD_ACCOUNT
+  PAGE
+  INSTAGRAM
+  PIXEL
+  WHATSAPP_BUSINESS
+}
+
+enum MetaConnectionStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+  DEGRADED
+}
+
+enum EntityStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+  DELETED
+}
+
+enum SyncStatus {
+  OK
+  ERROR
+  STALE
+}
+
+enum OptimizationObjective {
+  MAX_ROAS
+  MAX_REVENUE
+  MAX_PROFIT
+  MIN_CPA
+  MAX_PURCHASES_BUDGET
+  TARGET_ROAS
+  TARGET_CPA
+}
+
+enum AgentMode {
+  OBSERVE
+  APPROVAL
+  AUTOPILOT
+  SHADOW
+}
+
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+enum AgentDecisionAction {
+  INCREASE_BUDGET
+  DECREASE_BUDGET
+  PAUSE
+  UNPAUSE
+  ALLOCATE
+  EXPLORE
+  WINNER_PROMOTION
+  NEW_EXPERIMENT
+  KEEP
+}
+
+enum AgentTargetType {
+  CAMPAIGN
+  ADSET
+  AD
+}
+
+enum ApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  ABORTED
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum ExperimentMetric {
+  ROAS
+  CPA
+  PURCHASE_CONVERSION_RATE
+  CTR
+  REVENUE
+}
+
+enum ExperimentMode {
+  MANUAL
+  AUTOPILOT
+}
+
+enum VariantRole {
+  CONTROL
+  TEST
+}
+
+enum VariantResult {
+  WINNER
+  LOSER
+  CONTINUE
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKED
+  RESOLVED
+}
+
+enum AlertType {
+  ROAS_DROP
+  SPEND_SPIKE
+  ZERO_PURCHASES
+  ZERO_CONVERSION_VALUE
+  HIGH_CPA
+  META_API_ERROR
+  META_DISCONNECTED
+  PAUSE_APPLIED
+  WINNER_DETECTED
+  BUDGET_LIMIT_90
+  DUPLICATE_CAMPAIGN
+  PIXEL_ERROR
+  CREATIVE_FATIGUE
+  BUDGET_MODIFIED_EXTERNAL
+}
+
+enum InsightGranularity {
+  HOURLY
+  DAILY
+}
+
+// ------------------------------------------------ Tenant / RBAC ------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members         Membership[]
+  workspaces      Workspace[]
+  metaConnections MetaConnection[]
+  adAccounts      AdAccount[]
+  creatives       Creative[]
+  auditLogs       AuditLog[]
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  emailVerified  DateTime?
+  name           String?
+  passwordHash   String?
+  image          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  memberships Membership[]
+  auditLogs   AuditLog[]
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  orgId     String
+  userId    String
+  role      Role
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@index([orgId])
+}
+
+model Workspace {
+  id        String     @id @default(cuid())
+  orgId     String
+  name      String
+  slug      String
+  currency  String     @default("EUR") // ISO 4217
+  locale    String     @default("tr")
+  agentStatus AgentStatus @default(PAUSED)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  adAccounts          AdAccount[]
+  campaigns           Campaign[]
+  adsets              AdSet[]
+  ads                 Ad[]
+  creative            Creative[]
+  insights            InsightSnapshot[]
+  conversionEvents    ConversionEvent[]
+  experiments         Experiment[]
+  policies            OptimizationPolicy[]
+  optimizationRules   OptimizationRule[]
+  agentRuns           AgentRun[]
+  agentDecisions      AgentDecision[]
+  budgetChanges       BudgetChange[]
+  alerts              Alert[]
+  products            Product[]
+  landingPages        LandingPage[]
+  auditLogs           AuditLog[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+}
+
+// ------------------------------------------------ Meta bağlantıları ------------------------------------------------
+
+model MetaConnection {
+  id               String              @id @default(cuid())
+  orgId            String
+  type             MetaConnectionType
+  status           MetaConnectionStatus @default(CONNECTED)
+  name             String?
+  metaAccountId    String?
+  metaUserId       String?
+  scopes           String[]            @default([])
+  missingPermissions String[]          @default([])
+  tokenCiphertext  String?
+  appId            String?
+  pageId           String?
+  instaId          String?
+  expiresAt        DateTime?
+  lastError        String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  adAccounts AdAccount[]
+
+  @@index([orgId])
+  @@index([type])
+}
+
+// ------------------------------------------------ Reklam varlıkları ------------------------------------------------
+
+model AdAccount {
+  id              String      @id @default(cuid())
+  orgId           String
+  workspaceId     String?
+  connectionId    String?
+  metaAccountId   String?
+  name            String
+  currency        String      @default("EUR")
+  timezone        String      @default("Europe/Istanbul")
+  status          EntityStatus @default(ACTIVE)
+  isDefault       Boolean     @default(false)
+  dailySpendLimit Int? // minor
+  monthlySpendLimit Int?      // minor
+  syncedAt        DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  org       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workspace Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  connection MetaConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  campaigns        Campaign[]
+  insightSnapshots InsightSnapshot[]
+  experiments      Experiment[]
+
+  @@unique([orgId, metaAccountId])
+  @@index([workspaceId])
+  @@index([orgId])
+}
+
+model Campaign {
+  id             String      @id @default(cuid())
+  adAccountId    String
+  workspaceId    String?
+  metaCampaignId String?
+  name           String
+  objective      String?
+  status         EntityStatus @default(ACTIVE)
+  budgetType     String? // DAILY | LIFETIME | NONE
+  dailyBudget    Int?      // minor
+  lifetimeBudget Int?      // minor
+  spendCap       Int?      // minor
+  startDate      DateTime?
+  endDate        DateTime?
+  syncStatus     SyncStatus @default(OK)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  syncedAt       DateTime?
+
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  adsets              AdSet[]
+  insightSnapshots    InsightSnapshot[]
+  conversionEvents    ConversionEvent[]
+
+  @@unique([adAccountId, metaCampaignId])
+  @@index([workspaceId])
+  @@index([adAccountId])
+}
+
+model AdSet {
+  id               String        @id @default(cuid())
+  campaignId       String
+  workspaceId      String?
+  metaAdSetId      String?
+  name             String
+  status           EntityStatus  @default(ACTIVE)
+  bidStrategy      String?
+  dailyBudget      Int?          // minor
+  lifetimeBudget   Int?          // minor
+  budgetUsed       Int?          // minor
+  targeting        Json?
+  syncStatus       SyncStatus    @default(OK)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  syncedAt         DateTime?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  ads                Ad[]
+  insightSnapshots   InsightSnapshot[]
+  conversionEvents   ConversionEvent[]
+
+  @@unique([campaignId, metaAdSetId])
+  @@index([workspaceId])
+  @@index([campaignId])
+}
+
+model Ad {
+  id              String       @id @default(cuid())
+  adSetId         String
+  workspaceId     String?
+  metaAdId        String?
+  name            String
+  status          EntityStatus @default(ACTIVE)
+  metaCreativeId  String?
+  creativeId      String? // sistemdeki Creative'e bağ
+  creative        Json?       // meta creative anlık görüntüsü
+  syncStatus      SyncStatus  @default(OK)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  syncedAt        DateTime?
+
+  adSet     AdSet     @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  creativeRef Creative? @relation(fields: [creativeId], references: [id], onDelete: SetNull)
+
+  insightSnapshots  InsightSnapshot[]
+  conversionEvents  ConversionEvent[]
+
+  @@unique([adSetId, metaAdId])
+  @@index([workspaceId])
+  @@index([adSetId])
+}
+
+model Creative {
+  id            String    @id @default(cuid())
+  orgId         String
+  workspaceId   String?
+  name          String
+  type          String    @default("IMAGE") // IMAGE | VIDEO | CAROUSEL | TEXT
+  metaCreativeId String?
+  primaryText   String?
+  headline      String?
+  description   String?
+  cta           String?
+  linkUrl       String?
+  imageUrl      String?
+  thumbnailUrl  String?
+  status        String    @default("DRAFT") // DRAFT | IN_REVIEW | APPROVED | PAUSED | ACTIVE | REJECTED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workspace Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  ads        Ad[]
+  experimentVariants ExperimentVariant[]
+
+  @@unique([orgId, metaCreativeId])
+  @@index([orgId])
+  @@index([workspaceId])
+}
+
+// ------------------------------------------------ Insights ------------------------------------------------
+
+model InsightSnapshot {
+  id                String   @id @default(cuid())
+  workspaceId       String?
+  adAccountId       String?
+  campaignId        String?
+  adSetId           String?
+  adId              String?
+  date              DateTime @db.Date // UTC günü
+  granularity       InsightGranularity @default(DAILY)
+  attributionWindowDays Int? // Meta dönüşüm penceresi günü
+  source            String   @default("META")
+
+  spend              Int @default(0) // minor
+  impressions        Int @default(0)
+  reach              Int @default(0)
+  clicks             Int @default(0)
+  linkClicks         Int @default(0)
+  outboundClicks     Int @default(0)
+  landingPageViews   Int @default(0)
+  addsToCart         Int @default(0)
+  initiatesCheckout  Int @default(0)
+  purchases          Int @default(0)
+  conversionValue    Int @default(0) // minor
+  frequency          Float?
+  ctr                Float?
+  cpc                Int?
+  cpm                Int?
+
+  capturedAt DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adAccount AdAccount? @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  campaign  Campaign?  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  adSet     AdSet?     @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  ad        Ad?        @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, date])
+  @@index([adId, date])
+  @@index([adSetId, date])
+  @@index([campaignId, date])
+  @@index([adAccountId, date])
+}
+
+model ConversionEvent {
+  id           String   @id @default(cuid())
+  workspaceId  String?
+  campaignId   String?
+  adSetId      String?
+  adId         String?
+  type         String   @default("PURCHASE")
+  value        Int?     // minor
+  currency     String?
+  occurredAt   DateTime
+  source       String   @default("META") // META | CRM
+  externalId   String?  @unique
+  createdAt    DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  adSet     AdSet?     @relation(fields: [adSetId], references: [id], onDelete: SetNull)
+  ad        Ad?        @relation(fields: [adId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, occurredAt])
+}
+
+// ------------------------------------------------ Deneyler (Test Lab) ------------------------------------------------
+
+model Experiment {
+  id                 String          @id @default(cuid())
+  workspaceId        String
+  adAccountId        String?
+  name               String
+  hypothesis         String?
+  primaryMetric      ExperimentMetric @default(ROAS)
+  status             ExperimentStatus @default(DRAFT)
+  mode               ExperimentMode   @default(MANUAL)
+  minSpend           Int?  // minor
+  maxSpend           Int?  // minor
+  minPurchases       Int   @default(10)
+  minRuntimeHours    Int   @default(72)
+  maxRuntimeHours    Int?
+  confidenceThreshold Float @default(0.95)
+  budgetCents        Int?
+  startDate          DateTime?
+  endDate            DateTime?
+  winnerVariantId    String?
+  resultSummary      Json?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adAccount AdAccount? @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+
+  variants ExperimentVariant[]
+  metricPoints ExperimentMetricPoint[]
+
+  @@index([workspaceId, status])
+}
+
+model ExperimentVariant {
+  id            String      @id @default(cuid())
+  experimentId  String
+  role          VariantRole @default(TEST)
+  name          String
+  creativeId    String?
+  landingPageUrl String?
+  dailyBudgetCents Int?
+  isWinner      Boolean     @default(false)
+  config        Json?
+  createdAt     DateTime    @default(now())
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  creative   Creative?  @relation(fields: [creativeId], references: [id], onDelete: SetNull)
+
+  metrics ExperimentMetricPoint[]
+
+  @@index([experimentId])
+}
+
+model ExperimentMetricPoint {
+  id             String   @id @default(cuid())
+  experimentId   String
+  variantId      String
+  capturedAt     DateTime @default(now())
+
+  spend Int @default(0)
+  revenue Int @default(0)
+  purchases Int @default(0)
+  impressions Int @default(0)
+  clicks Int @default(0)
+  addsToCart Int @default(0)
+  initiatesCheckout Int @default(0)
+  ctr Float?
+
+  experiment Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant    ExperimentVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId])
+  @@index([variantId])
+}
+
+// ------------------------------------------------ Autopilot (Agent) ------------------------------------------------
+
+model OptimizationPolicy {
+  id        String   @id @default(cuid())
+  workspaceId String @unique
+  enabled   Boolean  @default(true)
+  objective OptimizationObjective @default(MAX_ROAS)
+  mode      AgentMode @default(APPROVAL)
+
+  // Global finansal guardrail'ler — agent bunları aşamaz.
+  accountDailyMaxCents   Int?
+  accountMonthlyMaxCents Int?
+  campaignDailyMaxCents  Int?
+  adSetDailyMaxCents     Int?
+  minDailyBudgetCents    Int      @default(2000)
+  maxDailyBudgetCents    Int?
+  maxIncreasePct         Float    @default(20)
+  maxDecreasePct         Float    @default(20)
+  maxChangePer24hPct     Float    @default(50)
+  minHoursBetweenChanges Int      @default(6)
+  minSpendBeforeDecisionCents Int @default(5000)
+  minPurchasesBeforeScaling Int  @default(10)
+  minTestDurationHours   Int      @default(24)
+
+  // Keşif / sömürü
+  explorationPct         Float    @default(15)
+  exploitationPct        Float    @default(85)
+
+  // Hedefler
+  targetRoas             Float    @default(4)
+  maxCpaCents            Int?
+  stopLossSpendCents     Int?
+  stopLossPurchases      Int?
+
+  attributionWindowDays  Int      @default(7)
+  profitSettings         Json? // COGS, shipping, payment fee, refund rate
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model OptimizationRule {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  name        String
+  version     String
+  active      Boolean  @default(true)
+  description String?
+  logic       Json? // belgelenmiş kural + rule version
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AgentRun {
+  id         String @id @default(cuid())
+  workspaceId String
+  mode       AgentMode
+  status     RunStatus @default(RUNNING)
+  objective  OptimizationObjective @default(MAX_ROAS)
+  agentVersion String @default("agent_v1.0")
+  policyVersion Int   @default(1)
+  summary    Json?
+  metaError  String?
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  decisions AgentDecision[]
+
+  @@index([workspaceId, startedAt])
+}
+
+model AgentDecision {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  runId         String?
+  targetType    AgentTargetType
+  targetId      String // Referans alınan DB varlık id (Campaign/AdSet/Ad)
+  action        AgentDecisionAction
+  statusBefore  String?
+  statusAfter   String?
+  budgetBefore  Int?
+  budgetAfter   Int?
+  changePct     Float?
+  approval      ApprovalStatus @default(NOT_REQUIRED)
+  reason        String
+  metricsSnapshot Json?
+  trendDirection String?
+  algorithm     String   @default("rules_v1")
+  ruleVersion   String   @default("policy_1")
+  agentVersion  String   @default("agent_v1.0")
+  decisionKey   String?  @unique // idempotency
+  experimentId  String?
+  appliedAt     DateTime?
+  metaResponse  Json?
+  error         Json?
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run       AgentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  budgetChanges BudgetChange[]
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, targetId])
+}
+
+model BudgetChange {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  decisionId     String?
+  targetType     AgentTargetType
+  targetId       String
+  field           String   @default("daily_budget")
+  fromCents       Int
+  toCents         Int
+  status          String   @default("PENDING") // PENDING | APPLIED | FAILED
+  idempotencyKey  String   @unique
+  metaResponse    Json?
+  createdAt       DateTime @default(now())
+  appliedAt       DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  decision  AgentDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+}
+
+// ------------------------------------------------ Uyarı / Denetim ------------------------------------------------
+
+model Alert {
+  id          String       @id @default(cuid())
+  workspaceId String
+  type        AlertType
+  severity    AlertSeverity
+  status      AlertStatus  @default(OPEN)
+  title       String
+  message     String
+  entityType  String?      // CAMPAIGN | ADSET | AD
+  entityId    String?
+  read        Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  workspaceId String?
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  org       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workspace Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+}
+
+// ------------------------------------------------ Alışveriş / ürün ------------------------------------------------
+
+model Product {
+  id             String @id @default(cuid())
+  workspaceId    String
+  name           String
+  sku            String?
+  category       String?
+  sellingPriceCents Int
+  cogsCents      Int
+  shippingCents  Int @default(0)
+  paymentFeePct  Float? @default(0)
+  otherCostsCents Int @default(0)
+  refundRatePct  Float? @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model LandingPage {
+  id          String @id @default(cuid())
+  workspaceId String
+  name        String
+  url         String @db.Text
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}

@@ -1,0 +1,192 @@
+/**
+ * Meta Marketing API tipleri — ham Graph API yanıtlarının normalize edilmiş şekli.
+ * Tüm tutarlar "major" (birim) olarak döner; DB'ye cents'e çeviri ajan tarafında yapılır.
+ * Kaynak: developers.facebook.com/docs/marketing-api (v26.0, 2026-09-16 kontrol edildi).
+ */
+
+export type MetaEntityStatus = "ACTIVE" | "PAUSED" | "DELETED" | "ARCHIVED";
+
+export interface MetaAccount {
+  id: string;
+  name: string;
+  currency?: string;
+  timezone?: string;
+  status?: string;
+  isBusiness?: boolean;
+}
+
+export interface MetaCampaign {
+  id: string;
+  name: string;
+  objective?: string;
+  status?: string;
+  effectiveStatus?: string;
+  dailyBudgetMajor?: number;
+  lifetimeBudgetMajor?: number;
+  startDate?: string;
+  stopDate?: string;
+}
+
+export interface MetaAdSet {
+  id: string;
+  campaignId: string;
+  name: string;
+  status?: string;
+  effectiveStatus?: string;
+  bidStrategy?: string;
+  optimizationGoal?: string;
+  billingEvent?: string;
+  dailyBudgetMajor?: number;
+  lifetimeBudgetMajor?: number;
+  targeting?: unknown;
+}
+
+export interface MetaAd {
+  id: string;
+  adSetId: string;
+  name: string;
+  status?: string;
+  effectiveStatus?: string;
+  creativeId?: string;
+  creative?: unknown;
+}
+
+export type MetaInsightLevel = "account" | "campaign" | "adset" | "ad";
+
+export interface MetaInsightOptions {
+  /** Yalnızca account seviyesi sorgular: dönüş satırı ayrıntı düzeyi. */
+  level?: "campaign" | "adset" | "ad";
+  datePreset?: DatePreset;
+  timeRange?: InsightDateRange; // datePreset varsa timeRange kullanılmaz
+  /** 1 = günlük satır, "all_days" = toplam. Varsayılan: tüm aralığın toplamı. */
+  timeIncrement?: number | "all_days";
+  /** Ekstra isteğe bağlı alanlar. */
+  extraFields?: string[];
+}
+
+export interface InsightDateRange {
+  since: string; // YYYY-MM-DD
+  until: string; // YYYY-MM-DD
+}
+
+export type DatePreset =
+  | "today"
+  | "yesterday"
+  | "last_3d"
+  | "last_7d"
+  | "last_14d"
+  | "last_28d"
+  | "last_30d"
+  | "last_90d"
+  | "this_month"
+  | "last_month"
+  | "maximum";
+
+export interface InsightQuery {
+  level: MetaInsightLevel;
+  datePreset?: DatePreset;
+  timeRange?: InsightDateRange; // datePreset varsa timeRange kullanılmaz
+  /** 1 = günlük satır, "all_days" = toplam. Varsayılan: tüm aralığın toplamı. */
+  timeIncrement?: number | "all_days";
+  /** Ekstra isteğe bağlı alanlar. */
+  extraFields?: string[];
+}
+
+export const INSIGHT_DEFAULT_FIELDS = [
+  "campaign_id",
+  "campaign_name",
+  "adset_id",
+  "adset_name",
+  "ad_id",
+  "ad_name",
+  "impressions",
+  "reach",
+  "frequency",
+  "clicks",
+  "inline_link_clicks",
+  "ctr",
+  "cpc",
+  "cpm",
+  "spend",
+  "actions",
+  "action_values",
+  "date_start",
+  "date_stop",
+] as const;
+
+/** Normalize edilmiş insight satırı (major tutarlar). */
+export interface MetaInsightRow {
+  dateStart: string;
+  dateStop: string;
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  adId?: string;
+  adName?: string;
+  impressions: number;
+  reach?: number;
+  frequency?: number;
+  clicks: number;
+  linkClicks: number;
+  ctr?: number; // oran (0-1)
+  cpc?: number; // major
+  cpm?: number; // major
+  spendMajor: number;
+  purchases: number;
+  purchaseValueMajor: number;
+}
+
+export interface MetaApiErrorShape {
+  message?: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  error_user_title?: string;
+  error_user_msg?: string;
+  fbtrace_id?: string;
+}
+
+export interface MetaPagedResponse<T> {
+  data: T[];
+  paging?: {
+    cursors?: { before?: string; after?: string };
+    next?: string;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Girdi/çıktı imzaları
+// ---------------------------------------------------------------------------
+
+export interface UpdateBudgetInput {
+  entityType: "campaign" | "adset";
+  entityId: string;
+  dailyBudgetCents: number;
+}
+
+export interface SetStatusInput {
+  entityType: "campaign" | "adset" | "ad";
+  entityId: string;
+  status: "ACTIVE" | "PAUSED";
+}
+
+export interface UpdateOrigin {
+  source: "MANUAL" | "AGENT";
+  requestId?: string;
+  decisionId?: string;
+}
+
+export interface MetaUpdateResult {
+  success: boolean;
+  entityType: string;
+  entityId: string;
+  metaResponse?: unknown;
+}
+
+export interface MetaClientOptions {
+  /** Graph API sürümü; META_API_VERSION env'den okunur. Koda sabit yazılmaz. */
+  version?: string;
+  /** Gerçek isteklerde kullanılacak HTTP taşıyıcı (test için enjekte edilebilir). */
+  fetchFn?: typeof fetch;
+}

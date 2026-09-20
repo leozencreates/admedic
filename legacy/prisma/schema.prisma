@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Klinik / hastane (müşteri/tenant)
+model Clinic {
+  id       String   @id @default(cuid())
+  name     String
+  email    String   @unique
+  createdAt DateTime @default(now())
+
+  metaAccounts  MetaAccount[]
+  leads         Lead[]
+  mediaAssets   MediaAsset[]
+  whatsapp      WhatsappConfig?
+}
+
+// Meta'ya bağlı reklam hesabı
+model MetaAccount {
+  id              String      @id @default(cuid())
+  clinicId        String
+  clinic          Clinic      @relation(fields: [clinicId], references: [id])
+  adAccountId     String
+  accessToken     String?
+  tokenExpiresAt  DateTime?
+  active          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  campaigns       Campaign[]
+
+  @@unique([clinicId, adAccountId])
+}
+
+// Meta kampanya
+model Campaign {
+  id               String    @id @default(cuid())
+  metaAccountId    String
+  metaAccount      MetaAccount @relation(fields: [metaAccountId], references: [id])
+  metaCampaignId   String    @unique
+  name             String
+  status           String    @default("ACTIVE")
+  budgetType       String    @default("DAILY") // DAILY | LIFETIME
+  dailyBudgetKurus Int       @default(0)
+  currency         String    @default("TRY")
+  createdAt        DateTime  @default(now())
+  tests            TestRun[]
+}
+
+// A/B test koşusu: agent'ın kazananı seçip bütçeyi ittiği dönem
+model TestRun {
+  id                String        @id @default(cuid())
+  campaignId        String
+  campaign          Campaign      @relation(fields: [campaignId], references: [id])
+  name              String
+  status            String        @default("RUNNING") // RUNNING | WINNER_SELECTED | STOPPED
+  minSamplePerVariant Int         @default(50)
+  significanceLevel Float         @default(0.95)
+  startedAt         DateTime      @default(now())
+  endedAt           DateTime?
+  winningVariantId  String?
+  variants          Variant[]
+  actions           AgentAction[]
+}
+
+// Test varyantı (Meta ad set / reklamı)
+model Variant {
+  id               String        @id @default(cuid())
+  testRunId        String
+  testRun          TestRun       @relation(fields: [testRunId], references: [id])
+  metaAdSetId      String?
+  metaAdId         String?
+  name             String
+  budgetKurus      Int           @default(0)
+  initialBudgetKurus Int         @default(0)
+  active           Boolean       @default(true)
+  metrics          MetricPoint[]
+}
+
+// Günlük metrik anlık görüntüsü
+model MetricPoint {
+  id           String   @id @default(cuid())
+  variantId    String
+  variant      Variant  @relation(fields: [variantId], references: [id])
+  date         DateTime @default(now())
+  impressions  Int
+  clicks       Int
+  spendKurus   Int
+  conversions  Int
+  revenueKurus Int
+  roas         Float?
+
+  @@unique([variantId, date])
+}
+
+// Agent'ın yaptığı aksiyonların günlüğü
+model AgentAction {
+  id        String   @id @default(cuid())
+  testRunId String
+  testRun   TestRun  @relation(fields: [testRunId], references: [id])
+  type      String   // BUDGET_SHIFT | TEST_START | WINNER_SELECTED | TEST_STOPPED | WARNING
+  detail    String
+  severity  String   @default("INFO") // INFO | WARNING | CRITICAL
+  createdAt DateTime @default(now())
+}
+
+// ------------------------------------------------------------------
+// WhatsApp lead takibi
+// ------------------------------------------------------------------
+
+// Reklam/CRM formlarından gelen aday (lead)
+model Lead {
+  id            String   @id @default(cuid())
+  clinicId      String
+  clinic        Clinic   @relation(fields: [clinicId], references: [id])
+  name          String
+  phone         String
+  country       String?
+  source        String   @default("META_LEAD") // META_LEAD | FORM | MANUAL
+  metaLeadId    String?  @unique
+  status        String   @default("NEW") // NEW | CONTACTED | CONVERSING | WON | LOST | DND
+  notes         String?
+  lastInboundAt DateTime?
+  lastOutboundAt DateTime?
+  createdAt     DateTime @default(now())
+  followUps     FollowUp[]
+  messages      MessageRecord[]
+
+  @@index([status])
+  @@index([clinicId, status])
+}
+
+// Planlanan gönderim
+model FollowUp {
+  id          String    @id @default(cuid())
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id])
+  type        String    // WELCOME | FOLLOWUP | DAILY_REMINDER | MEDIA | WINBACK
+  status      String    @default("PENDING") // PENDING | SENT | FAILED | SKIPPED
+  scheduledAt DateTime
+  sentAt      DateTime?
+  error       String?
+
+  @@index([status, scheduledAt])
+  @@index([leadId])
+}
+
+// Kliniğin WhatsApp üzerinden paylaşılacak fotoğraf/videoları
+model MediaAsset {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  name      String
+  type      String   @default("IMAGE") // IMAGE | VIDEO
+  url       String
+  mimeType  String?
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+}
+
+// WhatsApp sağlayıcı yapılandırması
+model WhatsappConfig {
+  id                         String   @id @default(cuid())
+  clinicId                   String   @unique
+  clinic                     Clinic   @relation(fields: [clinicId], references: [id])
+  provider                   String   @default("MOCK") // MOCK | META
+  phoneNumberId              String?
+  businessAccountId          String?
+  fromNumber                 String?
+  dailyReminderHour          Int      @default(10)
+  dailyReminderIntervalDays  Int      @default(1)
+  followUpDelayHours         Int      @default(24)
+  winbackDelayDays           Int      @default(14)
+  active                     Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
+}
+
+// WhatsApp gidiş/geliş mesajlarının kaydı
+model MessageRecord {
+  id                String   @id @default(cuid())
+  leadId            String
+  lead              Lead     @relation(fields: [leadId], references: [id])
+  direction         String   @default("OUTBOUND") // OUTBOUND | INBOUND
+  status            String   @default("SENT") // SENT | DELIVERED | READ | RECEIVED | FAILED | MOCK
+  body              String
+  mediaUrl          String?
+  mediaType         String? // IMAGE | VIDEO
+  providerMessageId String?
+  sentAt            DateTime @default(now())
+
+  @@index([leadId, sentAt])
+}

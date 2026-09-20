@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d9488"/>
+      <stop offset="1" stop-color="#134e4a"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+  <circle cx="640" cy="90" r="140" fill="rgba(255,255,255,0.08)"/>
+  <circle cx="160" cy="380" r="180" fill="rgba(255,255,255,0.06)"/>
+  <text x="400" y="220" font-family="Arial, sans-serif" font-size="44" font-weight="bold" fill="#ffffff" text-anchor="middle">İstanbul Estetik Kliniği</text>
+  <text x="400" y="268" font-family="Arial, sans-serif" font-size="22" fill="#cffafe" text-anchor="middle">Sağlık Turizmi Merkezi</text>
+  <rect x="330" y="300" width="140" height="44" rx="22" fill="#ffffff" opacity="0.9"/>
+  <text x="400" y="328" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#0d9488" text-anchor="middle">Admedic</text>
+</svg>
