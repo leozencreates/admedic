@@ -1,16 +1,34 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { connection } from "next/server";
 
-import { Badge, Card, EmptyState, SectionHeading, StatCard, Td, Th } from "./_components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  SectionHeading,
+  StatCard,
+  Td,
+  Th,
+} from "./_components/ui";
 import { daysAgoUTC, getPrimaryWorkspace, prisma } from "./_lib/db";
-import { formatDate, formatMoney, formatNumber, formatPercent, formatRoas } from "./_lib/format";
+import {
+  formatDate,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRoas,
+} from "./_lib/format";
 import { actionStyle, approvalStyle } from "./_lib/status";
 
 function Skeleton({ rows = 3 }: { rows?: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+        <div
+          key={i}
+          className="h-16 animate-pulse rounded-xl bg-slate-200/60"
+        />
       ))}
     </div>
   );
@@ -20,28 +38,44 @@ async function Kpis() {
   await connection();
   const workspace = await getPrimaryWorkspace();
   if (!workspace) {
-    return <EmptyState message="Çalışma alanı bulunamadı. `pnpm db:seed` çalıştırın." />;
+    return (
+      <EmptyState message="Çalışma alanı bulunamadı. Yeniden oturum açın." />
+    );
   }
 
   const since = daysAgoUTC(6);
-  const [counts, insightAgg, budgetAgg, pending, openAlerts, policy] = await Promise.all([
-    Promise.all([
-      prisma.campaign.count({ where: { workspaceId: workspace.id, status: "ACTIVE" } }),
-      prisma.adSet.count({ where: { workspaceId: workspace.id } }),
-      prisma.ad.count({ where: { workspaceId: workspace.id } }),
-    ]),
-    prisma.insightSnapshot.aggregate({
-      where: { workspaceId: workspace.id, date: { gte: since } },
-      _sum: { spend: true, conversionValue: true, purchases: true, clicks: true },
-    }),
-    prisma.adSet.aggregate({
-      where: { workspaceId: workspace.id, status: "ACTIVE" },
-      _sum: { dailyBudget: true },
-    }),
-    prisma.agentDecision.count({ where: { workspaceId: workspace.id, approval: "PENDING" } }),
-    prisma.alert.count({ where: { workspaceId: workspace.id, status: "OPEN" } }),
-    prisma.optimizationPolicy.findUnique({ where: { workspaceId: workspace.id } }),
-  ]);
+  const [counts, insightAgg, budgetAgg, pending, openAlerts, policy] =
+    await Promise.all([
+      Promise.all([
+        prisma.campaign.count({
+          where: { workspaceId: workspace.id, status: "ACTIVE" },
+        }),
+        prisma.adSet.count({ where: { workspaceId: workspace.id } }),
+        prisma.ad.count({ where: { workspaceId: workspace.id } }),
+      ]),
+      prisma.insightSnapshot.aggregate({
+        where: { workspaceId: workspace.id, date: { gte: since } },
+        _sum: {
+          spend: true,
+          conversionValue: true,
+          purchases: true,
+          clicks: true,
+        },
+      }),
+      prisma.adSet.aggregate({
+        where: { workspaceId: workspace.id, status: "ACTIVE" },
+        _sum: { dailyBudget: true },
+      }),
+      prisma.agentDecision.count({
+        where: { workspaceId: workspace.id, approval: "PENDING" },
+      }),
+      prisma.alert.count({
+        where: { workspaceId: workspace.id, status: "OPEN" },
+      }),
+      prisma.optimizationPolicy.findUnique({
+        where: { workspaceId: workspace.id },
+      }),
+    ]);
 
   const spend = insightAgg._sum.spend ?? 0;
   const revenue = insightAgg._sum.conversionValue ?? 0;
@@ -96,7 +130,9 @@ async function RecentDecisions() {
     orderBy: { createdAt: "desc" },
     take: 6,
   });
-  const adIds = decisions.filter((d) => d.targetType === "AD").map((d) => d.targetId);
+  const adIds = decisions
+    .filter((d) => d.targetType === "AD")
+    .map((d) => d.targetId);
   const ads = await prisma.ad.findMany({
     where: { id: { in: adIds } },
     select: { id: true, name: true },
@@ -136,12 +172,16 @@ async function RecentDecisions() {
                       <Badge tone={action.tone}>{action.label}</Badge>
                     </Td>
                     <Td align="right">
-                      {d.changePct == null ? "—" : formatPercent(d.changePct, 0)}
+                      {d.changePct == null
+                        ? "—"
+                        : formatPercent(d.changePct, 0)}
                     </Td>
                     <Td>
                       <Badge tone={approval.tone}>{approval.label}</Badge>
                     </Td>
-                    <Td className="text-slate-500">{formatDate(d.createdAt)}</Td>
+                    <Td className="text-slate-500">
+                      {formatDate(d.createdAt)}
+                    </Td>
                   </tr>
                 );
               })}
@@ -166,7 +206,10 @@ async function OpenAlerts() {
 
   return (
     <Card>
-      <SectionHeading title="Açık uyarılar" description="Anomali ve eşik ihlalleri." />
+      <SectionHeading
+        title="Açık uyarılar"
+        description="Anomali ve eşik ihlalleri."
+      />
       {alerts.length === 0 ? (
         <EmptyState message="Açık uyarı yok." />
       ) : (
@@ -175,7 +218,9 @@ async function OpenAlerts() {
             <li key={a.id} className="rounded-lg border border-slate-200 p-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-slate-900">{a.title}</p>
-                <span className="text-xs text-slate-400">{formatDate(a.createdAt)}</span>
+                <span className="text-xs text-slate-400">
+                  {formatDate(a.createdAt)}
+                </span>
               </div>
               <p className="mt-1 text-sm text-slate-600">{a.message}</p>
             </li>
@@ -189,11 +234,20 @@ async function OpenAlerts() {
 export default function Page() {
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Genel Bakış</h1>
+      <header className="studio-hero">
+        <span className="eyebrow">BÜYÜME KONTROL MERKEZİ</span>
+        <h1>Bir sonraki iyi fikri verilerle bulun.</h1>
         <p className="text-sm text-slate-500">
-          Demo hesabının son 7 günlük performansı ve ajan durumu.
+          Çalışma alanınızın son 7 günlük performansı ve ajan durumu.
         </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="/studio" className="primary-button">
+            ✦ Reklam oluştur
+          </Link>
+          <Link href="/experiments" className="secondary-button">
+            A/B test merkezi →
+          </Link>
+        </div>
       </header>
       <Suspense fallback={<Skeleton rows={2} />}>
         <Kpis />

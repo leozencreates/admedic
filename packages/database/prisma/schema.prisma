@@ -208,6 +208,7 @@ model User {
 
   memberships Membership[]
   auditLogs   AuditLog[]
+  sessions    WebSession[]
 }
 
 model Membership {
@@ -256,8 +257,12 @@ model Workspace {
   products            Product[]
   landingPages        LandingPage[]
   auditLogs           AuditLog[]
+   studioDrafts        StudioDraft[]
+   llmCalls            LlmCallLog[]
+   sessions            WebSession[]
+   recommendations     Recommendation[]
 
-  @@unique([orgId, slug])
+   @@unique([orgId, slug])
   @@index([orgId])
 }
 
@@ -784,4 +789,114 @@ model LandingPage {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
+}
+
+enum StudioStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model WebSession {
+  tokenHash   String @id
+  userId      String
+  workspaceId String
+  expiresAt   DateTime
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([expiresAt])
+}
+
+model RequestQuota {
+  key       String @id
+  count     Int @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+model StudioDraft {
+  id          String @id @default(cuid())
+  workspaceId String
+  name        String
+  content     Json
+  status      StudioStatus @default(DRAFT)
+  version     Int @default(1)
+  policy      Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  experiment  StudioExperiment?
+  @@index([workspaceId, updatedAt])
+}
+
+model StudioExperiment {
+  id           String           @id @default(cuid())
+  draftId      String           @unique
+  snapshot     Json
+  status       ExperimentStatus @default(DRAFT)
+  metrics      Json
+  elapsedDays  Int              @default(0)
+  version      Int              @default(1)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  draft        StudioDraft      @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  recommendations Recommendation[]
+}
+
+enum RecommendationStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+  EXPIRED
+}
+
+enum RecommendationType {
+  BUDGET_REALLOCATION
+  BUDGET_INCREASE
+  BUDGET_DECREASE
+  EXPERIMENT_END
+  WINNER_PROMOTION
+}
+
+model Recommendation {
+  id             String              @id @default(cuid())
+  workspaceId    String
+  experimentId   String
+  type           RecommendationType  @default(BUDGET_REALLOCATION)
+  status         RecommendationStatus @default(DRAFT)
+  version        Int                 @default(1)
+  title          String
+  description    String
+  reasoning      String
+  action         Json
+  expectedImpact Json
+  evidence       Json                @default("[]")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  experiment     StudioExperiment    @relation(fields: [experimentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  approvedBy     String?
+  approvedAt     DateTime?
+  appliedAt      DateTime?
+
+  @@index([workspaceId, status])
+  @@index([experimentId])
+}
+
+model LlmCallLog {
+  id            String @id @default(cuid())
+  workspaceId   String
+  agent         String
+  model         String
+  promptVersion String
+  status        String @default("PENDING")
+  inputTokens   Int @default(0)
+  outputTokens  Int @default(0)
+  durationMs    Int @default(0)
+  createdAt     DateTime @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, createdAt])
 }

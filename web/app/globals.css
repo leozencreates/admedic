@@ -1,8 +1,257 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f6f7f9;
+  --background: #f5f6fb;
   --foreground: #0f172a;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+.app-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  padding: 36px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  background: #111529;
+}
+.app-main {
+  min-width: 0;
+  width: 100%;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 30px 40px 60px;
+}
+.studio-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 36px;
+  border-radius: 24px;
+  color: white;
+  background:
+    radial-gradient(ellipse at 95% 0%, #6354b5 0%, transparent 55%),
+    linear-gradient(120deg, #171b35, #30255a);
+}
+.eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #c4b5fd;
+}
+.studio-hero h1 {
+  font-size: clamp(26px, 3vw, 40px);
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  margin: 16px 0;
+}
+.studio-hero p {
+  max-width: 650px;
+  color: #d0cee5;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.hero-tags span {
+  font-size: 11px;
+  padding: 6px 12px;
+  border: 1px solid #ffffff25;
+  border-radius: 30px;
+  background: #ffffff08;
+}
+.studio-card {
+  border: 1px solid #e7e9f2;
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 24px #1e254104;
+}
+.studio-card h2 {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.section-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #858ba1;
+  margin-bottom: 8px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 550;
+  color: #58617a;
+  min-width: 0;
+}
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid #dfe3ef;
+  border-radius: 10px;
+  background: #fbfcff;
+  padding: 11px 12px;
+  color: #20283e;
+  font-size: 13px;
+  font-weight: 400;
+}
+.field textarea {
+  resize: vertical;
+}
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.primary-button {
+  background: #7054dc;
+  color: white;
+  box-shadow: 0 4px 12px #7054dc25;
+}
+.primary-button:hover {
+  background: #5f43c9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.secondary-button {
+  background: white;
+  color: #535d75;
+  border: 1px solid #dfe3ef;
+}
+.secondary-button:hover {
+  background: #f5f3ff;
+}
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 3px;
+}
+.status-pill {
+  display: inline-flex;
+  border-radius: 30px;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #7060b9;
+  background: #eeeafa;
+}
+.ad-preview {
+  overflow: hidden;
+  background: white;
+  border: 1px solid #e7e9f2;
+  border-radius: 20px;
+}
+.variant-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #eeeafa;
+  color: #7559d5;
+  font-weight: 700;
+}
+.ad-art {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 28px;
+  background: linear-gradient(135deg, #e3ddfa, #f2edff 60%, #cec2ef);
+  color: #534184;
+}
+.ad-art-b {
+  background: linear-gradient(135deg, #d4ecea, #effaf7 60%, #bcddd5);
+  color: #306e63;
+}
+.ad-art span {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.ad-art strong {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.ad-art small {
+  font-size: 10px;
+  opacity: 0.7;
+}
+@media (min-width: 1024px) {
+  .app-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+}
+@media (max-width: 1023px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .app-sidebar {
+    width: 100%;
+    padding: 20px;
+    gap: 20px;
+  }
+  .app-sidebar nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .app-sidebar > div:last-child {
+    display: none;
+  }
+  .app-main {
+    padding: 24px 20px;
+  }
+}
+@media (max-width: 600px) {
+  .studio-hero {
+    padding: 24px;
+  }
+  .studio-card {
+    padding: 18px;
+  }
 }
 
 @theme inline {
@@ -14,6 +263,12 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }

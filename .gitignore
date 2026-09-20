@@ -35,6 +35,8 @@ desktop/scripts/*.json
 
 # Logs
 *.log
+test-results/
+playwright-report/
 npm-debug.log*
 pnpm-debug.log*
 

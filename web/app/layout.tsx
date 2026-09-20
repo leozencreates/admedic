@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { loadEnv } from "@admedic/config";
 
 import { Nav } from "./_components/nav";
+import { Account } from "./_components/account";
 import "./globals.css";
 
 export function generateMetadata(): Metadata {
@@ -12,23 +13,33 @@ export function generateMetadata(): Metadata {
   };
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const env = loadEnv();
   return (
     <html lang="tr">
       <body className="min-h-screen">
-        <div className="mx-auto flex min-h-screen max-w-7xl gap-6 p-6">
-          <aside className="flex w-60 shrink-0 flex-col gap-6">
+        <div className="app-shell">
+          <aside className="app-sidebar">
             <div>
-              <p className="text-lg font-semibold tracking-tight text-slate-900">
+              <p className="text-xl font-semibold tracking-tight text-white">
                 {env.APP_NAME}
               </p>
-              <p className="text-xs text-slate-500">Klinik Meta Reklam Paneli</p>
+              <p className="mt-2 text-xs text-slate-400">
+                REKLAM & BÜYÜME STÜDYOSU
+              </p>
             </div>
             <Nav />
+            <Account />
             <div className="mt-auto space-y-1 text-xs text-slate-400">
               <p>
-                Meta Graph: <span className="font-mono text-slate-500">{env.META_API_VERSION}</span>
+                Meta Graph:{" "}
+                <span className="font-mono text-slate-500">
+                  {env.META_API_VERSION}
+                </span>
               </p>
               <p>
                 Mod:{" "}
@@ -38,7 +49,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </p>
             </div>
           </aside>
-          <main className="min-w-0 flex-1">{children}</main>
+          <main className="app-main">
+            <div className="mb-8 flex items-center justify-between border-b border-slate-200 pb-4 text-xs text-slate-500">
+              <span>Çalışma alanı / Klinik reklam yönetimi</span>
+              <span className="status-pill">
+                {env.META_MOCK_MODE ? "Demo ortamı" : "Canlı veri ortamı"}
+              </span>
+            </div>
+            {children}
+          </main>
         </div>
       </body>
     </html>
