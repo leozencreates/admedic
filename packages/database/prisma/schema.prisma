@@ -188,12 +188,13 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members         Membership[]
-  workspaces      Workspace[]
-  metaConnections MetaConnection[]
-  adAccounts      AdAccount[]
-  creatives       Creative[]
-  auditLogs       AuditLog[]
+   members         Membership[]
+   workspaces      Workspace[]
+   metaConnections MetaConnection[]
+   adAccounts      AdAccount[]
+   creatives       Creative[]
+   auditLogs       AuditLog[]
+   leads           Lead[]
 }
 
 model User {
@@ -257,10 +258,13 @@ model Workspace {
   products            Product[]
   landingPages        LandingPage[]
   auditLogs           AuditLog[]
-   studioDrafts        StudioDraft[]
-   llmCalls            LlmCallLog[]
-   sessions            WebSession[]
-   recommendations     Recommendation[]
+    studioDrafts        StudioDraft[]
+    llmCalls            LlmCallLog[]
+    sessions            WebSession[]
+    recommendations     Recommendation[]
+    leads               Lead[]
+    conversations       Conversation[]
+    consentRecords      ConsentRecord[]
 
    @@unique([orgId, slug])
   @@index([orgId])
@@ -750,7 +754,7 @@ model AuditLog {
   ip         String?
   createdAt  DateTime @default(now())
 
-  org       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+   org       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workspace Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -884,6 +888,145 @@ model Recommendation {
 
   @@index([workspaceId, status])
   @@index([experimentId])
+}
+
+enum LlmCallLogStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONSULTATION_BOOKED
+  TRAVEL_PLANNED
+  TREATED
+  LOST
+}
+
+enum ConversationStatus {
+  ACTIVE
+  CLOSED
+  ESCALATED
+}
+
+enum MessageChannel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  SMS
+}
+
+enum MessageDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum ConsentStatus {
+  PENDING
+  GRANTED
+  DENIED
+  WITHDRAWN
+}
+
+enum ConsentType {
+  MARKETING
+  DATA_PROCESSING
+  HEALTH_QUESTIONNAIRE
+}
+
+model Lead {
+  id           String           @id @default(cuid())
+  workspaceId  String
+  organizationId String
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  country      String?
+  language     String           @default("tr")
+  channel      String? // WHATSAPP | INSTAGRAM | MESSENGER | SMS | LEAD_AD
+  campaignId   String?
+  adSetId      String?
+  adId         String?
+  status       LeadStatus       @default(NEW)
+  lostReason   String?
+  qualifiedAt  DateTime?
+  consultationBookedAt DateTime?
+  treatedAt    DateTime?
+  lostAt       DateTime?
+  duplicateOf  String?
+  metadata     Json             @default("{}")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  consentRecords ConsentRecord[]
+
+  @@unique([organizationId, phone, email])
+  @@index([workspaceId, status])
+  @@index([organizationId, createdAt])
+}
+
+model Conversation {
+  id          String              @id @default(cuid())
+  leadId      String
+  workspaceId String
+  channel     MessageChannel
+  status      ConversationStatus  @default(ACTIVE)
+  initiatedBy String? // user_id or "bot"
+  escalatedTo String?
+  escalatedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([leadId])
+  @@index([workspaceId, status])
+}
+
+model Message {
+  id            String           @id @default(cuid())
+  conversationId String
+  direction     MessageDirection
+  channel       MessageChannel
+  content       String
+  sender        String?
+  metadata      Json             @default("{}")
+  createdAt     DateTime         @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model ConsentRecord {
+  id           String         @id @default(cuid())
+  leadId       String
+  workspaceId  String
+  type         ConsentType
+  status       ConsentStatus
+  consentText  String
+  acceptedAt   DateTime?
+  withdrawnAt  DateTime?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([workspaceId, type])
 }
 
 model LlmCallLog {
