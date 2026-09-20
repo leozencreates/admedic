@@ -11,16 +11,16 @@ const CreateConversationSchema = z.object({
   initiatedBy: z.string().nullable().optional(),
 }).strict();
 
-export async function GET(request: Request, { params }: { params: Promise<{ leadId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
-    const { leadId } = await params;
+    const { id } = await params;
     const lead = await prisma.lead.findFirst({
-      where: { id: leadId, workspaceId: actor.workspaceId },
+      where: { id, workspaceId: actor.workspaceId },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
     const conversations = await prisma.conversation.findMany({
-      where: { leadId },
+      where: { leadId: id },
       include: {
         messages: { orderBy: { createdAt: "desc" }, take: 50 },
       },
@@ -30,19 +30,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ lead
   });
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ leadId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    const { leadId } = await params;
+    const { id } = await params;
     const input = await body(request, CreateConversationSchema);
     const lead = await prisma.lead.findFirst({
-      where: { id: leadId, workspaceId: actor.workspaceId },
+      where: { id, workspaceId: actor.workspaceId },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
     const conversation = await prisma.conversation.create({
       data: {
-        leadId,
+        leadId: id,
         workspaceId: actor.workspaceId,
         channel: input.channel,
         initiatedBy: input.initiatedBy ?? undefined,
