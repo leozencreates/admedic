@@ -1,7 +1,7 @@
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
 import { PROMPT_VERSION } from "@admedic/llm";
-import { requireActor } from "../../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
 import type { MessageChannel } from "@admedic/database";
@@ -39,8 +39,8 @@ Rules:
 - Always state you are an automated assistant at the beginning of the conversation.`;
 
 const URGENT_KEYWORDS = [
-  "acil", "yardım", "içinden", "ölüm", "kaybetmek", "son",
-  "emergency", "help", "dying", "suicide", "kill myself",
+  "acil", "nefes alamıyorum", "ölüm",
+  "emergency", "dying", "suicide", "kill myself",
   "hurt myself", "want to die", "end it", "kriz", "krize",
   "son durumda",
 ];
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, ChatSchema);
     const { leadId, message, conversationId } = input;
 
@@ -99,14 +100,22 @@ export async function POST(request: Request) {
 
     const language = getLeadLanguage(lead);
     const localization = LOCALIZATION[language as keyof typeof LOCALIZATION] ?? LOCALIZATION.TR;
-    const isUrgent = detectUrgent(message);
+    const isUrgent = detectUrgent(message) || /koordinatör|insanla|human|person|operator/i.test(message);
+    loadEnv();
+    const key = process.env.ANTHROPIC_API_KEY;
+    const model = process.env.LLM_MODEL;
+    if (!isUrgent && (!key || !model))
+      throw new HttpError(503, "AI için ANTHROPIC_API_KEY ve LLM_MODEL sunucuda ayarlanmalı.");
 
     let conversation = null;
     if (conversationId) {
       conversation = await prisma.conversation.findFirst({
-        where: { id: conversationId, leadId },
+        where: { id: conversationId, leadId, workspaceId: actor.workspaceId },
       });
+      if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
     }
+    if (conversation && conversation.status !== "ACTIVE")
+      throw new HttpError(409, "Bu konuşmada asistan durduruldu; koordinatör devralmalı.");
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
@@ -138,7 +147,7 @@ export async function POST(request: Request) {
           conversationId: conversation.id,
           direction: "OUTGOING",
           channel: conversation.channel,
-          content: "Durum acil görünüyor. Bir koordinatöre devredilmektedir. Lütfen bekleyiniz.",
+           content: "Otomatik asistan durduruldu; görüşme koordinatöre devredildi. Acil sağlık durumunda yerel acil yardım hizmetine başvurun.",
           sender: "bot",
         },
       });
@@ -146,16 +155,13 @@ export async function POST(request: Request) {
     }
 
     const started = Date.now();
-    loadEnv();
-    const key = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.LLM_MODEL;
     if (!key || !model)
       throw new HttpError(
         503,
         "AI için ANTHROPIC_API_KEY ve LLM_MODEL sunucuda ayarlanmalı.",
       );
 
-    const chatSystemPrompt = `${SYSTEM_PROMPT}\n\n${localization}\n\nMevcut durum:\n- Lead adı: ${lead.firstName} ${lead.lastName}\n- Dil: ${lead.language}\n- Kanal: ${lead.channel}`;
+    const chatSystemPrompt = `${SYSTEM_PROMPT}\n\n${localization}\n\nMevcut durum:\n- Lead takma kimliği: ${lead.id}\n- Dil: ${lead.language}\n- Kanal: ${lead.channel}`;
 
     const botResponse = await generateChatText(chatSystemPrompt, message, key, model);
 

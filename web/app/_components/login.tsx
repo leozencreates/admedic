@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
-export function Login() {
+export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEmail?: string; initialWorkspace?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,6 +36,7 @@ export function Login() {
             E-posta
             <input
               name="email"
+              defaultValue={initialEmail}
               type="email"
               autoComplete="username"
               maxLength={254}
@@ -56,6 +57,7 @@ export function Login() {
             Çalışma alanı ID
             <input
               name="workspace"
+              defaultValue={initialWorkspace}
               autoComplete="off"
               maxLength={100}
               required

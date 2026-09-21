@@ -87,6 +87,8 @@ export function TestDetail({
           Plan: {content.duration} gün · €{content.budget.toFixed(2)} ·{" "}
           {content.market}. Reklam içeriği deney oluşturulurken sabitlendi.
         </p>
+        <p>Toplam test bütçesi: €{content.budget.toFixed(2)} · Günlük toplam: €{(content.budget / content.duration).toFixed(2)} · Varyant başına günlük: €{(content.budget / content.duration / 2).toFixed(2)}</p>
+        {content.clinic.includes("DEMO") && <p role="note">DEMO · Harcama, tıklama ve lead sonuçları örnek veridir. Gerçek reklam yayını veya harcama yoktur.</p>}
         <div className="hero-tags">
           <span>{labels[test.status]}</span>
           <span>Manuel ölçüm · Meta'da yayınlanmaz</span>

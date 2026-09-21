@@ -16,16 +16,22 @@ export function LeadChat({ leadId }: { leadId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [escalated, setEscalated] = useState(false);
+  const [conversationId, setConversationId] = useState<string>();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   async function loadMessages() {
     setLoading(true);
     try {
-      const data = await api<{ messages: Message[]; escalated: boolean }>(
-        `/api/leads/${leadId}/messages`,
+      const data = await api<{ conversations: { id: string; status: string; messages: (Message & { direction: string })[] }[] }>(
+        `/api/conversations/${leadId}`,
       );
-      setMessages(data.messages);
-      setEscalated(data.escalated ?? false);
+      const conversation = data.conversations[0];
+      setConversationId(conversation?.id);
+      setMessages((conversation?.messages ?? []).slice().reverse().map((message) => ({
+        ...message, sender: message.direction === "INCOMING" ? "user" : "bot",
+      })));
+      setEscalated(conversation?.status === "ESCALATED");
+      setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Mesajlar yüklenemedi.");
     } finally {
@@ -36,14 +42,14 @@ export function LeadChat({ leadId }: { leadId: string }) {
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
-    setInput("");
     setError("");
     setLoading(true);
     try {
-      await api(`/api/leads/${leadId}/messages`, "POST", {
-        content: input.trim(),
-      });
-      void loadMessages();
+       await api(`/api/conversations/${conversationId}/messages`, "POST", {
+         direction: "OUTGOING", channel: "WHATSAPP", content: input.trim(),
+       });
+      setInput("");
+      await loadMessages();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Mesaj gönderilemedi.");
     } finally {
@@ -67,6 +73,7 @@ export function LeadChat({ leadId }: { leadId: string }) {
     <section className="studio-card">
       <div className="section-kicker">MESAJLAR & AI DESTEK</div>
       <h2>Konuşma Geçmişi</h2>
+      <p className="text-sm text-slate-500">Panel içi asistan denemesi. Buradaki mesajlar WhatsApp'a gönderilmez.</p>
       {escalated && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           ⚠ Bu konuşma eskalasyon altındadır. Bir yetkilisi müdahale edecektir.
@@ -126,12 +133,12 @@ export function LeadChat({ leadId }: { leadId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Mesaj yazın…"
-          disabled={loading}
+          disabled={loading || escalated}
         />
         <button
           type="submit"
           className="primary-button"
-          disabled={loading || !input.trim()}
+          disabled={loading || escalated || !input.trim()}
         >
           Gönder
         </button>
