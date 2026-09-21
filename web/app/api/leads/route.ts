@@ -2,88 +2,92 @@ import { prisma } from "@admedic/database";
 import { requireActor } from "../../_lib/auth";
 import { body, respond, sameOrigin } from "../../_lib/http";
 import { z } from "zod";
-export const maxDuration = 30;
-
-const LeadStatusEnum = z.enum(["NEW", "CONTACTED", "QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED", "LOST"]);
-
-const LeadListSchema = z.object({
-  status: LeadStatusEnum.optional(),
-  search: z.string().optional(),
-  page: z.string().optional(),
-  pageSize: z.string().optional(),
-}).strict();
-
-const CreateLeadSchema = z.object({
+export const maxDuration = 10;
+const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
-  email: z.string().email().nullable().optional().default(null),
-  phone: z.string().nullable().optional().default(null),
-  country: z.string().nullable().optional().default(null),
-  language: z.string().min(1).max(10).optional().default("tr"),
-  channel: z.string().nullable().optional().default(null),
-  campaignId: z.string().nullable().optional().default(null),
-  adSetId: z.string().nullable().optional().default(null),
-  adId: z.string().nullable().optional().default(null),
-  metadata: z.record(z.any()).optional().default({}),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().min(7).max(20).optional().nullable(),
+  country: z.string().optional().nullable(),
+  language: z.string().optional().default("tr"),
+  channel: z.string().optional().default("LEAD_AD"),
+  campaignId: z.string().optional().nullable(),
+  adSetId: z.string().optional().nullable(),
+  adId: z.string().optional().nullable(),
+  metadata: z.record(z.any()).optional(),
+  consentGiven: z.boolean().default(false),
 }).strict();
-
-export async function GET(request: Request) {
+export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
-    const url = new URL(request.url);
-    const params = LeadListSchema.parse({
-      status: (url.searchParams.get("status") ?? undefined) as string | undefined,
-      search: url.searchParams.get("search") ?? undefined,
-      page: url.searchParams.get("page") ?? undefined,
-      pageSize: url.searchParams.get("pageSize") ?? undefined,
-    });
-    const page = params.page ? parseInt(params.page, 10) : 1;
-    const pageSize = params.pageSize ? parseInt(params.pageSize, 10) : 50;
-    const where: Record<string, unknown> = { workspaceId: actor.workspaceId };
-    if (params.status) where.status = params.status;
-    if (params.search) {
-      where.OR = [
-        { firstName: { contains: params.search } },
-        { lastName: { contains: params.search } },
-        { email: { contains: params.search } },
-        { phone: { contains: params.search } },
-      ];
-    }
-    const [leads, total] = await Promise.all([
-      prisma.lead.findMany({
-        where,
+    return {
+      leads: await prisma.lead.findMany({
+        where: { workspaceId: actor.workspaceId },
         orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        take: 100,
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true,
+          country: true, language: true, channel: true, status: true,
+          createdAt: true, updatedAt: true, metadata: true,
+        },
       }),
-      prisma.lead.count({ where }),
-    ]);
-    return { leads, total };
+    };
   });
 }
-
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    const input = await body(request, CreateLeadSchema);
-    const lead = await prisma.lead.create({
-      data: {
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email: input.email,
-        phone: input.phone,
-        country: input.country,
-        language: input.language,
-        channel: input.channel,
-        campaignId: input.campaignId,
-        adSetId: input.adSetId,
-        adId: input.adId,
-        metadata: input.metadata as Record<string, any>,
-        workspaceId: actor.workspaceId,
+    const input = await body(request, LeadSchema);
+    const existing = await prisma.lead.findFirst({
+      where: {
         organizationId: actor.orgId,
+        OR: [
+          { phone: input.phone },
+          { email: input.email },
+        ],
       },
     });
+    if (existing) {
+      await prisma.lead.update({
+        where: { id: existing.id },
+        data: { duplicateOf: existing.id },
+      });
+      throw new HttpError(409, "Bu kişi zaten kayıtlı. Tekrar edilen lead işaretlendi.");
+    }
+    const lead = await prisma.lead.create({
+      data: {
+        workspaceId: actor.workspaceId,
+        organizationId: actor.orgId,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email ?? null,
+        phone: input.phone ?? null,
+        country: input.country ?? null,
+        language: input.language,
+        channel: input.channel,
+        campaignId: input.campaignId ?? null,
+        adSetId: input.adSetId ?? null,
+        adId: input.adId ?? null,
+        status: "NEW",
+        metadata: input.metadata ?? {},
+      },
+    });
+    if (input.consentGiven) {
+      await prisma.consentRecord.create({
+        data: {
+          leadId: lead.id,
+          workspaceId: actor.workspaceId,
+          type: "MARKETING",
+          status: "GRANTED",
+          consentText: "Pazarlama iletişimleri için veri işleme onayı.",
+          acceptedAt: new Date(),
+          ip: null,
+          userAgent: null,
+        },
+      });
+    }
     return { lead };
   });
 }
+import { HttpError } from "../../_lib/http";
