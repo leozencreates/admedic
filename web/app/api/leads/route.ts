@@ -1,7 +1,9 @@
 import { prisma } from "@admedic/database";
 import { requireActor } from "../../_lib/auth";
-import { body, respond, sameOrigin } from "../../_lib/http";
+import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
+import { encrypt, decrypt } from "../../_lib/encrypt";
+import { createHash } from "node:crypto";
 export const maxDuration = 10;
 const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -17,21 +19,39 @@ const LeadSchema = z.object({
   metadata: z.record(z.any()).optional(),
   consentGiven: z.boolean().default(false),
 }).strict();
+function lookupHash(input: { phone?: string | null; email?: string | null; organizationId: string }): string | null {
+  if (!input.phone && !input.email) return null;
+  const parts = [input.phone ?? "", input.email ?? ""].filter(Boolean).join("|");
+  if (!parts) return null;
+  return createHash("sha256").update(`${input.organizationId}:${parts}`).digest("hex");
+}
+function safeDecrypt(value: string | null): string | null {
+  if (!value) return null;
+  try { return decrypt(value); } catch { return "[şifre çözülemedi]"; }
+}
+function safeEncrypt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try { return encrypt(value); } catch { return null; }
+}
 export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
+    const rows = await prisma.lead.findMany({
+      where: { workspaceId: actor.workspaceId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true, firstName: true, lastName: true, email: true, phone: true,
+        country: true, language: true, channel: true, status: true,
+        createdAt: true, updatedAt: true, metadata: true, consentGiven: true,
+      },
+    });
     return {
-      leads: await prisma.lead.findMany({
-        where: { workspaceId: actor.workspaceId },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-        select: {
-          id: true, firstName: true, lastName: true, email: true, phone: true,
-          country: true, language: true, channel: true, status: true,
-          createdAt: true, updatedAt: true, metadata: true,
-          consentGiven: true,
-        },
-      }),
+      leads: rows.map((r) => ({
+        ...r,
+        email: safeDecrypt(r.email),
+        phone: safeDecrypt(r.phone),
+      })),
     };
   });
 }
@@ -40,15 +60,10 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const actor = await requireActor();
     const input = await body(request, LeadSchema);
-    const existing = await prisma.lead.findFirst({
-      where: {
-        organizationId: actor.orgId,
-        OR: [
-          { phone: input.phone },
-          { email: input.email },
-        ],
-      },
-    });
+    const hash = lookupHash({ phone: input.phone, email: input.email, organizationId: actor.orgId });
+    const existing = hash ? await prisma.lead.findFirst({
+      where: { organizationId: actor.orgId, lookupHash: hash },
+    }) : null;
     if (existing) {
       await prisma.lead.update({
         where: { id: existing.id },
@@ -62,8 +77,8 @@ export async function POST(request: Request) {
         organizationId: actor.orgId,
         firstName: input.firstName,
         lastName: input.lastName,
-        email: input.email ?? null,
-        phone: input.phone ?? null,
+        email: safeEncrypt(input.email),
+        phone: safeEncrypt(input.phone),
         country: input.country ?? null,
         language: input.language,
         channel: input.channel,
@@ -71,24 +86,21 @@ export async function POST(request: Request) {
         adSetId: input.adSetId ?? null,
         adId: input.adId ?? null,
         status: "NEW",
+        lookupHash: hash,
         metadata: input.metadata ?? {},
       },
     });
     if (input.consentGiven) {
       await prisma.consentRecord.create({
         data: {
-          leadId: lead.id,
-          workspaceId: actor.workspaceId,
-          type: "MARKETING",
-          status: "GRANTED",
+          leadId: lead.id, workspaceId: actor.workspaceId,
+          type: "MARKETING", status: "GRANTED",
           consentText: "Pazarlama iletişimleri için veri işleme onayı.",
-          acceptedAt: new Date(),
-          ip: null,
-          userAgent: null,
+          acceptedAt: new Date(), ip: null, userAgent: null,
         },
       });
     }
     return { lead };
   });
 }
-import { HttpError } from "../../_lib/http";
+

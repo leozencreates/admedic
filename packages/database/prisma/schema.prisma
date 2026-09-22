@@ -960,6 +960,7 @@ model Lead {
   lostAt       DateTime?
   duplicateOf  String?
   consentGiven Boolean @default(false)
+  lookupHash   String?
   metadata     Json             @default("{}")
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -970,6 +971,7 @@ model Lead {
   consentRecords ConsentRecord[]
 
   @@unique([organizationId, phone, email])
+  @@unique([organizationId, lookupHash])
   @@index([workspaceId, status])
   @@index([organizationId, createdAt])
 }

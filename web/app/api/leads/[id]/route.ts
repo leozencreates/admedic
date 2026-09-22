@@ -2,6 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
+import { encrypt, decrypt } from "../../../_lib/encrypt";
 export const maxDuration = 30;
 
 const LeadStatusEnum = z.enum(["NEW", "CONTACTED", "QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED", "LOST"]);
@@ -11,6 +12,8 @@ const UpdateLeadSchema = z.object({
   lostReason: z.string().nullable().optional(),
   metadata: z.record(z.any()).optional(),
   consentGiven: z.boolean().optional(),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().min(7).max(20).optional().nullable(),
 }).strict();
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -48,7 +51,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
-    return { lead };
+    return { lead: {
+      ...lead,
+      email: lead.email ? (() => { try { return decrypt(lead.email); } catch { return "[şifre çözülemedi]"; } })() : null,
+      phone: lead.phone ? (() => { try { return decrypt(lead.phone); } catch { return "[şifre çözülemedi]"; } })() : null,
+    } };
   });
 }
 
@@ -62,6 +69,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id, workspaceId: actor.workspaceId },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    const updateData: Record<string, unknown> = {};
+    if (input.email !== undefined && input.email !== null) updateData.email = encrypt(input.email) ?? null;
+    if (input.phone !== undefined && input.phone !== null) updateData.phone = encrypt(input.phone) ?? null;
     if (input.consentGiven) {
       const existing = await prisma.consentRecord.findFirst({
         where: { leadId: id, type: "MARKETING" },
@@ -90,6 +100,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       await prisma.lead.update({
         where: { id },
         data: {
+          ...updateData,
           status: input.status,
           ...timestamps,
           ...(input.lostReason !== undefined ? { lostReason: input.lostReason } : {}),
@@ -100,6 +111,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       await prisma.lead.update({
         where: { id },
         data: {
+          ...updateData,
           ...(input.lostReason !== undefined ? { lostReason: input.lostReason } : {}),
           ...(input.metadata !== undefined ? { metadata: input.metadata as Record<string, any> } : {}),
         },
