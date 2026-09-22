@@ -71,7 +71,7 @@ describe("chat and escalation", () => {
     await prisma.webSession.create({
       data: { tokenHash: tokenHash(token), userId, workspaceId: ws.id, expiresAt: new Date(Date.now() + 86400000) },
     });
-    const loginReq = request("POST", { email, password, workspace: wsId }); const loginRes = await login(loginReq, { params: Promise.resolve({}) });
+    const loginReq = request("POST", { email, password, workspace: wsId }); const loginRes = await login(loginReq);
     const loginData = await loginRes.json() as any;
     console.log("LOGIN_RES:", JSON.stringify(loginData));
     
@@ -90,13 +90,13 @@ describe("chat and escalation", () => {
     await prisma.$disconnect();
   });
   it("escalates an active conversation", async () => {
-    const res = await escalate(request("POST", { note: "Test" }));
+    const res = await escalate(request("POST", { note: "Test" }), { params: Promise.resolve({ id: conversationId }) });
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(data.conversation.status).toBe("ESCALATED");
   });
   it("cannot escalate an already-escalated conversation", async () => {
-    const res = await escalate(request("POST", { note: "Again" }));
+    const res = await escalate(request("POST", { note: "Again" }), { params: Promise.resolve({ id: conversationId }) });
     expect(res.status).toBe(409);
   });
 });
