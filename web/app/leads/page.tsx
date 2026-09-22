@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/client-api";
 import { LeadTable, toLead } from "../_components/lead-table";
+import { LanguageSwitcher } from "../_components/language-switcher";
 
 interface ApiLead {
   id: string;
@@ -66,7 +67,7 @@ export default function LeadsPage() {
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <label className="field flex-1 min-w-[200px]">
           Ara
           <input
@@ -89,6 +90,7 @@ export default function LeadsPage() {
             ))}
           </select>
         </label>
+        <LanguageSwitcher />
       </div>
 
       {error && (

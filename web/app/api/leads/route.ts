@@ -29,6 +29,7 @@ export async function GET() {
           id: true, firstName: true, lastName: true, email: true, phone: true,
           country: true, language: true, channel: true, status: true,
           createdAt: true, updatedAt: true, metadata: true,
+          consentGiven: true,
         },
       }),
     };

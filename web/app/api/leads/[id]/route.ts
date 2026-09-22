@@ -10,6 +10,7 @@ const UpdateLeadSchema = z.object({
   status: LeadStatusEnum.optional(),
   lostReason: z.string().nullable().optional(),
   metadata: z.record(z.any()).optional(),
+  consentGiven: z.boolean().optional(),
 }).strict();
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -61,6 +62,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id, workspaceId: actor.workspaceId },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (input.consentGiven) {
+      const existing = await prisma.consentRecord.findFirst({
+        where: { leadId: id, type: "MARKETING" },
+      });
+      if (!existing) {
+        await prisma.consentRecord.create({
+          data: {
+            leadId: id,
+            workspaceId: actor.workspaceId,
+            type: "MARKETING",
+            status: "GRANTED",
+            consentText: "Pazarlama iletişimleri için veri işleme onayı.",
+            acceptedAt: new Date(),
+            ip: null,
+            userAgent: null,
+          },
+        });
+      }
+    }
     if (input.status) {
       const allowed = VALID_TRANSITIONS[lead.status] ?? [];
       if (!allowed.includes(input.status)) {

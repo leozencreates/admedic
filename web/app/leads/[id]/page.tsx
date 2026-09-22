@@ -7,6 +7,7 @@ import { LeadChat } from "../../_components/lead-chat";
 import { Badge } from "../../_components/ui";
 import { toLead } from "../../_components/lead-table";
 import { formatDate } from "../../_lib/format";
+import { LanguageSwitcher } from "../../_components/language-switcher";
 import type { Tone } from "../../_components/ui";
 
 interface ApiLead {
@@ -21,6 +22,8 @@ interface ApiLead {
   country?: string;
   createdAt?: string;
   created?: string;
+  consentGiven?: boolean;
+  consentStatus?: string;
 }
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -59,6 +62,8 @@ export default function LeadDetailPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentGiven, setConsentGiven] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -66,6 +71,7 @@ export default function LeadDetailPage() {
     try {
       const data = await api<{ lead: ApiLead }>(`/api/leads/${id}`);
       setLead(toLead(data.lead));
+      setConsentGiven(data.lead.consentGiven ?? false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Lead yüklenemedi.");
     } finally {
@@ -89,6 +95,19 @@ export default function LeadDetailPage() {
       setError(e instanceof Error ? e.message : "Durum güncellenemedi.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function grantConsent() {
+    setConsentBusy(true);
+    try {
+      await api(`/api/leads/${id}`, "PATCH", { consentGiven: true });
+      setConsentGiven(true);
+      setNotice("Rıza kaydı oluşturuldu.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rıza kaydedilemedi.");
+    } finally {
+      setConsentBusy(false);
     }
   }
 
@@ -133,6 +152,7 @@ export default function LeadDetailPage() {
           <span className="text-xs text-slate-400">
             Oluşturulma: {formatDate(lead.created)}
           </span>
+          <LanguageSwitcher />
         </div>
       </header>
 
@@ -205,6 +225,30 @@ export default function LeadDetailPage() {
           {notice}
         </p>
       )}
+
+      <section className="studio-card">
+        <div className="section-kicker">RIZA KAYDI</div>
+        <h2>Veri İşleme Onayı</h2>
+        {consentGiven ? (
+          <div className="mt-3 flex items-center gap-2 text-sm text-green-700">
+            <span className="inline-block w-2 rounded-full bg-green-500" />
+            Pazarlama iletişimi onaylandı ({new Date().toLocaleDateString("tr-TR")}).
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            <p className="text-sm text-slate-500">
+              Bu lead için pazarlama iletişimi onayı gerekmektedir.
+            </p>
+            <button
+              className="primary-button"
+              disabled={consentBusy}
+              onClick={() => void grantConsent()}
+            >
+              {consentBusy ? "Kaydediliyor…" : "Rıza Ver"}
+            </button>
+          </div>
+        )}
+      </section>
 
       <LeadChat leadId={lead.id} />
     </div>
