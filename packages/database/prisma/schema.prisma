@@ -262,6 +262,7 @@ model Workspace {
     llmCalls            LlmCallLog[]
     sessions            WebSession[]
     recommendations     Recommendation[]
+    clinicProfiles      ClinicProfile[]
     leads               Lead[]
     conversations       Conversation[]
     consentRecords      ConsentRecord[]
@@ -1042,4 +1043,96 @@ model LlmCallLog {
   createdAt     DateTime @default(now())
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   @@index([workspaceId, createdAt])
+}
+
+enum ServiceCategory {
+  MEDICAL
+  DENTAL
+  WELLNESS
+  SURGICAL
+  DIAGNOSTIC
+  PSYCHIATRIC
+  OTHER
+}
+
+enum TargetMarket {
+  TURKEY
+  GERMANY
+  UK
+  NETHERLANDS
+  USA
+  GULF
+  OTHER
+}
+
+enum Language {
+  TR
+  EN
+  DE
+  RU
+  AR
+}
+
+model ClinicProfile {
+  id          String            @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  category    ServiceCategory   @default(MEDICAL)
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  description String?
+  languages   Language[]
+  targetMarket TargetMarket     @default(TURKEY)
+  licenseNumber String?
+  status      EntityStatus      @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  services Service[]
+  marketTargets MarketTarget[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model Service {
+  id            String            @id @default(cuid())
+  clinicId      String
+  name          String
+  slug          String
+  category      ServiceCategory
+  description   String?
+  durationDays  Int?
+  priceCents    Int?
+  currency      String            @default("EUR")
+  recoveryRate  Float             @default(0)
+  status        EntityStatus      @default(ACTIVE)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  clinic ClinicProfile @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicId, slug])
+  @@index([clinicId])
+}
+
+model MarketTarget {
+  id        String   @id @default(cuid())
+  clinicId  String
+  country   String
+  region    String?
+  language  Language @default(TR)
+  currency  String   @default("EUR")
+  demand    Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic ClinicProfile @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicId, country])
+  @@index([clinicId])
 }
