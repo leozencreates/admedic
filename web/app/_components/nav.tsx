@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/experiments", label: "A/B Test Merkezi" },
   { href: "/campaigns", label: "Kampanyalar" },
   { href: "/decisions", label: "Kararlar & Onaylar" },
+  { href: "/insights", label: "İçgörüler" },
   { href: "/leads", label: "Lead CRM" },
   { href: "/alerts", label: "Uyarılar" },
 ];
