@@ -3,7 +3,7 @@ import { requireActor } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
 import { encrypt, decrypt } from "../../_lib/encrypt";
-import { createHash } from "node:crypto";
+import { leadLookupHash } from "../../_lib/lead-hash";
 export const maxDuration = 10;
 const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -19,12 +19,6 @@ const LeadSchema = z.object({
   metadata: z.record(z.any()).optional(),
   consentGiven: z.boolean().default(false),
 }).strict();
-function lookupHash(input: { phone?: string | null; email?: string | null; organizationId: string }): string | null {
-  if (!input.phone && !input.email) return null;
-  const parts = [input.phone ?? "", input.email ?? ""].filter(Boolean).join("|");
-  if (!parts) return null;
-  return createHash("sha256").update(`${input.organizationId}:${parts}`).digest("hex");
-}
 function safeDecrypt(value: string | null): string | null {
   if (!value) return null;
   try { return decrypt(value); } catch { return "[şifre çözülemedi]"; }
@@ -60,7 +54,7 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const actor = await requireActor();
     const input = await body(request, LeadSchema);
-    const hash = lookupHash({ phone: input.phone, email: input.email, organizationId: actor.orgId });
+    const hash = leadLookupHash({ orgId: actor.orgId, phone: input.phone, email: input.email });
     const existing = hash ? await prisma.lead.findFirst({
       where: { organizationId: actor.orgId, lookupHash: hash },
     }) : null;

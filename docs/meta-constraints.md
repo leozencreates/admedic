@@ -39,4 +39,23 @@ Kural (spec §6): emin olmadığın her konuda güncel resmi dokümantasyona bak
 
 ---
 
+## 2026-09-23 — OAuth / webhook uçları (uygulama notu)
+
+### Meta Business Login (web route kapatması)
+- Başlatma: `https://www.facebook.com/{META_API_VERSION}/dialog/oauth` (client_id, redirect_uri, state, scope) — `META_API_VERSION` ortam değişkeninden okunur (`packages/config` `EnvSchema`).
+- Token değişimi: `GET https://graph.facebook.com/{META_API_VERSION}/oauth/access_token?client_id&redirect_uri&client_secret&code`.
+- Kullanıcı kimliği: `GET /me?fields=id,name`; Business Manager keşfi: `GET /me/businesses?fields=id,name`.
+- ❗ **DOĞRULANMADI (canlı):** Uç adreslerinin güncel (v26+) davranışı, App Review ile gerçek bir test hesabı bağlanarak doğrulanmalı. Kod, sürümü `META_API_VERSION`'dan okuyor; sabit `v26.0` yok.
+- İzin seti: `business_management, ads_management, ads_read, pages_manage_metadata, pages_show_list`. Her izin için Meta App Review/Business Login onayı gerekir; eksik izinler `missingPermissions` alanına işlenmeli (henüz doldurulmuyor).
+
+### Webhook
+- `X-Hub-Signature-256` = `sha256=` + HMAC-SHA256(payload, META_WEBHOOK_SECRET); karşılaştırma sabit zamanlı. Secret boşsa/belirtilmezse **fail-closed** (401).
+- Tenant ayrımı `entry[].id` (page_id/insta_id) → `MetaConnection.pageId/instaId` üzerinden yapılır; eşleşme yoksa hiçbir lead yazılmaz.
+- İdempotency: leadgen için `leadgen_id`, mesaj için `message.mid` `metadata`'da tutulur ve tekrar gelen aynı olay işlenmez.
+
+### Rastgele değişen sağlık/wellness
+- Meta'nın sağlık reklamverenlerine yönelik veri paylaşımı kısıtları zaman içinde değişiyor; CAPI/offline dönüşüm entegrasyonundan önce güncel doküman kural olarak yeniden kontrol edilecek (spec §3.5/3.9).
+
+---
+
 *Sonraki güncellemelerde tarih + kaynak URL ile ekleme yapılır; tahmin içeren satırlar "DOĞRULANMADI" ile işaretlenir.*

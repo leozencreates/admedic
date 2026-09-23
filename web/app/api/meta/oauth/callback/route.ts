@@ -1,35 +1,136 @@
 import { prisma } from "@admedic/database";
-import { respond } from "@/_lib/http";
-import { headers } from "next/headers";
+import { respond, HttpError } from "@/_lib/http";
+import { requireActor } from "@/_lib/auth";
 import { loadEnv } from "@admedic/config";
+import {
+  parseOAuthState,
+  consumeOAuthState,
+  isOAuthStateUsedError,
+} from "@/_lib/oauth-state";
+import { encrypt } from "@/_lib/encrypt";
 export const maxDuration = 15;
-export async function GET() {
+
+export async function GET(request: Request) {
   return respond(async () => {
-    const headersList = await headers();
-    const code = headersList.get("x-meta-code") ?? new URLSearchParams(window.location.search).get("code") ?? "";
-    const state = headersList.get("x-meta-state") ?? "";
-    const error = headersList.get("x-meta-error") ?? "";
-    if (error) return new Response(`OAuth error: ${error}`, { status: 400 });
-    if (!code) return new Response("Missing code", { status: 400 });
-    const parsed = JSON.parse(decodeURIComponent(state ?? "{}"));
-    loadEnv();
-    const appId = process.env.META_APP_ID ?? "";
-    const appSecret = process.env.META_APP_SECRET ?? "";
-    const redirectUri = process.env.META_REDIRECT_URI ?? "http://localhost:3000/api/meta/oauth/callback";
-    const tokenUrl = `https://graph.facebook.com/v26.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`;
-    const tokenRes = await fetch(tokenUrl);
-    const tokenData = await tokenRes.json();
-    const accessToken = tokenData.access_token;
-    if (!accessToken) return new Response("Token fetch failed", { status: 400 });
-    const { orgId } = parsed;
-    if (orgId) {
-      const existing = await prisma.metaConnection.findFirst({ where: { orgId, type: "BUSINESS_MANAGER" } });
-      if (existing) {
-        await prisma.metaConnection.update({ where: { id: existing.id }, data: { status: "CONNECTED", metaAccountId: accessToken, expiresAt: new Date(Date.now() + 3600 * 1000 * 24 * 60) } });
-      } else {
-        await prisma.metaConnection.create({ data: { orgId, type: "BUSINESS_MANAGER", status: "CONNECTED", metaAccountId: accessToken, expiresAt: new Date(Date.now() + 3600 * 1000 * 24 * 60), scopes: ["pages_manage_metadata", "ads_management", "business_management"] } });
-      }
+    const actor = await requireActor();
+    const url = new URL(request.url);
+    const error = url.searchParams.get("error");
+    if (error) throw new HttpError(400, `Meta yetkisi verilmedi: ${error}`);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    if (!code) throw new HttpError(400, "Meta yetkilendirme kodu alınamadı.");
+    if (!state) throw new HttpError(400, "OAuth state eksik.");
+
+    const env = loadEnv();
+    const parsed = parseOAuthState(state, env.AUTH_SECRET);
+    if (!parsed)
+      throw new HttpError(400, "OAuth state doğrulanamadı veya süresi dolmuş.");
+    if (parsed.userId !== actor.userId || parsed.orgId !== actor.orgId)
+      throw new HttpError(403, "OAuth oturumu bu bağlantı isteğiyle eşleşmiyor.");
+    try {
+      await consumeOAuthState(parsed.orgId, parsed.nonce);
+    } catch (e) {
+      if (isOAuthStateUsedError(e))
+        throw new HttpError(400, "OAuth isteği zaten işlenmiş.");
+      throw e;
     }
+    if (!env.META_APP_ID || !env.META_APP_SECRET)
+      throw new HttpError(
+        400,
+        "Meta uygulama kimlik bilgileri ayarlanmamış (META_APP_ID/META_APP_SECRET).",
+      );
+
+    const tokenUrl = new URL(
+      `https://graph.facebook.com/${env.META_API_VERSION}/oauth/access_token`,
+    );
+    tokenUrl.searchParams.set("client_id", env.META_APP_ID);
+    tokenUrl.searchParams.set("redirect_uri", env.META_REDIRECT_URI);
+    tokenUrl.searchParams.set("client_secret", env.META_APP_SECRET);
+    tokenUrl.searchParams.set("code", code);
+    const tokenRes = await fetch(tokenUrl.toString());
+    const tokenData = await tokenRes.json().catch(() => ({}));
+    const accessToken = tokenData.access_token;
+    const expiresIn = tokenData.expires_in;
+    const grantedScopes = Array.isArray(tokenData.granted_scopes)
+      ? tokenData.granted_scopes.map(String)
+      : [];
+    if (
+      !tokenRes.ok ||
+      typeof accessToken !== "string" ||
+      accessToken.length === 0
+    )
+      throw new HttpError(400, "Meta erişim tokenı alınamadı.");
+
+    const meUrl = new URL(
+      `https://graph.facebook.com/${env.META_API_VERSION}/me`,
+    );
+    meUrl.searchParams.set("fields", "id,name");
+    meUrl.searchParams.set("access_token", accessToken);
+    const meRes = await fetch(meUrl.toString());
+    const meJson = await meRes.json().catch(() => ({}));
+    const metaUserId = meJson.id ? String(meJson.id) : null;
+    let accountName = meJson.name ? String(meJson.name) : null;
+    if (!meRes.ok || !metaUserId)
+      throw new HttpError(400, "Meta kullanıcı bilgisi alınamadı.");
+
+    let metaAccountId: string | null = null;
+    try {
+      const bmUrl = new URL(
+        `https://graph.facebook.com/${env.META_API_VERSION}/me/businesses`,
+      );
+      bmUrl.searchParams.set("fields", "id,name");
+      bmUrl.searchParams.set("access_token", accessToken);
+      const bmRes = await fetch(bmUrl.toString());
+      if (bmRes.ok) {
+        const bmJson = await bmRes.json().catch(() => ({}));
+        const first = Array.isArray(bmJson.data) ? bmJson.data[0] : null;
+        if (first?.id) {
+          metaAccountId = String(first.id);
+          if (first.name) accountName = String(first.name);
+        }
+      }
+    } catch {
+      // Business Manager keşfi kritik değil; bağlantı yine de kurulur.
+    }
+
+    const ttlMs =
+      typeof expiresIn === "number" && expiresIn > 0
+        ? expiresIn * 1000
+        : 60 * 24 * 60 * 60 * 1000;
+    const tokenCiphertext = encrypt(accessToken);
+    const data = {
+      status: "CONNECTED" as const,
+      name: accountName,
+      metaAccountId,
+      metaUserId,
+      tokenCiphertext,
+      scopes: grantedScopes,
+      appId: env.META_APP_ID,
+      expiresAt: new Date(Date.now() + ttlMs),
+      lastError: null as string | null,
+    };
+
+    const existing = await prisma.metaConnection.findFirst({
+      where: { orgId: actor.orgId, type: "BUSINESS_MANAGER" },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.metaConnection.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.metaConnection.create({
+        data: { orgId: actor.orgId, type: "BUSINESS_MANAGER", ...data },
+      });
+    }
+    await prisma.auditLog.create({
+      data: {
+        orgId: actor.orgId,
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        action: "META_CONNECTED",
+        entityType: "META_CONNECTION",
+        after: { type: "BUSINESS_MANAGER", metaUserId },
+      },
+    });
     return { success: true };
   });
 }

@@ -1,18 +1,22 @@
 import { prisma } from "@admedic/database";
 import { requireActor } from "@/_lib/auth";
-import { respond, sameOrigin } from "@/_lib/http";
+import { respond, sameOrigin, HttpError } from "@/_lib/http";
 import { loadEnv } from "@admedic/config";
+import { createOAuthState } from "@/_lib/oauth-state";
 export const maxDuration = 15;
 export async function GET(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    loadEnv();
-    const appId = process.env.META_APP_ID ?? "";
-    const redirectUri = process.env.META_REDIRECT_URI ?? "http://localhost:3000/api/meta/oauth/callback";
-    const scopes = ["pages_manage_metadata", "ads_management", "business_management"];
-    const state = JSON.stringify({ orgId: actor.orgId, userId: actor.userId });
-    const url = `https://www.facebook.com/v26.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&scope=${scopes.join(",")}`;
-    return { authUrl: url, appId };
+    const env = loadEnv();
+    if (!env.META_APP_ID)
+      throw new HttpError(
+        400,
+        "Meta uygulama kimliği ayarlanmamış (META_APP_ID ortam değişkeni).",
+      );
+    const { state } = createOAuthState(env.AUTH_SECRET, actor.userId, actor.orgId);
+    const scopes = ["business_management", "ads_management", "ads_read", "pages_manage_metadata", "pages_show_list"];
+    const url = `https://www.facebook.com/${env.META_API_VERSION}/dialog/oauth?client_id=${encodeURIComponent(env.META_APP_ID)}&redirect_uri=${encodeURIComponent(env.META_REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${scopes.join(",")}`;
+    return { authUrl: url, appId: env.META_APP_ID };
   });
 }
