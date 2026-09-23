@@ -195,6 +195,8 @@ model Organization {
    creatives       Creative[]
    auditLogs       AuditLog[]
    leads           Lead[]
+   subscriptions   Subscription[]
+   invoices        Invoice[]
 }
 
 model User {
@@ -1138,4 +1140,64 @@ model MarketTarget {
 
   @@unique([clinicId, country])
   @@index([clinicId])
+}
+
+// ------------------------------------------------ Faturalandırma ------------------------------------------------
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+model Subscription {
+  id            String            @id @default(cuid())
+  organizationId String
+  plan          SubscriptionPlan
+  status        SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean        @default(false)
+  quantity      Int               @default(1)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices      Invoice[]
+
+  @@unique([organizationId])
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  subscriptionId  String
+  organizationId  String
+  amountCents     Int
+  currency        String   @default("EUR")
+  status          InvoiceStatus @default(DRAFT)
+  issuedAt        DateTime @default(now())
+  dueAt           DateTime
+  paidAt          DateTime?
+  pdfUrl          String?
+
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([organizationId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PAID
+  VOID
+  OVERDUE
 }

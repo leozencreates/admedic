@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/decisions", label: "Kararlar & Onaylar" },
   { href: "/insights", label: "İçgörüler" },
   { href: "/leads", label: "Lead CRM" },
+  { href: "/billing", label: "Faturalar" },
   { href: "/alerts", label: "Uyarılar" },
 ];
 
