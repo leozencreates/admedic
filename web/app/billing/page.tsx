@@ -27,6 +27,7 @@ interface InvoiceData {
 export default function BillingPage() {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [invoices, setInvoices] = useState<InvoiceData[]>([]);
+  const [checkoutUrl, setCheckoutUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -39,6 +40,7 @@ export default function BillingPage() {
         api<{ invoices: InvoiceData[] }>("/api/billing/invoices"),
       ]);
       setSubscription(subData.subscription);
+      
       setInvoices(invData.invoices);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fatura bilgisi yüklenemedi.");
@@ -100,6 +102,11 @@ export default function BillingPage() {
           </div>
           {!showUpgrade && (
             <button className="mt-4 primary-button" onClick={() => setShowUpgrade(true)}>Plan Değiştir</button>
+          )}
+          {checkoutUrl && (
+            <div className="mt-4">
+              <a href={checkoutUrl} className="primary-button">Stripe ile Öde</a>
+            </div>
           )}
           {showUpgrade && (
             <div className="mt-4 flex flex-wrap gap-3">

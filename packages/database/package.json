@@ -23,7 +23,8 @@
     "@admedic/config": "workspace:*",
     "@admedic/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

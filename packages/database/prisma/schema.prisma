@@ -197,6 +197,7 @@ model Organization {
    leads           Lead[]
    subscriptions   Subscription[]
    invoices        Invoice[]
+   stripeCustomers   StripeCustomer[]
 }
 
 model User {
@@ -1156,6 +1157,18 @@ enum SubscriptionStatus {
   PAST_DUE
   CANCELED
   EXPIRED
+}
+
+model StripeCustomer {
+  id            String   @id @default(cuid())
+  organizationId String
+  customerId    String   @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId])
 }
 
 model Subscription {
