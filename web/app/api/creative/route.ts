@@ -1,8 +1,9 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin } from "../../_lib/http";
 import { z } from "zod";
 import { loadEnv } from "@admedic/config";
+import { logAudit } from "../../_lib/audit";
 export const maxDuration = 30;
 const CreativeSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
 export async function GET() {
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, CreativeSchema);
     loadEnv();
     const creative = await prisma.creative.create({
@@ -30,6 +32,13 @@ export async function POST(request: Request) {
         status: "DRAFT",
         type: "IMAGE",
       },
+    });
+    await logAudit({
+      actor,
+      action: "CREATIVE_CREATED",
+      entityType: "CREATIVE",
+      entityId: creative.id,
+      after: { name: creative.name, status: creative.status, type: creative.type },
     });
     return { creative: { id: creative.id, name: creative.name, status: creative.status, type: creative.type } };
   });

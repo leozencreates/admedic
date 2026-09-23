@@ -1,9 +1,10 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
 import { encrypt, decrypt } from "../../_lib/encrypt";
 import { leadLookupHash } from "../../_lib/lead-hash";
+import { logAudit } from "../../_lib/audit";
 export const maxDuration = 10;
 const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, LeadSchema);
     const hash = leadLookupHash({ orgId: actor.orgId, phone: input.phone, email: input.email });
     const existing = hash ? await prisma.lead.findFirst({
@@ -62,6 +64,13 @@ export async function POST(request: Request) {
       await prisma.lead.update({
         where: { id: existing.id },
         data: { duplicateOf: existing.id },
+      });
+      await logAudit({
+        actor,
+        action: "LEAD_DUPLICATE_MARKED",
+        entityType: "LEAD",
+        entityId: existing.id,
+        after: { duplicateOf: existing.id },
       });
       throw new HttpError(409, "Bu kişi zaten kayıtlı. Tekrar edilen lead işaretlendi.");
     }
@@ -94,6 +103,13 @@ export async function POST(request: Request) {
         },
       });
     }
+    await logAudit({
+      actor,
+      action: "LEAD_CREATED",
+      entityType: "LEAD",
+      entityId: lead.id,
+      after: { status: lead.status, channel: input.channel, consentGiven: Boolean(input.consentGiven) },
+    });
     return { lead };
   });
 }

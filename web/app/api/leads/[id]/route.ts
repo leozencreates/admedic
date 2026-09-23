@@ -1,8 +1,9 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
 import { encrypt, decrypt } from "../../../_lib/encrypt";
+import { logAudit } from "../../../_lib/audit";
 export const maxDuration = 30;
 
 const LeadStatusEnum = z.enum(["NEW", "CONTACTED", "QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED", "LOST"]);
@@ -63,6 +64,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const { id } = await params;
     const input = await body(request, UpdateLeadSchema);
     const lead = await prisma.lead.findFirst({
@@ -117,6 +119,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       });
     }
+    await logAudit({
+      actor,
+      action: "LEAD_UPDATED",
+      entityType: "LEAD",
+      entityId: id,
+      before: { status: lead.status },
+      after: { status: input.status ?? lead.status, lostReason: input.lostReason ?? undefined },
+    });
     return { ok: true };
   });
 }
@@ -125,11 +135,19 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const { id } = await params;
     const lead = await prisma.lead.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    await logAudit({
+      actor,
+      action: "LEAD_DELETED",
+      entityType: "LEAD",
+      entityId: id,
+      before: { status: lead.status },
+    });
     await prisma.lead.delete({ where: { id } });
     return { ok: true };
   });

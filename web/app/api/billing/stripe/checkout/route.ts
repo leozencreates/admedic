@@ -1,9 +1,10 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../../../_lib/auth";
+import { requireActor, requireRole } from "../../../../_lib/auth";
 import { body, respond, sameOrigin } from "../../../../_lib/http";
 import { z } from "zod";
 import Stripe from "stripe";
 import { loadEnv } from "@admedic/config";
+import { logAudit } from "../../../../_lib/audit";
 const PLAN_MAP: Record<string, { amount: number; interval: string }> = {
   FREE: { amount: 0, interval: "month" },
   STARTER: { amount: 2990, interval: "month" },
@@ -21,12 +22,19 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, ["OWNER", "ADMIN"]);
     const input = await body(request, CheckoutSchema);
     const url = input.plan === "FREE" ? "" : "";
     await prisma.subscription.upsert({
       where: { organizationId: actor.orgId },
       update: { plan: input.plan, status: "ACTIVE" as const, currentPeriodStart: new Date() },
       create: { organizationId: actor.orgId, plan: input.plan, status: "ACTIVE" as const, currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 30 * 86400000) },
+    });
+    await logAudit({
+      actor,
+      action: "PLAN_CHANGED",
+      entityType: "SUBSCRIPTION",
+      after: { plan: input.plan, status: "ACTIVE" },
     });
     return { checkoutUrl: url, plan: input.plan, status: "ACTIVE" };
   });

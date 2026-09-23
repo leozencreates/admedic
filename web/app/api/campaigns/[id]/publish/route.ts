@@ -2,6 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { z } from "zod";
+import { logAudit } from "../../../../_lib/audit";
 export const maxDuration = 15;
 const PublishSchema = z.object({
   action: z.enum(["PAUSE", "ACTIVATE", "ARCHIVE"]),
@@ -24,6 +25,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!conn || conn.status !== "CONNECTED") throw new HttpError(400, "Meta bağlantısı aktif değil.");
     const newStatus: Record<string, string> = { PAUSE: "PAUSED", ACTIVATE: "ACTIVE", ARCHIVE: "ARCHIVED" };
     await prisma.campaign.update({ where: { id }, data: { status: newStatus[input.action] as any } });
+    await logAudit({
+      actor,
+      action: "CAMPAIGN_STATUS_CHANGED",
+      entityType: "CAMPAIGN",
+      entityId: campaign.id,
+      before: { status: campaign.status },
+      after: { status: newStatus[input.action], action: input.action },
+    });
     return { campaign: { id: campaign.id, name: campaign.name, status: newStatus[input.action], action: input.action } };
   });
 }

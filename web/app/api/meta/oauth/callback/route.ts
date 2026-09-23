@@ -1,18 +1,19 @@
 import { prisma } from "@admedic/database";
-import { respond, HttpError } from "@/_lib/http";
-import { requireActor } from "@/_lib/auth";
+import { respond, HttpError } from "../../../../_lib/http";
+import { requireActor, requireRole } from "../../../../_lib/auth";
 import { loadEnv } from "@admedic/config";
 import {
   parseOAuthState,
   consumeOAuthState,
   isOAuthStateUsedError,
-} from "@/_lib/oauth-state";
-import { encrypt } from "@/_lib/encrypt";
+} from "../../../../_lib/oauth-state";
+import { encrypt } from "../../../../_lib/encrypt";
 export const maxDuration = 15;
 
 export async function GET(request: Request) {
   return respond(async () => {
     const actor = await requireActor();
+    requireRole(actor, ["OWNER", "ADMIN"]);
     const url = new URL(request.url);
     const error = url.searchParams.get("error");
     if (error) throw new HttpError(400, `Meta yetkisi verilmedi: ${error}`);

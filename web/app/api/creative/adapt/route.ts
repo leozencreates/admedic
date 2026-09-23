@@ -1,7 +1,8 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
+import { logAudit } from "../../../_lib/audit";
 export const maxDuration = 30;
 const AdaptSchema = z.object({
   creativeId: z.string().min(1),
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, AdaptSchema);
     const creative = await prisma.creative.findFirst({
       where: { id: input.creativeId, workspaceId: { equals: actor.workspaceId } },
@@ -27,6 +29,13 @@ export async function POST(request: Request) {
       textOverlay: input.textOverlay ?? null,
       status: "PENDING" as const,
     }));
+    await logAudit({
+      actor,
+      action: "CREATIVE_ADAPTED",
+      entityType: "CREATIVE",
+      entityId: creative.id,
+      after: { size: input.size, adaptedVariantCount: adapted.length, textOverlay: input.textOverlay ?? null },
+    });
     return { creative: { id: creative.id, name: creative.name, adaptedVariants: adapted, size: input.size } };
   });
 }

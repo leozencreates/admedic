@@ -1,7 +1,8 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin } from "../../_lib/http";
 import { z } from "zod";
+import { logAudit } from "../../_lib/audit";
 export const maxDuration = 15;
 const CampaignSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, CampaignSchema);
     const adAccount = await prisma.adAccount.findFirst({ where: { orgId: actor.orgId } });
     if (!adAccount) throw new HttpError(400, "Reklam hesabı bulunamadı.");
@@ -35,6 +37,13 @@ export async function POST(request: Request) {
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 86400000),
       },
+    });
+    await logAudit({
+      actor,
+      action: "CAMPAIGN_CREATED",
+      entityType: "CAMPAIGN",
+      entityId: campaign.id,
+      after: { name: campaign.name, objective: campaign.objective, dailyBudget: campaign.dailyBudget },
     });
     return { campaign: { id: campaign.id, name: campaign.name, status: campaign.status, objective: campaign.objective, budget: campaign.dailyBudget } };
   });

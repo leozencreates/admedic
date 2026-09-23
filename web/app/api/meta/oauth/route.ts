@@ -1,13 +1,14 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "@/_lib/auth";
-import { respond, sameOrigin, HttpError } from "@/_lib/http";
+import { requireActor, requireRole } from "../../../_lib/auth";
+import { respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { loadEnv } from "@admedic/config";
-import { createOAuthState } from "@/_lib/oauth-state";
+import { createOAuthState } from "../../../_lib/oauth-state";
 export const maxDuration = 15;
 export async function GET(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, ["OWNER", "ADMIN"]);
     const env = loadEnv();
     if (!env.META_APP_ID)
       throw new HttpError(

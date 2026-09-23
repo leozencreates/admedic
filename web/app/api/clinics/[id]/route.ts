@@ -2,6 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
+import { logAudit } from "../../../_lib/audit";
 export const maxDuration = 10;
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -51,6 +52,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         targetMarket: input.targetMarket ?? clinic.targetMarket,
         updatedAt: new Date(),
       },
+    });
+    await logAudit({
+      actor,
+      action: "CLINIC_UPDATED",
+      entityType: "CLINIC",
+      entityId: id,
+      before: { name: clinic.name },
+      after: { name: updated.name, category: updated.category },
     });
     return { clinic: updated };
   });

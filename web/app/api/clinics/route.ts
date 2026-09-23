@@ -1,7 +1,8 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../_lib/auth";
+import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin } from "../../_lib/http";
 import { z } from "zod";
+import { logAudit } from "../../_lib/audit";
 export const maxDuration = 10;
 const ClinicSchema = z.object({
   name: z.string().min(1).max(100),
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, ClinicSchema);
     const clinic = await prisma.clinicProfile.create({
       data: {
@@ -46,6 +48,13 @@ export async function POST(request: Request) {
         languages: input.languages,
         targetMarket: input.targetMarket,
       },
+    });
+    await logAudit({
+      actor,
+      action: "CLINIC_CREATED",
+      entityType: "CLINIC",
+      entityId: clinic.id,
+      after: { name: clinic.name, category: clinic.category },
     });
     return { clinic };
   });
