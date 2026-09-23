@@ -1,6 +1,6 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../../_lib/auth";
-import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
+import { requireActor } from "@/app/_lib/auth";
+import { body, respond, sameOrigin, HttpError } from "@/app/_lib/http";
 import { z } from "zod";
 export const maxDuration = 10;
 const SubscriptionPlanEnum = z.enum(["FREE", "STARTER", "PROFESSIONAL", "ENTERPRISE"]);

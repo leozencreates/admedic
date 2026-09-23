@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/tests", label: "Kayıtlı Deneyler" },
   { href: "/experiments", label: "A/B Test Merkezi" },
   { href: "/campaigns", label: "Kampanyalar" },
+  { href: "/recommendations", label: "Öneriler" },
   { href: "/decisions", label: "Kararlar & Onaylar" },
   { href: "/insights", label: "İçgörüler" },
   { href: "/leads", label: "Lead CRM" },
