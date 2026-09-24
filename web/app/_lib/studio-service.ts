@@ -1,8 +1,8 @@
 import { prisma, type Prisma } from "@admedic/database";
 import { DraftSchema, type DraftContent } from "@admedic/llm";
-import { checkPolicy } from "@admedic/policy";
 import { z } from "zod";
 import { type Actor, EDIT_ROLES, requireRole } from "./auth";
+import { checkPolicyWithRules } from "./policy-loader";
 import { HttpError } from "./http";
 
 export const SaveSchema = z.object({ content: DraftSchema }).strict();
@@ -21,8 +21,8 @@ export const DraftActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
-export function policyFor(content: DraftContent) {
-  return checkPolicy(
+export async function policyFor(content: DraftContent) {
+  return checkPolicyWithRules(
     content.variants
       .map((v) => `${v.headline}\n${v.text}\n${v.cta}`)
       .join("\n"),
@@ -52,13 +52,14 @@ function audit(
 }
 export async function createDraft(actor: Actor, content: DraftContent) {
   requireRole(actor, EDIT_ROLES);
+  const policy = await policyFor(content);
   return prisma.$transaction(async (tx) => {
     const draft = await tx.studioDraft.create({
       data: {
         workspaceId: actor.workspaceId,
         name: `${content.clinic} · ${content.service}`,
         content,
-        policy: policyFor(content),
+        policy,
       },
     });
     await audit(
@@ -105,7 +106,7 @@ export async function changeDraft(
       input.action === "edit"
         ? input.content
         : DraftSchema.parse(draft.content);
-    const policy = policyFor(content);
+    const policy = await policyFor(content);
     const before = {
       status: draft.status,
       version: draft.version,

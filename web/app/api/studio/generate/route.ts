@@ -46,7 +46,8 @@ export async function POST(request: Request) {
         },
       });
       const content = { ...brief, variants: result.variants };
-      return { content, policy: policyFor(content) };
+      const policy = await policyFor(content);
+      return { content, policy };
     } catch {
       await prisma.llmCallLog.update({
         where: { id: log.id },

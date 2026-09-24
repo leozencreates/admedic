@@ -2,7 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
-import { checkPolicy } from "@admedic/policy";
+import { checkPolicyWithRules } from "../../_lib/policy-loader";
 import { logAudit } from "../../_lib/audit";
 export const maxDuration = 15;
 const CampaignSchema = z.object({
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     });
     if (org?.monthlyAdBudgetCap != null && budget * 30 > org.monthlyAdBudgetCap)
       throw new HttpError(422, "Taslak bütçesi kuruluşun aylık üst sınırını aşıyor.");
-    const policy = checkPolicy(input.name);
+    const policy = await checkPolicyWithRules(input.name);
     const campaign = await prisma.campaign.create({
       data: {
         adAccountId: adAccount.id,

@@ -25,7 +25,7 @@ async function main() {
     const old = await tx.studioDraft.findFirst({ where: {
       workspaceId: workspace.id, name: { in: ["A/B Deneyi - Kadın Doktor", "EX Kliniği · DEMO A/B"] },
     } });
-    const data = { name: "EX Kliniği · DEMO A/B", content, policy: policyFor(content), status: "APPROVED" as const };
+    const data = { name: "EX Kliniği · DEMO A/B", content, policy: await policyFor(content), status: "APPROVED" as const };
     const draft = old
       ? await tx.studioDraft.update({ where: { id: old.id }, data })
       : await tx.studioDraft.create({ data: { ...data, workspaceId: workspace.id } });

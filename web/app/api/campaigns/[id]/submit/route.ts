@@ -1,7 +1,7 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../../../_lib/auth";
 import { respond, sameOrigin, HttpError } from "../../../../_lib/http";
-import { checkPolicy } from "@admedic/policy";
+import { checkPolicyWithRules } from "../../../../_lib/policy-loader";
 import { logAudit } from "../../../../_lib/audit";
 import { ownedCampaign } from "../../../../_lib/campaign-workflow";
 
@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const campaign = await ownedCampaign(actor, id);
     if (!["DRAFT", "REJECTED"].includes(campaign.workflowStatus))
       throw new HttpError(409, "Kampanya zaten incelemede veya daha ileri bir aşamada.");
-    const policy = checkPolicy(campaign.name);
+    const policy = await checkPolicyWithRules(campaign.name);
     if (policy.risk === "HIGH")
       throw new HttpError(422, "İçerik kontrolündeki yüksek riskli ifadeleri düzeltin.");
     const updated = await prisma.campaign.update({

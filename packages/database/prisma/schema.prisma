@@ -67,6 +67,13 @@ enum PolicyRisk {
   HIGH
 }
 
+enum PolicyMatcher {
+  GUARANTEE_V1
+  BEFORE_AFTER_V1
+  PERSONAL_ATTRIBUTE_V1
+  PHRASES_V1
+}
+
 enum SyncStatus {
   OK
   ERROR
@@ -219,6 +226,7 @@ model Organization {
 
 model User {
   id             String     @id @default(cuid())
+  isPlatformAdmin Boolean   @default(false)
   email          String     @unique
   emailVerified  DateTime?
   name           String?
@@ -230,6 +238,27 @@ model User {
   memberships Membership[]
   auditLogs   AuditLog[]
   sessions    WebSession[]
+  policyRuleRevisions PolicyRule[]
+}
+
+// Append-only revisions. The latest version determines whether a rule is active.
+model PolicyRule {
+  id         String        @id @default(cuid())
+  key        String
+  version    Int
+  matcher    PolicyMatcher
+  phrases    String[]      @default([])
+  risk       PolicyRisk
+  reason     String
+  suggestion String
+  active     Boolean       @default(true)
+  createdBy  String?
+  createdAt  DateTime      @default(now())
+
+  author User? @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([key, version])
+  @@map("policy_rules")
 }
 
 model Membership {

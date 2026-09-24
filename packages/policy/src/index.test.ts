@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkPolicy, checkPolicyBatch } from "./index";
+import { checkPolicy, checkPolicyBatch, DEFAULT_POLICY_RULES } from "./index";
 const fixtures = [
   {
     lang: "TR",
@@ -82,4 +82,22 @@ it("batch aggregates highest risk across items", () => {
   expect(batch.results.find((r) => r.id === "a")?.risk).toBe("LOW");
   expect(batch.results.find((r) => r.id === "b")?.risk).toBe("HIGH");
   expect(batch.results.find((r) => r.id === "c")?.risk).toBe("MEDIUM");
+});
+it("uses supplied rules and reports rule versions; disabled and unmatched rules are annotated", () => {
+  const phraseRule = {
+    key: "vip-claim", version: 3, matcher: "PHRASES_V1" as const,
+    phrases: ["%100 garanti", "kesin çözüm"],
+    risk: "HIGH" as const, reason: "Sert iddia", suggestion: "Süreci anlatın", active: true,
+  };
+  const disabled = { ...DEFAULT_POLICY_RULES[0]!, active: false };
+  const res = checkPolicy("Kesin çözüm vaat ediyoruz", [], [phraseRule, disabled]);
+  expect(res.findings).toHaveLength(1);
+  expect(res.findings[0]?.rule).toBe("vip-claim");
+  expect(res.findings[0]?.ruleVersion).toBe(3);
+  expect(res.risk).toBe("HIGH");
+  expect(res.ruleVersions).toContainEqual({ key: "vip-claim", version: 3, active: true });
+  expect(res.ruleVersions).toContainEqual({ key: "guarantee", version: 1, active: false });
+  const clean = checkPolicy("Contact our team", [], [phraseRule, disabled]);
+  expect(clean.risk).toBe("LOW");
+  expect(clean.findings).toEqual([]);
 });

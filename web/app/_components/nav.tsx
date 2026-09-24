@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/recommendations", label: "Öneriler" },
   { href: "/decisions", label: "Kararlar & Onaylar" },
   { href: "/insights", label: "İçgörüler" },
+  { href: "/policy-rules", label: "Politika Kuralları" },
   { href: "/leads", label: "Lead CRM" },
   { href: "/billing", label: "Faturalar" },
   { href: "/alerts", label: "Uyarılar" },

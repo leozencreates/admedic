@@ -49,6 +49,17 @@ export function requireRole(actor: Actor, roles: Role[]) {
     throw new HttpError(403, "Bu işlem için yetkiniz yok.");
 }
 export const EDIT_ROLES: Role[] = ["OWNER", "ADMIN", "MEDIA_BUYER"];
+/** Platform-global kuralları yönetme yetkisi tenant rolünden ayrıdır (spec 3.5). */
+export async function requirePlatformAdmin() {
+  const actor = await requireActor();
+  const user = await prisma.user.findUnique({
+    where: { id: actor.userId },
+    select: { isPlatformAdmin: true },
+  });
+  if (!user?.isPlatformAdmin)
+    throw new HttpError(403, "Platform Admin yetkisi gerekli.");
+  return actor;
+}
 export async function quota(key: string, limit: number, seconds: number) {
   const window = Math.floor(Date.now() / (seconds * 1000));
   const expiresAt = new Date((window + 1) * seconds * 1000);
