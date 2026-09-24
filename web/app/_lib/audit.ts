@@ -10,8 +10,8 @@ type AuditInput = {
   after?: Prisma.InputJsonValue | null;
 };
 
-export async function logAudit(input: AuditInput) {
-  await prisma.auditLog.create({
+export async function logAudit(input: AuditInput, db: Prisma.TransactionClient = prisma) {
+  await db.auditLog.create({
     data: {
       orgId: input.actor.orgId,
       workspaceId: input.actor.workspaceId,
