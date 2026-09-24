@@ -18,6 +18,7 @@ enum Role {
   OWNER
   ADMIN
   MEDIA_BUYER
+  PATIENT_COORDINATOR
   ANALYST
   VIEWER
 }
@@ -209,6 +210,8 @@ model Organization {
   name      String
   slug      String   @unique
   monthlyAdBudgetCap Int? // minor; kampanya taslak toplam bütçesi bu sınırı aşarsa bloklanır
+  retentionDays Int   @default(365) // lead saklama süresi; süresi dolan lead'ler anonimleştirilir
+  consentText String? // tenant'a özel rıza/aydınlatma metni (varsayılan yerine)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -406,6 +409,8 @@ model Campaign {
   approvedAt     DateTime?
   rejectionBy    String?
   rejectionReason String?
+  metaReviewStatus String?  // Meta reklam inceleme durumu (APPROVED/REJECTED/...)
+  metaRejectionReason Json? // Meta red gerekçesi (kural iyileştirme için raporlanır)
 
   adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
@@ -1006,6 +1011,7 @@ model Lead {
   country      String?
   language     String           @default("tr")
   channel      String? // WHATSAPP | INSTAGRAM | MESSENGER | SMS | LEAD_AD
+  interestedService String? // ilgilenilen işlem (hizmet adı)
   campaignId   String?
   adSetId      String?
   adId         String?
@@ -1042,6 +1048,7 @@ model Conversation {
   initiatedBy String? // user_id or "bot"
   escalatedTo String?
   escalatedAt DateTime?
+  firstResponseAt DateTime? // koordinatörün ilk yanıtı (başarı metriği: < 2 dk)
   closedAt    DateTime?
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
@@ -1146,7 +1153,12 @@ model ClinicProfile {
   description String?
   languages   Language[]
   targetMarket TargetMarket     @default(TURKEY)
-  licenseNumber String?
+  licenseNumber String? // Sağlık Bakanlığı uluslararası sağlık turizmi yetki belgesi numarası
+  accreditations String[] @default([]) // örn. ISO, JCI
+  brandLogo      String?   // marka logosu URL
+  brandColors    String[]  @default([]) // hex renkler
+  brandTone      String?   // marka ton/vibe kılavuzu
+  brandBannedPhrases String[] @default([]) // tenant yasaklı ifadeler (politika kontrolüne beslenir)
   status      EntityStatus      @default(ACTIVE)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -1170,6 +1182,8 @@ model Service {
   priceCents    Int?
   currency      String            @default("EUR")
   recoveryRate  Float             @default(0)
+  packageIncludes String[]        @default([]) // örn. otel, transfer, tercüman
+  showStartingPrice Boolean       @default(true)
   status        EntityStatus      @default(ACTIVE)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt

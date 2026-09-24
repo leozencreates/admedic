@@ -14,22 +14,97 @@ export const VariantSchema = z
   .object({
     headline: z.string().trim().min(1).max(150),
     text: z.string().trim().min(1).max(2000),
+    description: z.string().trim().max(500).optional(), // Meta description (link description)
     cta: z.string().trim().min(1).max(150),
   })
   .strict();
+export const InstantFormSchema = z
+  .object({
+    questions: z.array(z.string().trim().min(1).max(200)).min(1).max(8),
+  })
+  .strict();
+export const WhatsAppSchema = z
+  .object({ welcome: z.string().trim().min(1).max(2000) })
+  .strict();
 export const OutputSchema = z
-  .object({ variants: z.tuple([VariantSchema, VariantSchema]) })
+  .object({
+    variants: z.tuple([VariantSchema, VariantSchema]),
+    instantForm: InstantFormSchema.optional(),
+    whatsapp: WhatsAppSchema.optional(),
+  })
   .strict()
   .refine(
     ({ variants: [a, b] }) =>
-      a.headline !== b.headline && a.text === b.text && a.cta === b.cta,
-    "Başlıklar farklı, metin ve CTA aynı olmalı.",
+      a.headline !== b.headline &&
+      a.text === b.text &&
+      a.description === b.description &&
+      a.cta === b.cta,
+    "Başlıklar farklı, metin/description/CTA aynı olmalı.",
   );
 export const DraftSchema = BriefSchema.extend({
   variants: z.tuple([VariantSchema, VariantSchema]),
+  instantForm: InstantFormSchema.optional(),
+  whatsapp: WhatsAppSchema.optional(),
 }).strict();
 export type DraftContent = z.infer<typeof DraftSchema>;
 export type Brief = z.infer<typeof BriefSchema>;
+
+/**
+ * LLM politika katmanı (spec 3.5 katman 2): Meta Advertising Standards'a göre
+ * risk skoru + gerekçe + düzeltilmiş metin önerisi. Kural motoruyla birleştirilir.
+ */
+export const PolicyRiskSchema = z
+  .object({
+    risk: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    reason: z.string().trim().min(1).max(1000),
+    correctedCopy: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type PolicyRiskAssessment = z.infer<typeof PolicyRiskSchema>;
+export const POLICY_RISK_PROMPT_VERSION = "policy-risk-v1";
+const POLICY_RISK_SYSTEM = `You are a Meta Advertising Standards compliance reviewer for health/wellness advertisers.
+Assess the ad copy (headline, text, description). Flag risks per Meta policies:
+- HIGH: guaranteed/absolute results ("guaranteed", "%100 başarı", "kesin çözüm"), before/after claims, personal or health-condition assumptions about the reader, explicit medical promise or diagnosis.
+- MEDIUM: strong wording, superlatives that suggest certainty but are not explicit promises, borderline appearance/outcome language.
+- LOW: neutral, factual, service-clarifying copy.
+Return ONLY JSON: {"risk":"LOW|MEDIUM|HIGH","reason":"<gerekçe (çıktının dili)","correctedCopy":"<aynı dilde düzeltilmiş kısa reklam metni>"}.`;
+
+export async function classifyRisk(
+  adCopy: string,
+  key: string,
+  model: string,
+  transport: typeof fetch = fetch,
+): Promise<PolicyRiskAssessment> {
+  const response = await transport("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+    },
+    signal: AbortSignal.timeout(45_000),
+    body: JSON.stringify({
+      model,
+      max_tokens: 1000,
+      system: POLICY_RISK_SYSTEM,
+      messages: [{ role: "user", content: adCopy }],
+    }),
+  });
+  if (!response.ok)
+    throw new Error("AI politika risk değerlendirmesi yanıt veremedi.");
+  const data = z
+    .object({
+      content: z.array(
+        z.object({ type: z.string(), text: z.string().optional() }),
+      ),
+    })
+    .parse(await response.json());
+  const raw = data.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text ?? "")
+    .join("");
+  return PolicyRiskSchema.parse(JSON.parse(raw));
+}
 export interface CreativeProvider {
   generate(
     brief: Brief,

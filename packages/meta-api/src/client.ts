@@ -4,6 +4,7 @@ import type {
   CreateCampaignInput,
   MetaAccount,
   MetaAd,
+  MetaAdReviewResult,
   MetaAdSet,
   MetaCampaign,
   MetaClientOptions,
@@ -37,6 +38,7 @@ export interface MetaClientLike {
     input: CreateCampaignInput,
     token: string,
   ): Promise<MetaCreateCampaignResult>;
+  getAdReview(adId: string, token: string): Promise<MetaAdReviewResult>;
 }
 
 function num(v: unknown): number | undefined {
@@ -266,6 +268,42 @@ export class MetaMarketingClient implements MetaClientLike {
       success: true,
       campaignId: String(id),
       metaResponse: body,
+    };
+  }
+
+  async getAdReview(
+    adId: string,
+    token: string,
+  ): Promise<MetaAdReviewResult> {
+    const raw = await graphGet<Record<string, unknown>>(
+      this.version,
+      adId,
+      {
+        fields: "id,effective_status,configured_status,review_feedback",
+        access_token: token,
+      },
+      this.fetchFn,
+    );
+    const obj = (raw as Record<string, unknown>[])[0] ?? {};
+    const rf = (obj.review_feedback ?? {}) as {
+      global?: Record<string, string>;
+      placement_specific?: Record<string, Record<string, string>>;
+    };
+    return {
+      review: {
+        id: String(obj.id ?? adId),
+        effectiveStatus:
+          obj.effective_status !== undefined
+            ? String(obj.effective_status)
+            : undefined,
+        configuredStatus:
+          obj.configured_status !== undefined
+            ? String(obj.configured_status)
+            : undefined,
+        reviewFeedbackGlobal: rf.global,
+        reviewFeedbackPlacements: rf.placement_specific,
+      },
+      fetchedAt: new Date().toISOString(),
     };
   }
 }

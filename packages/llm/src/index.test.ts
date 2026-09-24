@@ -2,6 +2,7 @@ import { it, expect, vi } from "vitest";
 import {
   AnthropicProvider,
   BriefSchema,
+  classifyRisk,
   OutputSchema,
   type Brief,
 } from "./index";
@@ -84,4 +85,40 @@ it("enforces a single-variable experiment and validates brief limits", () => {
   expect(BriefSchema.safeParse({ ...brief, language: "FR" }).success).toBe(
     false,
   );
+});
+it("classifies advertising copy risk with validated output and overrides", async () => {
+  const payload = (text: string) =>
+    Response.json({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text }],
+      usage: { input_tokens: 5, output_tokens: 5 },
+    });
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(
+      payload(
+        JSON.stringify({
+          risk: "HIGH",
+          reason: "Kesin sonuç vaadi içeriyor.",
+          correctedCopy: "Süreci öğrenmek için bilgi isteyin.",
+        }),
+      ),
+    );
+  const result = await classifyRisk(
+    "Garantili sonuçlar",
+    "key",
+    "model",
+    transport,
+  );
+  expect(result.risk).toBe("HIGH");
+  expect(result.reason).toContain("Kesin sonuç");
+  for (const bad of [
+    payload("not json"),
+    payload(JSON.stringify({ risk: "asdf" })),
+    new Response("boom", { status: 500 }),
+  ]) {
+    await expect(
+      classifyRisk("x", "key", "model", vi.fn<typeof fetch>().mockResolvedValue(bad)),
+    ).rejects.toThrow();
+  }
 });

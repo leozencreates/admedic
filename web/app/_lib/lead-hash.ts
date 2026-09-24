@@ -10,9 +10,12 @@ export function leadLookupHash(input: {
   phone?: string | null;
   email?: string | null;
   psid?: string | null;
+  igId?: string | null;
 }): string | null {
   let parts: string[];
-  if (input.psid) {
+  if (input.igId) {
+    parts = [`ig:${input.igId}`];
+  } else if (input.psid) {
     parts = [`psid:${input.psid}`];
   } else {
     parts = [input.phone ?? "", input.email ?? ""].filter(Boolean);

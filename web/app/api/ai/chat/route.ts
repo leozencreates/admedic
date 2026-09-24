@@ -1,7 +1,7 @@
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
 import { PROMPT_VERSION } from "@admedic/llm";
-import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
+import { requireActor, requireRole, CARE_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
 import type { MessageChannel } from "@admedic/database";
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, EDIT_ROLES);
+    requireRole(actor, CARE_ROLES);
     const input = await body(request, ChatSchema);
     const { leadId, message, conversationId } = input;
 
@@ -162,8 +162,15 @@ export async function POST(request: Request) {
       );
 
     const chatSystemPrompt = `${SYSTEM_PROMPT}\n\n${localization}\n\nMevcut durum:\n- Lead takma kimliği: ${lead.id}\n- Dil: ${lead.language}\n- Kanal: ${lead.channel}`;
+    const org = await prisma.organization.findUnique({
+      where: { id: actor.orgId },
+      select: { consentText: true },
+    });
+    const systemPromptWithConsent = org?.consentText
+      ? `${chatSystemPrompt}\n\nKVKK/aydınlatma metni: "${org.consentText}"\nİlk mesajında aydınlatma bilgisinin özetini kısa ve doğal biçimde ver.`
+      : chatSystemPrompt;
 
-    const botResponse = await generateChatText(chatSystemPrompt, message, key, model);
+    const botResponse = await generateChatText(systemPromptWithConsent, message, key, model);
 
     await prisma.message.create({
       data: {

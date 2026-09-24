@@ -1,9 +1,19 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole } from "../../../_lib/auth";
 import { respond, sameOrigin, HttpError } from "../../../_lib/http";
+import { decrypt } from "../../../_lib/encrypt";
 
 // Legacy URL parameter name; the subject is a CRM lead, never a login user.
 type Context = { params: Promise<{ userId: string }> };
+
+function safeDecrypt(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return decrypt(value);
+  } catch {
+    return "[şifre çözülemedi]";
+  }
+}
 
 export async function GET(_request: Request, { params }: Context) {
   return respond(async () => {
@@ -15,7 +25,13 @@ export async function GET(_request: Request, { params }: Context) {
       include: { conversations: { include: { messages: true } }, consentRecords: true },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
-    return { lead };
+    return {
+      lead: {
+        ...lead,
+        email: safeDecrypt(lead.email),
+        phone: safeDecrypt(lead.phone),
+      },
+    };
   });
 }
 

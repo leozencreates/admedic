@@ -21,7 +21,7 @@ export async function requireRole(
   minRole: Role,
 ) {
   const membership = await requireMembership(userId, orgId);
-  const rank: Record<Role, number> = { OWNER: 5, ADMIN: 4, MEDIA_BUYER: 3, ANALYST: 2, VIEWER: 1 };
+  const rank: Record<Role, number> = { OWNER: 5, ADMIN: 4, MEDIA_BUYER: 3, PATIENT_COORDINATOR: 3, ANALYST: 2, VIEWER: 1 };
   if (rank[membership.role] < rank[minRole]) {
     throw new AdmedicError(
       "PERMISSION_ERROR",

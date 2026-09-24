@@ -14,6 +14,12 @@ const UpdateSchema = z.object({
   description: z.string().optional().nullable(),
   languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR"])).optional(),
   targetMarket: z.enum(["TURKEY", "GERMANY", "UK", "NETHERLANDS", "USA", "GULF", "OTHER"]).optional(),
+  licenseNumber: z.string().optional().nullable(),
+  accreditations: z.array(z.string().min(1).max(100)).optional(),
+  brandLogo: z.string().url().optional().nullable(),
+  brandColors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).optional(),
+  brandTone: z.string().max(2000).optional().nullable(),
+  brandBannedPhrases: z.array(z.string().min(2).max(200)).optional(),
 }).strict();
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
@@ -50,6 +56,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         description: input.description ?? clinic.description,
         languages: input.languages ?? clinic.languages,
         targetMarket: input.targetMarket ?? clinic.targetMarket,
+        licenseNumber: input.licenseNumber ?? clinic.licenseNumber,
+        accreditations: input.accreditations ?? clinic.accreditations,
+        brandLogo: input.brandLogo ?? clinic.brandLogo,
+        brandColors: input.brandColors ?? clinic.brandColors,
+        brandTone: input.brandTone ?? clinic.brandTone,
+        brandBannedPhrases: input.brandBannedPhrases ?? clinic.brandBannedPhrases,
         updatedAt: new Date(),
       },
     });

@@ -17,6 +17,7 @@ const LeadSchema = z.object({
   campaignId: z.string().optional().nullable(),
   adSetId: z.string().optional().nullable(),
   adId: z.string().optional().nullable(),
+  interestedService: z.string().optional().nullable(),
   metadata: z.record(z.any()).optional(),
   consentGiven: z.boolean().default(false),
 }).strict();
@@ -38,6 +39,7 @@ export async function GET() {
       select: {
         id: true, firstName: true, lastName: true, email: true, phone: true,
         country: true, language: true, channel: true, status: true,
+        interestedService: true,
         createdAt: true, updatedAt: true, metadata: true, consentGiven: true,
       },
     });
@@ -61,15 +63,33 @@ export async function POST(request: Request) {
       where: { organizationId: actor.orgId, lookupHash: hash },
     }) : null;
     if (existing) {
-      await prisma.lead.update({
-        where: { id: existing.id },
-        data: { duplicateOf: existing.id },
+      // Kopya: yeni kayıt original kayda bağlanır (eski kayda değil).
+      const dupLead = await prisma.lead.create({
+        data: {
+          workspaceId: actor.workspaceId,
+          organizationId: actor.orgId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          email: safeEncrypt(input.email),
+          phone: safeEncrypt(input.phone),
+          country: input.country ?? null,
+          language: input.language,
+          channel: input.channel,
+          campaignId: input.campaignId ?? null,
+          adSetId: input.adSetId ?? null,
+          adId: input.adId ?? null,
+          interestedService: input.interestedService ?? null,
+          status: "NEW",
+          lookupHash: hash,
+          duplicateOf: existing.id,
+          metadata: input.metadata ?? {},
+        },
       });
       await logAudit({
         actor,
         action: "LEAD_DUPLICATE_MARKED",
         entityType: "LEAD",
-        entityId: existing.id,
+        entityId: dupLead.id,
         after: { duplicateOf: existing.id },
       });
       throw new HttpError(409, "Bu kişi zaten kayıtlı. Tekrar edilen lead işaretlendi.");
@@ -88,17 +108,24 @@ export async function POST(request: Request) {
         campaignId: input.campaignId ?? null,
         adSetId: input.adSetId ?? null,
         adId: input.adId ?? null,
+        interestedService: input.interestedService ?? null,
         status: "NEW",
         lookupHash: hash,
         metadata: input.metadata ?? {},
       },
     });
     if (input.consentGiven) {
+      const org = await prisma.organization.findUnique({
+        where: { id: actor.orgId },
+        select: { consentText: true },
+      });
       await prisma.consentRecord.create({
         data: {
           leadId: lead.id, workspaceId: actor.workspaceId,
           type: "MARKETING", status: "GRANTED",
-          consentText: "Pazarlama iletişimleri için veri işleme onayı.",
+          consentText:
+            org?.consentText ??
+            "Pazarlama iletişimleri için veri işleme onayı.",
           acceptedAt: new Date(), ip: null, userAgent: null,
         },
       });

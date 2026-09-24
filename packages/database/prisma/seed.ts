@@ -1,6 +1,6 @@
 import { env } from "process";
-import { createHash } from "crypto";
-import bcrypt from "bcryptjs";
+import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "crypto";
+import { promisify } from "util";
 
 import { loadEnv } from "@admedic/config";
 import { mulberry32, seedFromString, toMinor } from "@admedic/shared";
@@ -17,6 +17,21 @@ import {
   AlertType,
   AlertSeverity,
 } from "@prisma/client";
+
+const scrypt = promisify(scryptCb) as (p: string, s: string, k: number) => Promise<Buffer>;
+
+/** Login (`web/app/_lib/password`) ile aynı `scrypt:salt:key` formatı. */
+async function scryptHash(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const key = await scrypt(password, salt, 64);
+  return `scrypt:${salt}:${key.toString("hex")}`;
+}
+async function isScryptAndMatches(password: string, encoded: string | null): Promise<boolean> {
+  const match = /^scrypt:([a-f0-9]{32}):([a-f0-9]{128})$/.exec(encoded ?? "");
+  if (!match) return false;
+  const key = await scrypt(password, match[1], 64);
+  return timingSafeEqual(key, Buffer.from(match[2], "hex"));
+}
 
 loadEnv({ fresh: true });
 
@@ -88,19 +103,43 @@ async function main() {
     create: {
       email: DEMO_EMAIL,
       name: "Demo Admin",
-      passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
+      passwordHash: await scryptHash(DEMO_PASSWORD),
     },
   });
+  if (!(await isScryptAndMatches(DEMO_PASSWORD, adminUser.passwordHash))) {
+    await prisma.user.update({
+      where: { id: adminUser.id },
+      data: { passwordHash: await scryptHash(DEMO_PASSWORD) },
+    });
+    console.log("  Demo admin parolası scrypt formatına onarıldı.");
+  }
   const viewerUser = await prisma.user.upsert({
     where: { email: "viewer@admedic.io" },
     update: {},
     create: {
       email: "viewer@admedic.io",
       name: "Demo Viewer",
-      passwordHash: bcrypt.hashSync("viewer1234", 10),
+      passwordHash: await scryptHash("viewer1234"),
     },
   });
+  if (!(await isScryptAndMatches("viewer1234", viewerUser.passwordHash))) {
+    await prisma.user.update({
+      where: { id: viewerUser.id },
+      data: { passwordHash: await scryptHash("viewer1234") },
+    });
+    console.log("  Demo viewer parolası scrypt formatına onarıldı.");
+  }
 
+  const workspace = await prisma.workspace.upsert({
+    where: { orgId_slug: { orgId: org.id, slug: "ana-workspace" } },
+    update: {},
+    create: { orgId: org.id, name: "Ana Çalışma Alanı", slug: "ana-workspace", currency: "EUR", agentStatus: "ACTIVE" },
+  });
+
+  await clearDemoData(org.id, workspace.id);
+  console.log("  Önceki demo veri temizlendi (idempotent yeniden çalıştırma).");
+
+  // clearDemoData membership.deleteMany çalıştırdığı için üyelikler en sona kurulur.
   await prisma.membership.upsert({
     where: { orgId_userId: { orgId: org.id, userId: adminUser.id } },
     update: { role: Role.OWNER },
@@ -111,15 +150,6 @@ async function main() {
     update: { role: Role.VIEWER },
     create: { orgId: org.id, userId: viewerUser.id, role: Role.VIEWER, status: "ACTIVE" },
   });
-
-  const workspace = await prisma.workspace.upsert({
-    where: { orgId_slug: { orgId: org.id, slug: "ana-workspace" } },
-    update: {},
-    create: { orgId: org.id, name: "Ana Çalışma Alanı", slug: "ana-workspace", currency: "EUR", agentStatus: "ACTIVE" },
-  });
-
-  await clearDemoData(org.id, workspace.id);
-  console.log("  Önceki demo veri temizlendi (idempotent yeniden çalıştırma).");
 
   await prisma.optimizationPolicy.upsert({
     where: { workspaceId: workspace.id },

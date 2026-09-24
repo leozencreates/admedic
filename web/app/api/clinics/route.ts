@@ -15,6 +15,12 @@ const ClinicSchema = z.object({
   description: z.string().optional().nullable(),
   languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR"])).optional().default(["TR"]),
   targetMarket: z.enum(["TURKEY", "GERMANY", "UK", "NETHERLANDS", "USA", "GULF", "OTHER"]).optional().default("TURKEY"),
+  licenseNumber: z.string().optional().nullable(),
+  accreditations: z.array(z.string().min(1).max(100)).optional().default([]),
+  brandLogo: z.string().url().optional().nullable(),
+  brandColors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).optional().default([]),
+  brandTone: z.string().max(2000).optional().nullable(),
+  brandBannedPhrases: z.array(z.string().min(2).max(200)).optional().default([]),
 }).strict();
 export async function GET() {
   return respond(async () => {
@@ -23,7 +29,7 @@ export async function GET() {
       clinics: await prisma.clinicProfile.findMany({
         where: { workspaceId: actor.workspaceId },
         orderBy: { createdAt: "desc" },
-        select: { id: true, name: true, slug: true, category: true, status: true, createdAt: true, updatedAt: true },
+        select: { id: true, name: true, slug: true, category: true, status: true, createdAt: true, updatedAt: true, brandLogo: true },
       }),
     };
   });
@@ -47,6 +53,12 @@ export async function POST(request: Request) {
         description: input.description ?? null,
         languages: input.languages,
         targetMarket: input.targetMarket,
+        licenseNumber: input.licenseNumber ?? null,
+        accreditations: input.accreditations,
+        brandLogo: input.brandLogo ?? null,
+        brandColors: input.brandColors,
+        brandTone: input.brandTone ?? null,
+        brandBannedPhrases: input.brandBannedPhrases,
       },
     });
     await logAudit({

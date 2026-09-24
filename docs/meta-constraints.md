@@ -58,4 +58,17 @@ Kural (spec §6): emin olmadığın her konuda güncel resmi dokümantasyona bak
 
 ---
 
-*Sonraki güncellemelerde tarih + kaynak URL ile ekleme yapılır; tahmin içeren satırlar "DOĞRULANMADI" ile işaretlenir.*
+*Sonraki güncellemelerde tarih + kaynak URL ile ekleme yapılır; tahmin içeren satırlar "DOĞRULANMADI" ile işaretlenir.*## 2026-09-25 — Ad review durumu (spec 3.5 red raporu)
+
+- Ad seviyesi inceleme: `GET /{ad-id}?fields=id,effective_status,configured_status,review_feedback`.
+  Kaynak: developers.facebook.com/docs/marketing-api/reference/adgroup-review-feedback + effective_status/configured_status (2026-09-24 websearch ile doğrulandı).
+- `review_feedback.global`: `Record<policyKey, açıklama>` — platformlar arası genel red nedenleri.
+- `review_feedback.placement_specific`: `Record<placement, Record<policyKey, açıklama>>` — yalnızca belirli yerleşimlerdeki sorunlar (örn. Instagram Feed).
+- `effective_status`: ACTIVE / DISAPPROVED / PENDING_IN_REVIEW / IN_REVIEW ve diğer birleşik durumlar; `configured_status` operatörce set edilen (PAUSED/ACTIVE) hedeftir.
+- ❗ **DOĞRULANMADI (canlı):** Platformda kampanya/ad oluşturup gerçek review_feedback alınarak uçtan uca doğrulanmalı. Mock client `getAdReview` deterministik (ad `ad_mock_rejected` → DISAPPROVED) verir.
+- Kampanya tablosuna `metaReviewStatus` (String?) + `metaRejectionReason` (Json?) eklendi; red şartı DISAPPROVED başta olmak üzere global+placement gerekçeleri saklanır.
+
+## 2026-09-25 — LLM politika katmanı (spec 3.5 katman 2)
+
+- `classifyRisk(adCopy,key,model)` Meta Advertising Standards'a göre risk skorlar (prompt `policy-risk-v1`); uluslararası garantili/öncelik klişelerini ve "garanti sonuç/üstünlük" vaatlerini bayraklar.
+- Katmanlar birleşik: kural motoru risk'i korunur; LLM bulunursa `policy.llm` olarak eklenir (`risk` alanı katman 1'den gelir). LLM anahtarı yoksa/hata olursa sessizce `llm: null` — yayın engellenmez.

@@ -13,6 +13,7 @@ import type {
   MetaInsightOptions,
   MetaInsightRow,
   MetaUpdateResult,
+  MetaAdReviewResult,
   SetStatusInput,
   UpdateBudgetInput,
 } from "./types";
@@ -223,6 +224,34 @@ export class MockMetaClient {
       effectiveStatus: "ACTIVE",
       creativeId: `cr_mock_${idx + 1}`,
     }));
+  }
+
+  async getAdReview(
+    adId: string,
+    _token: string,
+  ): Promise<MetaAdReviewResult> {
+    if (adId === "ad_mock_rejected") {
+      return {
+        review: {
+          id: adId,
+          effectiveStatus: "DISAPPROVED",
+          configuredStatus: "ACTIVE",
+          reviewFeedbackGlobal: {
+            personal_health: "İçerik sağlık iddiaları içeriyor.",
+          },
+        },
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      review: {
+        id: adId,
+        effectiveStatus: "ACTIVE",
+        configuredStatus: "ACTIVE",
+        reviewFeedbackGlobal: {},
+      },
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   async getInsights(

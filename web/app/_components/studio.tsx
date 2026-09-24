@@ -49,7 +49,7 @@ export function Studio({
   const policy = draft
     ? checkPolicy(
         draft.variants
-          .map((v) => `${v.headline}\n${v.text}\n${v.cta}`)
+          .map((v) => `${v.headline}\n${v.text}\n${v.cta}\n${v.description ?? ""}`)
           .join("\n"),
       )
     : null;
@@ -393,19 +393,21 @@ export function Studio({
                       <small>Görsel yer tutucu</small>
                     </div>
                     <div className="space-y-4 p-5">
-                      {(["headline", "text", "cta"] as const).map((key) => (
+                      {(["headline", "text", "description", "cta"] as const).map((key) => (
                         <label className="field" key={key}>
                           {key === "headline"
                             ? "Başlık"
                             : key === "text"
                               ? "Reklam metni"
-                              : "CTA"}
+                              : key === "description"
+                                ? "Link açıklaması"
+                                : "CTA"}
                           <textarea
                             disabled={busy || !canEdit}
                             dir={draft.language === "AR" ? "rtl" : "auto"}
-                            rows={key === "text" ? 4 : 2}
-                            maxLength={key === "text" ? 2000 : 150}
-                            value={v[key]}
+                            rows={key === "text" ? 4 : key === "description" ? 2 : 2}
+                            maxLength={key === "text" ? 2000 : key === "description" ? 500 : 150}
+                            value={v[key] ?? ""}
                             onChange={(e) => {
                               setDraft({
                                 ...draft,
@@ -424,6 +426,27 @@ export function Studio({
                   </article>
                 ))}
               </div>
+              {(draft.instantForm || draft.whatsapp) && (
+                <div className="studio-card">
+                  <div className="section-kicker">LEAD TOPLAMA UZANTILARI</div>
+                  {draft.instantForm && (
+                    <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm">
+                      <strong>Instant Form</strong>
+                      <p className="mt-1" dir={draft.language === "AR" ? "rtl" : "auto"}>
+                        Sorular: {draft.instantForm.questions.join(" · ")}
+                      </p>
+                    </div>
+                  )}
+                  {draft.whatsapp && (
+                    <div className="mt-3 rounded-xl bg-emerald-50 p-4 text-sm">
+                      <strong>WhatsApp karşılama</strong>
+                      <p className="mt-1" dir={draft.language === "AR" ? "rtl" : "auto"}>
+                        {draft.whatsapp.welcome}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="studio-card">
                 <div className="section-kicker">
                   İÇERİK KONTROLÜ · {policy?.version}

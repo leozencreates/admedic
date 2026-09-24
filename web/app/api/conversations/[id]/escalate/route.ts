@@ -1,6 +1,6 @@
 import { prisma } from "@admedic/database";
-import { requireActor, requireRole, EDIT_ROLES } from "../../../../_lib/auth";
-import { body, respond, sameOrigin } from "../../../../_lib/http";
+import { requireActor, requireRole, CARE_ROLES } from "../../../../_lib/auth";
+import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { z } from "zod";
 export const maxDuration = 10;
 const EscalateSchema = z.object({ note: z.string().max(1000).optional() }).strict();
@@ -8,7 +8,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, EDIT_ROLES);
+    requireRole(actor, CARE_ROLES);
     const { id } = await params;
     const input = await body(request, EscalateSchema);
     const conversation = await prisma.conversation.findFirst({
@@ -23,12 +23,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await prisma.message.create({
       data: {
         conversationId: conversation.id,
-        direction: "OUTGOING" as const, channel: "WHATSAPP" as any,
+        direction: "OUTGOING",
+        channel: conversation.channel,
         content: `⚠ Konuşma koordinatör ${actor.userId} tarafından devredildi. ${input.note ?? ""}`,
-        sender: "system" as const, metadata: { type: "ESCALATION" },
+        sender: "system",
+        metadata: { type: "ESCALATION" },
       },
     });
     return { conversation: { id, status: "ESCALATED" } };
   });
 }
-import { HttpError } from "../../../../_lib/http";

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { encrypt } from "../../../../_lib/encrypt";
 import { leadLookupHash } from "../../../../_lib/lead-hash";
 import { verifyWebhookSignature } from "../../../../_lib/verify";
+import { sendWhatsAppMessage } from "../../../../_lib/whatsapp";
 export const maxDuration = 10;
 
 const WebhookSchema = z.object({
@@ -97,6 +98,14 @@ async function ingestLeadGen(input: {
     normalizeField(fields, "last_name") ??
     fullName.split(" ").slice(1).join(" ") ??
     "";
+  const interestedService = normalizeField(
+    fields,
+    "interested_service",
+    "service",
+    "hizmet",
+    "treatment",
+    "treatment_name",
+  );
   const hash = leadLookupHash({ orgId: input.orgId, phone, email });
 
   const existingById = await prisma.lead.findFirst({
@@ -139,6 +148,7 @@ async function ingestLeadGen(input: {
       country: normalizeField(fields, "country_code", "country") ?? null,
       language: (normalizeField(fields, "language") ?? "tr").toLowerCase(),
       channel: "LEAD_AD",
+      interestedService,
       status: "NEW",
       lookupHash: hash,
       metadata: {
@@ -171,12 +181,18 @@ async function ingestMessaging(input: {
   pageId: string;
   orgId: string;
   workspaceId: string;
+  isInstagram: boolean;
 }): Promise<number> {
   const mid = input.msg.message?.mid;
   if (!mid || input.msg.message?.is_echo) return 0;
   const psid = input.msg.sender?.id ?? null;
   const phone = input.msg.sender?.phone_number ?? null;
-  const hash = leadLookupHash({ orgId: input.orgId, phone, psid });
+  const hash = leadLookupHash({
+    orgId: input.orgId,
+    phone,
+    psid,
+    igId: input.isInstagram ? psid : undefined,
+  });
   if (!hash) return 0;
 
   const existing = await prisma.lead.findFirst({
@@ -202,7 +218,11 @@ async function ingestMessaging(input: {
     },
   });
 
-  const channel = phone ? "WHATSAPP" : "MESSENGER";
+  const channel = input.isInstagram
+    ? "INSTAGRAM"
+    : phone
+      ? "WHATSAPP"
+      : "MESSENGER" as const;
   let conversationId = lead?.conversations[0]?.id ?? null;
   let metadata = lead?.metadata as Record<string, unknown> | null;
   let leadId = lead?.id ?? null;
@@ -243,19 +263,46 @@ async function ingestMessaging(input: {
       data: {
         leadId,
         workspaceId: input.workspaceId,
-        channel: channel as "WHATSAPP" | "MESSENGER",
+        channel,
         status: "ACTIVE",
         initiatedBy: "bot",
       },
     });
     conversationId = conversation.id;
+    if (channel === "WHATSAPP") {
+      const templateName = process.env.WHATSAPP_GREETING_TEMPLATE ?? "";
+      if (templateName) {
+        const greeting = await sendWhatsAppMessage(
+          { phone, language: "tr" },
+          "",
+          templateName,
+          {},
+        );
+        if (!greeting.error) {
+          await prisma.message.create({
+            data: {
+              conversationId,
+              direction: "OUTGOING",
+              channel: "WHATSAPP",
+              content: "(otomatik karşılama)",
+              sender: "bot",
+              metadata: {
+                whatsappTemplate: templateName,
+                autoGreet: true,
+                whatsappResult: { id: greeting.id ?? null, error: null },
+              },
+            },
+          });
+        }
+      }
+    }
   }
 
   await prisma.message.create({
     data: {
       conversationId,
       direction: "INCOMING",
-      channel: channel as "WHATSAPP" | "MESSENGER",
+      channel,
       content: input.msg.message?.text ?? "(ek içerik)",
       sender: psid ?? "external",
       metadata: { mid },
@@ -297,7 +344,7 @@ export async function POST(request: Request) {
             { instaId: entry.id },
           ],
         },
-        select: { id: true, orgId: true },
+        select: { id: true, orgId: true, instaId: true },
       });
       if (!connection) {
         ignoredPages++;
@@ -328,6 +375,7 @@ export async function POST(request: Request) {
             pageId: entry.id,
             orgId: connection.orgId,
             workspaceId: workspace.id,
+            isInstagram: connection.instaId === entry.id,
           });
         }
       }

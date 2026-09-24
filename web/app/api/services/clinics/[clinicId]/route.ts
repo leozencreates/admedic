@@ -11,6 +11,8 @@ const ServiceSchema = z.object({
   durationDays: z.number().int().min(1).max(365).optional().nullable(),
   priceCents: z.number().int().positive().optional().nullable(),
   recoveryRate: z.number().min(0).max(1).optional().default(0),
+  packageIncludes: z.array(z.string().min(1).max(200)).optional().default([]),
+  showStartingPrice: z.boolean().optional().default(true),
 }).strict();
 export async function GET(request: Request, { params }: { params: Promise<{ clinicId: string }> }) {
   return respond(async () => {
@@ -24,7 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ clin
       services: await prisma.service.findMany({
         where: { clinicId },
         orderBy: { createdAt: "desc" },
-        select: { id: true, name: true, slug: true, category: true, priceCents: true, status: true, createdAt: true },
+        select: { id: true, name: true, slug: true, category: true, priceCents: true, packageIncludes: true, showStartingPrice: true, status: true, createdAt: true },
       }),
     };
   });
@@ -50,6 +52,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cli
         durationDays: input.durationDays ?? null,
         priceCents: input.priceCents ?? null,
         recoveryRate: input.recoveryRate,
+        packageIncludes: input.packageIncludes,
+        showStartingPrice: input.showStartingPrice,
       },
     });
     return { service };

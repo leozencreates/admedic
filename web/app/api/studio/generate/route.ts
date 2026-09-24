@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         },
       });
       const content = { ...brief, variants: result.variants };
-      const policy = await policyFor(content);
+      const policy = await policyFor(content, actor.workspaceId);
       return { content, policy };
     } catch {
       await prisma.llmCallLog.update({

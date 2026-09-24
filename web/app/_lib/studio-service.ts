@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "@admedic/database";
-import { DraftSchema, type DraftContent } from "@admedic/llm";
+import { loadEnv } from "@admedic/config";
+import { classifyRisk, DraftSchema, type DraftContent } from "@admedic/llm";
 import { z } from "zod";
 import { type Actor, EDIT_ROLES, requireRole } from "./auth";
 import { checkPolicyWithRules } from "./policy-loader";
@@ -21,12 +22,37 @@ export const DraftActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
-export async function policyFor(content: DraftContent) {
-  return checkPolicyWithRules(
-    content.variants
-      .map((v) => `${v.headline}\n${v.text}\n${v.cta}`)
-      .join("\n"),
+/**
+ * Politika kontrolü (spec 3.5): katman 1 kural motoru + tenant brand yasaklı
+ * ifadeleri, katman 2 LLM best-effort (anahtar yoksa/hata olursa llm:null).
+ */
+export async function policyFor(content: DraftContent, workspaceId: string) {
+  const text = content.variants
+    .map((v) => [v.headline, v.text, v.cta, v.description])
+    .flat()
+    .filter(Boolean)
+    .join("\n");
+  const clinics = await prisma.clinicProfile.findMany({
+    where: { workspaceId, status: "ACTIVE" },
+    select: { brandBannedPhrases: true },
+  });
+  const policy = await checkPolicyWithRules(
+    text,
+    clinics.flatMap((c) => c.brandBannedPhrases),
   );
+  const llm = await llmRisk(text);
+  return llm ? { ...policy, llm } : policy;
+}
+async function llmRisk(text: string) {
+  loadEnv();
+  const key = process.env.ANTHROPIC_API_KEY;
+  const model = process.env.LLM_MODEL;
+  if (!key || !model) return null;
+  try {
+    return await classifyRisk(text, key, model);
+  } catch {
+    return null;
+  }
 }
 function audit(
   tx: Prisma.TransactionClient,
@@ -52,7 +78,7 @@ function audit(
 }
 export async function createDraft(actor: Actor, content: DraftContent) {
   requireRole(actor, EDIT_ROLES);
-  const policy = await policyFor(content);
+  const policy = await policyFor(content, actor.workspaceId);
   return prisma.$transaction(async (tx) => {
     const draft = await tx.studioDraft.create({
       data: {
@@ -106,7 +132,7 @@ export async function changeDraft(
       input.action === "edit"
         ? input.content
         : DraftSchema.parse(draft.content);
-    const policy = await policyFor(content);
+    const policy = await policyFor(content, actor.workspaceId);
     const before = {
       status: draft.status,
       version: draft.version,
