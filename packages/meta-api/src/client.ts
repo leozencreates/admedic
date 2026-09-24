@@ -1,11 +1,13 @@
 import { graphGet, graphPost, getGraphVersion } from "./http";
 import { normalizeInsightRow } from "./parse";
 import type {
+  CreateCampaignInput,
   MetaAccount,
   MetaAd,
   MetaAdSet,
   MetaCampaign,
   MetaClientOptions,
+  MetaCreateCampaignResult,
   MetaInsightLevel,
   MetaInsightOptions,
   MetaInsightRow,
@@ -31,6 +33,10 @@ export interface MetaClientLike {
     token: string,
   ): Promise<MetaUpdateResult>;
   setStatus(input: SetStatusInput, token: string): Promise<MetaUpdateResult>;
+  createCampaign(
+    input: CreateCampaignInput,
+    token: string,
+  ): Promise<MetaCreateCampaignResult>;
 }
 
 function num(v: unknown): number | undefined {
@@ -232,6 +238,33 @@ export class MetaMarketingClient implements MetaClientLike {
       success: true,
       entityType: input.entityType,
       entityId: input.entityId,
+      metaResponse: body,
+    };
+  }
+
+  async createCampaign(
+    input: CreateCampaignInput,
+    token: string,
+  ): Promise<MetaCreateCampaignResult> {
+    const body = (await graphPost(
+      this.version,
+      `act_${input.accountId}/campaigns`,
+      {
+        name: input.name,
+        objective: input.objective,
+        status: input.status ?? "PAUSED",
+        ...(input.dailyBudgetCents
+          ? { daily_budget: input.dailyBudgetCents }
+          : {}),
+      },
+      token,
+      this.fetchFn,
+    )) as { id?: unknown };
+    const id = body?.id;
+    if (!id) throw new Error("Meta kampanya oluşturmadı: id dönmedi.");
+    return {
+      success: true,
+      campaignId: String(id),
       metaResponse: body,
     };
   }

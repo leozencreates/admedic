@@ -171,6 +171,21 @@ export interface SetStatusInput {
   status: "ACTIVE" | "PAUSED";
 }
 
+export interface CreateCampaignInput {
+  accountId: string; // act_... olmadan, ham hesap id
+  name: string;
+  objective: string;
+  dailyBudgetCents?: number;
+  /** Yayın zinciri kuralı: yeni kampanyalar her zaman önce PAUSED oluşturulur. */
+  status?: "PAUSED" | "ACTIVE";
+}
+
+export interface MetaCreateCampaignResult {
+  success: boolean;
+  campaignId: string;
+  metaResponse?: unknown;
+}
+
 export interface UpdateOrigin {
   source: "MANUAL" | "AGENT";
   requestId?: string;

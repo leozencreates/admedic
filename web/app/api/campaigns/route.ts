@@ -1,7 +1,8 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
-import { body, respond, sameOrigin } from "../../_lib/http";
+import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
+import { checkPolicy } from "@admedic/policy";
 import { logAudit } from "../../_lib/audit";
 export const maxDuration = 15;
 const CampaignSchema = z.object({
@@ -25,15 +26,26 @@ export async function POST(request: Request) {
     const actor = await requireActor();
     requireRole(actor, EDIT_ROLES);
     const input = await body(request, CampaignSchema);
+    const budget = input.budget ?? 1000;
     const adAccount = await prisma.adAccount.findFirst({ where: { orgId: actor.orgId } });
     if (!adAccount) throw new HttpError(400, "Reklam hesabı bulunamadı.");
+    const org = await prisma.organization.findUnique({
+      where: { id: actor.orgId },
+      select: { monthlyAdBudgetCap: true },
+    });
+    if (org?.monthlyAdBudgetCap != null && budget * 30 > org.monthlyAdBudgetCap)
+      throw new HttpError(422, "Taslak bütçesi kuruluşun aylık üst sınırını aşıyor.");
+    const policy = checkPolicy(input.name);
     const campaign = await prisma.campaign.create({
       data: {
         adAccountId: adAccount.id,
         workspaceId: actor.workspaceId,
         name: input.name,
         objective: input.objective,
-        dailyBudget: input.budget,
+        dailyBudget: budget,
+        status: "PAUSED",
+        policyRisk: policy.risk,
+        policyReport: policy,
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 86400000),
       },
@@ -43,9 +55,8 @@ export async function POST(request: Request) {
       action: "CAMPAIGN_CREATED",
       entityType: "CAMPAIGN",
       entityId: campaign.id,
-      after: { name: campaign.name, objective: campaign.objective, dailyBudget: campaign.dailyBudget },
+      after: { name: campaign.name, objective: campaign.objective, dailyBudget: campaign.dailyBudget, policyRisk: policy.risk, workflowStatus: "DRAFT" },
     });
-    return { campaign: { id: campaign.id, name: campaign.name, status: campaign.status, objective: campaign.objective, budget: campaign.dailyBudget } };
+    return { campaign: { id: campaign.id, name: campaign.name, status: campaign.status, workflowStatus: campaign.workflowStatus, objective: campaign.objective, budget: campaign.dailyBudget, policyRisk: policy.risk } };
   });
 }
-import { HttpError } from "../../_lib/http";

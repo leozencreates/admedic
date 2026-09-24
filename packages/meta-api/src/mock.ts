@@ -1,12 +1,14 @@
 import { mulberry32, seedFromString } from "@admedic/shared";
 
 import type {
+  CreateCampaignInput,
   DatePreset,
   InsightDateRange,
   MetaAccount,
   MetaAd,
   MetaAdSet,
   MetaCampaign,
+  MetaCreateCampaignResult,
   MetaInsightLevel,
   MetaInsightOptions,
   MetaInsightRow,
@@ -278,6 +280,18 @@ export class MockMetaClient {
       entityType: input.entityType,
       entityId: input.entityId,
       metaResponse: { success: true },
+    };
+  }
+
+  async createCampaign(
+    input: CreateCampaignInput,
+    _token: string,
+  ): Promise<MetaCreateCampaignResult> {
+    const id = `cmp_mock_pub_${(seedFromString(input.name) % 9000) + 1000}`;
+    return {
+      success: true,
+      campaignId: id,
+      metaResponse: { id, success: true, status: input.status ?? "PAUSED" },
     };
   }
 

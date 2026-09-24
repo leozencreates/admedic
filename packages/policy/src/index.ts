@@ -1,9 +1,16 @@
-export const POLICY_VERSION = "studio-policy-1";
+export const POLICY_VERSION = "studio-policy-2";
+export type PolicyRisk = "LOW" | "MEDIUM" | "HIGH";
 export type Finding = { rule: string; reason: string; suggestion: string };
-const rules = [
+export type PolicyResult = {
+  version: string;
+  risk: PolicyRisk;
+  findings: Finding[];
+};
+
+const HARD_RULES = [
   {
     id: "guarantee",
-    pattern: /garanti|kesin sonuç|guarantee|garantiert|гарант|مضمون|مضمونة/iu,
+    pattern: /garanti|kesin sonuç|guarantee|guaranteed|garantiert|гарант|مضمون|مضمونة/iu,
     reason: "Kesin sonuç veya garanti ifadesi.",
     suggestion: "Sonuç vaadi yerine hizmet ve görüşme sürecini anlatın.",
   },
@@ -24,13 +31,24 @@ const rules = [
   },
 ];
 
-export function checkPolicy(text: string, bannedPhrases: string[] = []) {
-  const normalized = text
+function normalize(text: string) {
+  return text
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF]/g, "");
-  const findings: Finding[] = rules
-    .filter((r) => r.pattern.test(normalized))
-    .map((r) => ({ rule: r.id, reason: r.reason, suggestion: r.suggestion }));
+}
+
+export function checkPolicy(
+  text: string,
+  bannedPhrases: string[] = [],
+): PolicyResult {
+  const normalized = normalize(text);
+  const findings: Finding[] = HARD_RULES.filter((r) =>
+    r.pattern.test(normalized),
+  ).map((r) => ({
+    rule: r.id,
+    reason: r.reason,
+    suggestion: r.suggestion,
+  }));
   if (
     bannedPhrases.some(
       (s) =>
@@ -47,9 +65,29 @@ export function checkPolicy(text: string, bannedPhrases: string[] = []) {
         "Klinik içerik kısıtlarını karşılayacak şekilde yeniden yazın.",
     });
   }
+  const hasHard = findings.some((f) =>
+    HARD_RULES.some((r) => r.id === f.rule),
+  );
+  const risk: PolicyRisk = hasHard ? "HIGH" : findings.length ? "MEDIUM" : "LOW";
+  return { version: POLICY_VERSION, risk, findings };
+}
+
+export type PolicyCheckItem = { id: string; text: string };
+export function checkPolicyBatch(
+  items: PolicyCheckItem[],
+  bannedPhrases: string[] = [],
+) {
+  const results = items.map((item) => ({
+    id: item.id,
+    ...checkPolicy(item.text, bannedPhrases),
+  }));
   return {
     version: POLICY_VERSION,
-    risk: findings.length ? ("HIGH" as const) : ("LOW" as const),
-    findings,
+    results,
+    risk: results.some((r) => r.risk === "HIGH")
+      ? ("HIGH" as const)
+      : results.some((r) => r.risk === "MEDIUM")
+        ? ("MEDIUM" as const)
+        : ("LOW" as const),
   };
 }

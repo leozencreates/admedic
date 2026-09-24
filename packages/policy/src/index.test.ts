@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkPolicy } from "./index";
+import { checkPolicy, checkPolicyBatch } from "./index";
 const fixtures = [
   {
     lang: "TR",
@@ -48,19 +48,38 @@ for (const f of fixtures)
       ["guarantee", f.guarantee],
       ["before-after", f.before],
       ["personal-attribute", f.personal],
-      ["clinic-restriction", f.banned],
-    ]) {
-      it(`${rule} detects risky text and permits neutral content`, () => {
-        const banned = rule === "clinic-restriction" ? [f.banned] : [];
-        expect(checkPolicy(text, banned).findings.map((x) => x.rule)).toContain(
-          rule,
-        );
-        expect(checkPolicy(f.good, banned).findings).toEqual([]);
-        expect(checkPolicy(text, banned).risk).toBe("HIGH");
+    ] as const) {
+      it(`${rule} is HIGH risk and neutral content is LOW`, () => {
+        const res = checkPolicy(text);
+        expect(res.findings.map((x) => x.rule)).toContain(rule);
+        expect(res.risk).toBe("HIGH");
+        expect(checkPolicy(f.good).risk).toBe("LOW");
+        expect(checkPolicy(f.good).findings).toEqual([]);
       });
     }
+    it("tenant banned phrase is MEDIUM risk (blocked-only warning), hard rules stay HIGH", () => {
+      const banned = checkPolicy(f.banned, [f.banned]);
+      expect(banned.findings.map((x) => x.rule)).toContain("clinic-restriction");
+      expect(banned.risk).toBe("MEDIUM");
+      expect(checkPolicy(f.good, [f.banned]).risk).toBe("LOW");
+      expect(checkPolicy(f.guarantee, [f.banned]).risk).toBe("HIGH");
+    });
   });
 it("normalizes invisible characters and ignores blank restrictions", () => {
   expect(checkPolicy("guaran\u200bteed").risk).toBe("HIGH");
   expect(checkPolicy("Service information", [" "]).risk).toBe("LOW");
+});
+it("batch aggregates highest risk across items", () => {
+  const batch = checkPolicyBatch(
+    [
+      { id: "a", text: "Contact our team." },
+      { id: "b", text: "Guaranteed results" },
+      { id: "c", text: "özel yasak" },
+    ],
+    ["özel yasak"],
+  );
+  expect(batch.risk).toBe("HIGH");
+  expect(batch.results.find((r) => r.id === "a")?.risk).toBe("LOW");
+  expect(batch.results.find((r) => r.id === "b")?.risk).toBe("HIGH");
+  expect(batch.results.find((r) => r.id === "c")?.risk).toBe("MEDIUM");
 });

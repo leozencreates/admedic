@@ -89,4 +89,17 @@ describe("MockMetaClient", () => {
     );
     expect(s.success).toBe(true);
   });
+  it("createCampaign deterministik PAUSED kampanya id'si üretir", async () => {
+    const first = await client.createCampaign(
+      { accountId: "act_mock_001", name: "Yaz Kampanyası", objective: "OUTCOME_LEADS", status: "PAUSED" },
+      TOKEN,
+    );
+    const second = await client.createCampaign(
+      { accountId: "act_mock_001", name: "Yaz Kampanyası", objective: "OUTCOME_LEADS", status: "PAUSED" },
+      TOKEN,
+    );
+    expect(first.success).toBe(true);
+    expect(first.campaignId).toMatch(/^cmp_mock_pub_\d+$/);
+    expect(first.campaignId).toBe(second.campaignId);
+  });
 });

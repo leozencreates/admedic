@@ -51,6 +51,22 @@ enum EntityStatus {
   DELETED
 }
 
+enum CampaignWorkflowStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED_PAUSED
+  ACTIVE
+  ARCHIVED
+}
+
+enum PolicyRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum SyncStatus {
   OK
   ERROR
@@ -185,6 +201,7 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  monthlyAdBudgetCap Int? // minor; kampanya taslak toplam bütçesi bu sınırı aşarsa bloklanır
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -341,7 +358,7 @@ model Campaign {
   metaCampaignId String?
   name           String
   objective      String?
-  status         EntityStatus @default(ACTIVE)
+  status         EntityStatus @default(PAUSED)
   budgetType     String? // DAILY | LIFETIME | NONE
   dailyBudget    Int?      // minor
   lifetimeBudget Int?      // minor
@@ -352,6 +369,14 @@ model Campaign {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   syncedAt       DateTime?
+
+  workflowStatus CampaignWorkflowStatus @default(DRAFT)
+  policyRisk     PolicyRisk?
+  policyReport   Json? // checkPolicy çıktısı (version, findings)
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectionBy    String?
+  rejectionReason String?
 
   adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)

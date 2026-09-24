@@ -1,0 +1,72 @@
+export type PlanObjective = "MAX_ROAS" | "MAX_CONVERSIONS" | "MAX_IMPRESSIONS";
+export type ConversionMethod = "landing_form" | "whatsapp" | "instagram_dm";
+
+export interface CampaignPlanInput {
+  objective: PlanObjective;
+  dailyBudgetCents: number;
+  monthlyCapCents?: number;
+  markets: string[];
+  ageMin?: number;
+  ageMax?: number;
+  languages: string[];
+  conversionMethod: ConversionMethod;
+}
+
+export interface CampaignPlan {
+  name: string;
+  dailyBudgetCents: number;
+  monthlyProjectedCents: number;
+  structure: string;
+  targetingRatione: string;
+  blocked: boolean;
+  blockingReasons: string[];
+}
+
+const OBJECTIVE_LABEL: Record<PlanObjective, string> = {
+  MAX_ROAS: "Maks. ROAS",
+  MAX_CONVERSIONS: "Maks. Dönüşüm",
+  MAX_IMPRESSIONS: "Maks. Görüntüleme",
+};
+
+const METHOD_LABEL: Record<ConversionMethod, string> = {
+  landing_form: "Açılış Sayfası",
+  whatsapp: "WhatsApp",
+  instagram_dm: "Instagram DM",
+};
+
+export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
+  const blockingReasons: string[] = [];
+  const ageMin = input.ageMin ?? 18;
+  const ageMax = input.ageMax ?? 54;
+  if (ageMin < 18 || ageMax < 18)
+    blockingReasons.push("Hedefleme 18 yaş altı kullanıcıları içeremez.");
+  if (!input.markets.length)
+    blockingReasons.push("En az bir pazar (ülke) seçilmelidir.");
+  if (!Number.isFinite(input.dailyBudgetCents) || input.dailyBudgetCents <= 0)
+    blockingReasons.push("Günlük bütçe pozitif bir değer olmalıdır.");
+  const monthlyProjectedCents = input.dailyBudgetCents * 30;
+  if (
+    input.monthlyCapCents != null &&
+    monthlyProjectedCents > input.monthlyCapCents
+  )
+    blockingReasons.push(
+      `Aylık öngörülen bütçe (${monthlyProjectedCents / 100} TL) kuruluş üst sınırını (${input.monthlyCapCents / 100} TL) aşıyor.`,
+    );
+
+  const mainMarket = input.markets[0] ?? "belirsiz";
+  const lang =
+    input.languages[0] ??
+    (mainMarket === "TR" ? "Türkçe" : mainMarket === "DE" ? "Almanca" : "İngilizce");
+  const label = OBJECTIVE_LABEL[input.objective];
+  const name = `${label} — ${mainMarket}`;
+
+  return {
+    name,
+    dailyBudgetCents: input.dailyBudgetCents,
+    monthlyProjectedCents: monthlyProjectedCents,
+    structure: `1 kontrol + 2 varyant ad set, reklam dili ${lang}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`,
+    targetingRatione: `${ageMin}-${ageMax} yaş, pazarlar: ${input.markets.join(", ")}`,
+    blocked: blockingReasons.length > 0,
+    blockingReasons,
+  };
+}
