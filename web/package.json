@@ -19,6 +19,7 @@
     "@admedic/meta-api": "workspace:*",
     "@admedic/policy": "workspace:*",
     "@admedic/recommendation": "workspace:*",
+    "@admedic/reporting": "workspace:*",
     "@admedic/shared": "workspace:*",
     "next": "16.3.5",
     "react": "^19.3.0",

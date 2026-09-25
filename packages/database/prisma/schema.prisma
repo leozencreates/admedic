@@ -307,6 +307,7 @@ model Workspace {
   agentDecisions      AgentDecision[]
   budgetChanges       BudgetChange[]
   alerts              Alert[]
+  reportDeliveries    ReportDelivery[]
   products            Product[]
   landingPages        LandingPage[]
   auditLogs           AuditLog[]
@@ -802,6 +803,20 @@ model Alert {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status])
+}
+
+model ReportDelivery {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  periodStart  DateTime // raporun kapsadığı haftanın başlangıcı (başlangıç günü, UTC gece yarısı)
+  recipient    String
+  sentAt       DateTime @default(now())
+  error        String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, periodStart])
+  @@index([workspaceId, periodStart])
 }
 
 model AuditLog {

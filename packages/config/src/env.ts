@@ -46,6 +46,12 @@ export const EnvSchema = z.object({
 
   LLM_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default("claude-sonnet-4"),
+
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().default("Admedic <raporlar@admedic.io>"),
+  WEEKLY_REPORT_RECIPIENT: z.string().email().optional(),
+  /** 0=Pazar ... 6=Cumartesi; haftalık rapor e-postasının gönderileceği gün */
+  WEEKLY_REPORT_DAY: z.coerce.number().int().min(0).max(6).default(0),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema> & { metaGraphApiVersion: string };

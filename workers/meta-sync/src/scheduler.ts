@@ -4,6 +4,13 @@ import { loadEnv } from "@admedic/config";
 import { createMetaClient, type MetaClientLike } from "@admedic/meta-api";
 import type { Alert } from "@admedic/database";
 import { AlertSeverity, AlertType } from "@admedic/database";
+import {
+  buildWeeklyReport,
+  isReportDay,
+  reportPeriod,
+  renderReportPdf,
+  sendWeeklyReportEmail,
+} from "@admedic/reporting";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -29,6 +36,7 @@ export interface ScheduledJob {
     insightsSynced: number;
     alertsCreated: number;
     completed: number;
+    emailsSent: number;
   }>;
 }
 export function createMetaSyncScheduler(
@@ -53,6 +61,7 @@ export async function runOnce(): Promise<{
   insightsSynced: number;
   alertsCreated: number;
   completed: number;
+  emailsSent: number;
 }> {
   return runScheduled(createMetaClient());
 }
@@ -63,6 +72,7 @@ async function runScheduled(meta: MetaClientLike) {
   let insightsSynced = 0;
   let alertsCreated = 0;
   let completed = 0;
+  let emailsSent = 0;
   for (const wsId of workspaceIds) {
     const workspace = await prisma.workspace.findUniqueOrThrow({
       where: { id: wsId },
@@ -75,6 +85,7 @@ async function runScheduled(meta: MetaClientLike) {
     insightsSynced += await syncInsights(meta, workspace);
     alertsCreated += await checkConnectionHealth(workspace);
     alertsCreated += await runAnonRetention(org ?? { id: workspace.orgId, retentionDays: 0 }, workspace.id);
+    emailsSent += await deliverWeeklyReport(workspace.id);
     const experiments = await prisma.studioExperiment.findMany({
       where: { draft: { workspaceId: wsId }, status: "RUNNING" },
       include: { draft: { include: { workspace: { include: { adAccounts: true } } } } },
@@ -85,7 +96,37 @@ async function runScheduled(meta: MetaClientLike) {
       completed += result.completed ? 1 : 0;
     }
   }
-  return { insightsSynced, alertsCreated, completed };
+  return { insightsSynced, alertsCreated, completed, emailsSent };
+}
+
+async function deliverWeeklyReport(workspaceId: string): Promise<number> {
+  const env = loadEnv();
+  const reportDay = env.WEEKLY_REPORT_DAY;
+  if (!isReportDay(new Date(), reportDay)) return 0;
+  if (!env.RESEND_API_KEY || !env.WEEKLY_REPORT_RECIPIENT) return 0;
+  const { start } = reportPeriod(new Date(), reportDay);
+  const sent = await prisma.reportDelivery.findUnique({
+    where: { workspaceId_periodStart: { workspaceId, periodStart: start } },
+    select: { id: true },
+  });
+  if (sent) return 0;
+  try {
+    const report = await buildWeeklyReport(workspaceId, new Date(), reportDay);
+    const pdf = await renderReportPdf(report);
+    const result = await sendWeeklyReportEmail(report, pdf);
+    await prisma.reportDelivery.create({
+      data: {
+        workspaceId,
+        periodStart: start,
+        recipient: env.WEEKLY_REPORT_RECIPIENT,
+        error: result.error ?? null,
+      },
+    });
+    return result.error ? 0 : 1;
+  } catch (err) {
+    console.warn(`[reporting] ${workspaceId}: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
 }
 
 async function runAnonRetention(org: { id: string; retentionDays: number | null }, workspaceId: string): Promise<number> {

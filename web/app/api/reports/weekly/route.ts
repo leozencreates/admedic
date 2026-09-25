@@ -1,56 +1,39 @@
-import { prisma } from "@admedic/database";
 import { requireActor } from "../../../_lib/auth";
-import { respond, sameOrigin } from "../../../_lib/http";
+import { sameOrigin, HttpError } from "../../../_lib/http";
+import { buildWeeklyReport, renderReportPdf } from "@admedic/reporting";
+
 export const maxDuration = 30;
-export async function GET() {
-  return respond(async () => {
+
+export async function GET(request: Request) {
+  try {
+    sameOrigin(request);
     const actor = await requireActor();
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(endOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
-    const [leads, insights, campaigns, alerts] = await Promise.all([
-      prisma.lead.findMany({
-        where: { workspaceId: { equals: actor.workspaceId }, createdAt: { gte: startOfWeek, lte: endOfWeek } },
-        select: { id: true, status: true, channel: true, createdAt: true },
-      }),
-      prisma.insightSnapshot.findMany({
-        where: { workspaceId: { equals: actor.workspaceId }, date: { gte: startOfWeek, lte: endOfWeek } },
-        select: { date: true, spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true },
-        orderBy: { date: "asc" },
-      }),
-      prisma.campaign.findMany({
-        where: { workspaceId: { equals: actor.workspaceId }, status: "ACTIVE" },
-        select: { id: true, name: true, createdAt: true },
-      }) as any,
-      prisma.alert.findMany({
-        where: { workspaceId: { equals: actor.workspaceId }, createdAt: { gte: startOfWeek }, read: false },
-        select: { id: true, type: true, severity: true, title: true, createdAt: true },
-        orderBy: { createdAt: "desc" }, take: 20,
-      }),
-    ]);
-    const totalSpend = insights.reduce((s, i) => s + i.spend, 0);
-    const totalImpressions = insights.reduce((s, i) => s + i.impressions, 0);
-    const totalClicks = insights.reduce((s, i) => s + i.clicks, 0);
-    const totalPurchases = insights.reduce((s, i) => s + i.purchases, 0);
-    const ctr = totalImpressions > 0 ? totalClicks / totalImpressions : 0;
-    const qualifiedCount = leads.filter((l) => ["QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED"].includes(l.status)).length;
-    const cpl = qualifiedCount > 0 ? totalSpend / qualifiedCount : null;
-    const newLeads = leads.filter((l) => l.status === "NEW").length;
-    return {
-      report: {
-        period: { start: startOfWeek.toISOString(), end: endOfWeek.toISOString() },
-        summary: {
-          totalSpend, totalImpressions, totalClicks, totalPurchases,
-          ctr: Number(ctr.toFixed(4)), cpl: cpl !== null ? Number((cpl / 100).toFixed(2)) : null,
-          newLeads, qualifiedLeads: qualifiedCount, totalLeads: leads.length,
+    const asPdf = new URL(request.url).searchParams.get("pdf") === "1";
+    if (asPdf) {
+      const report = await buildWeeklyReport(actor.workspaceId);
+      const pdf = await renderReportPdf(report);
+      return new Response(new Uint8Array(pdf), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": `attachment; filename="haftalik-rapor-${report.period.start.slice(0, 10)}.pdf"`,
+          "cache-control": "no-store",
         },
-        experiments: campaigns.map((e: { id: string; name: string; status: string; createdAt: Date }) => ({ id: e.id, name: e.name, status: e.status, createdAt: e.createdAt })),
-        unreadAlerts: alerts.map((a) => ({ id: a.id, type: a.type, severity: a.severity, title: a.title, createdAt: a.createdAt })),
+      });
+    }
+    const report = await buildWeeklyReport(actor.workspaceId);
+    return Response.json({ report }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof HttpError
+            ? error.message
+            : "İşlem tamamlanamadı. Veritabanı bağlantısını kontrol edip tekrar deneyin.",
       },
-    };
-  });
+      {
+        status: error instanceof HttpError ? error.status : 503,
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
+  }
 }

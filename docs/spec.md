@@ -102,7 +102,7 @@ Meta Conversions API, yalnızca sağlık kategorisi için izin verilen olay/alan
 
 ### 3.10 Performans Analizi ve Optimizasyon Önerileri (P0 raporlama, P1 öneri)
 Günlük Insight çekimi (zamanlanmış job). Metrikler: harcama, gösterim, CPM, CTR, lead, CPL, nitelikli lead oranı, konsültasyon/tedavi dönüşümü, pazar/dil/kreatif kırılımı.
-Öneriler P1, tek tıkla onaylanıp uygulanır; otomatik uygulanmaz. Anomali uyarıları. Haftalık PDF/e-posta rapor (P1).
+Öneriler P1, tek tıkla onaylanıp uygulanır; otomatik uygulanmaz. Anomali uyarıları. Haftalık PDF/e-posta rapor (P1) — pdfmake ile PDF, Resend ile e-posta; meta-sync zamanlayıcısında haftalık günde (WEEKLY_REPORT_DAY) dedup'lu gönderim, `api/reports/weekly?pdf=1` ile indirme.
 
 ### 3.11 Uyum, Güvenlik ve Denetim (P0)
 KVKK ve GDPR: lead verileri kişisel veri; sağlık beyanları özel nitelikli kişisel veri. Açık rıza + aydınlatma metni Instant Form/bot akışında eklenebilir; rıza kaydı saklanır. Saklama süresi tenant bazında; süresi dolan lead'ler anonimleştirilir. Veri sahibi talepleri: dışa aktarma/silme endpoint'leri. RBAC + tüm yazma işlemlerinde audit log. Hassas alanlar (telefon, e-posta) alan seviyesinde şifreli. LLM prompt'larında lead adı yerine takma kimlik.

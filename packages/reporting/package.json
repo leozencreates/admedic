@@ -1,19 +1,23 @@
 {
-  "name": "@admedic/meta-sync",
+  "name": "@admedic/reporting",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "scripts": { "test": "vitest run", "lint": "eslint src", "build": "tsc --noEmit", "start": "tsx src/cli.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
   "dependencies": {
     "@admedic/config": "workspace:*",
     "@admedic/database": "workspace:*",
-    "@admedic/meta-api": "workspace:*",
-    "@admedic/reporting": "workspace:*",
-    "@admedic/shared": "workspace:*",
-    "@prisma/client": "^6.19.3"
+    "pdfmake": "^0.2.20",
+    "resend": "^4.0.1"
   },
   "devDependencies": {
+    "@types/pdfmake": "^0.2.9",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"
