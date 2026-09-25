@@ -89,11 +89,21 @@ export async function POST(request: Request) {
         text: result.variants[0].text,
         cta: result.variants[0].cta,
       };
-      const content = { ...enriched, variants: result.variants };
+      const content = {
+        ...enriched,
+        variants: result.variants,
+        ...(result.instantForm ? { instantForm: result.instantForm } : {}),
+        ...(result.whatsapp ? { whatsapp: result.whatsapp } : {}),
+      };
       const policy = await policyFor(content, actor.workspaceId);
       policyRisk = policy.risk;
       policyReport = policy as Prisma.InputJsonValue;
-      brief = { input: enriched, variants: result.variants } as Prisma.InputJsonValue;
+      brief = {
+        input: enriched,
+        variants: result.variants,
+        ...(result.instantForm ? { instantForm: result.instantForm } : {}),
+        ...(result.whatsapp ? { whatsapp: result.whatsapp } : {}),
+      } as Prisma.InputJsonValue;
     }
 
     const creative = await prisma.creative.create({

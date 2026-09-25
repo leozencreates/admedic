@@ -5,27 +5,26 @@ import { encrypt } from "../../../../_lib/encrypt";
 import { leadLookupHash } from "../../../../_lib/lead-hash";
 import { verifyWebhookSignature } from "../../../../_lib/verify";
 import { sendWhatsAppMessage } from "../../../../_lib/whatsapp";
-import { AnthropicProvider } from "@admedic/llm";
+import { generateGreeting, type GreetingLanguageCode } from "@admedic/llm";
 import { loadEnv } from "@admedic/config";
 export const maxDuration = 60;
 
-let _aiProvider: AnthropicProvider | null = null;
-function getAIProvider(): AnthropicProvider {
-  if (!_aiProvider) {
-    const env = loadEnv();
-    _aiProvider = new AnthropicProvider(env.LLM_API_KEY ?? "", env.LLM_MODEL ?? "claude-sonnet-4");
-  }
-  return _aiProvider;
+function aiEnv() {
+  const env = loadEnv();
+  return {
+    key: process.env.ANTHROPIC_API_KEY ?? env.LLM_API_KEY ?? "",
+    model: process.env.LLM_MODEL ?? env.LLM_MODEL ?? "claude-sonnet-4",
+  };
 }
-
-const GREETING_PROMPT = `Bir sağlık turizmi kliniğinin WhatsApp karşılama asistanı ol. Lead'in dilinde ({language}) kısa, sıcak ve profesyonel bir karşılama mesajı yaz. 300 karakteri geçme. Tıbbi tavsiye, teşhis veya fiyat verme. Sadece karşılama ve yardıma yönlendirme yap.`;
 
 async function generateAIGreeting(language: string): Promise<string | null> {
   try {
-    const provider = getAIProvider();
-    const key = language === "ar" ? "AR" : language.toUpperCase() as "TR" | "EN" | "DE" | "RU" | "AR" | "FR" | "NL" | "PL";
-    const result = await provider.generate({ clinic: "Klinik", service: "Sağlık Turizmi", market: "global", language: key as any, budget: 0, duration: 1 });
-    return result.variants[0].text?.slice(0, 300) ?? null;
+    const env = aiEnv();
+    if (!env.key || !env.model) return null;
+    const code = (
+      language === "ar" ? "AR" : language.toUpperCase()
+    ) as GreetingLanguageCode;
+    return await generateGreeting(env.key, env.model, code);
   } catch {
     return null;
   }

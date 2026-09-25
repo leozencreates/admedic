@@ -126,6 +126,8 @@ export interface CreativeProvider {
     brief: Brief,
   ): Promise<{
     variants: DraftContent["variants"];
+    instantForm?: DraftContent["instantForm"];
+    whatsapp?: DraftContent["whatsapp"];
     inputTokens: number;
     outputTokens: number;
   }>;
@@ -179,8 +181,66 @@ export class AnthropicProvider implements CreativeProvider {
     const result = OutputSchema.parse(JSON.parse(raw));
     return {
       variants: result.variants,
+      instantForm: result.instantForm,
+      whatsapp: result.whatsapp,
       inputTokens: data.usage.input_tokens,
       outputTokens: data.usage.output_tokens,
     };
   }
+}
+
+export const GREETING_PROMPT_VERSION = "greeting-v1";
+export type GreetingLanguageCode =
+  | "TR"
+  | "EN"
+  | "DE"
+  | "RU"
+  | "AR"
+  | "FR"
+  | "NL"
+  | "PL";
+const GREETING_SYSTEM = (language: string) =>
+  `Bir sağlık turizmi kliniğinin WhatsApp karşılama asistanısın. Lead'in dilinde (${language}) kısa, sıcak ve profesyonel bir karşılama mesajı yaz. En fazla 300 karakter. İlk mesajda bir bot olduğunu belirt ve bir insan koordinatörün kısa süre içinde devreye gireceğini söyle. Tıbbi tavsiye, teşhis, uygunluk değerlendirmesi veya kesin fiyat verilmez. Yalnızca karşılama mesajını döndür; başlık, CTA veya ek açıklama ekleme.`;
+
+/**
+ * Spec 3.8: Yeni lead'e kendi dilinde otomatik karşılama. Ad-copy üreticisinden
+ * (OutputSchema) ayrı, yalnızca karşılama metni döndüren özel üretim hattı.
+ */
+export async function generateGreeting(
+  key: string,
+  model: string,
+  language: string,
+  transport: typeof fetch = fetch,
+): Promise<string> {
+  const response = await transport("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+    },
+    signal: AbortSignal.timeout(30_000),
+    body: JSON.stringify({
+      model,
+      max_tokens: 400,
+      system: GREETING_SYSTEM(language),
+      messages: [{ role: "user", content: "Karşılama mesajını yaz." }],
+    }),
+  });
+  if (!response.ok)
+    throw new Error("AI karşılama mesajı üretemedi. Ayarları kontrol edin.");
+  const data = z
+    .object({
+      content: z.array(
+        z.object({ type: z.string(), text: z.string().optional() }),
+      ),
+    })
+    .parse(await response.json());
+  const raw = data.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text ?? "")
+    .join("");
+  const message = raw.replace(/^[\s"']+|[\s"']+$/g, "");
+  if (!message) throw new Error("AI boş karşılama üretti.");
+  return message.slice(0, 300);
 }

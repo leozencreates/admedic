@@ -3,6 +3,7 @@ import {
   AnthropicProvider,
   BriefSchema,
   classifyRisk,
+  generateGreeting,
   OutputSchema,
   type Brief,
 } from "./index";
@@ -85,6 +86,53 @@ it("enforces a single-variable experiment and validates brief limits", () => {
   expect(BriefSchema.safeParse({ ...brief, language: "XX" }).success).toBe(
     false,
   );
+});
+it("generates a greeting in the lead's language via the greeting prompt (no ad-copy schema)", async () => {
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(
+      Response.json({ content: [{ type: "text", text: "Merhaba! 👋" }] }),
+    );
+  const message = await generateGreeting("key", "model", "DE", transport);
+  expect(message).toBe("Merhaba! 👋");
+  const request = JSON.parse(String(transport.mock.calls[0][1]?.body));
+  expect(request.system).toContain("karşılama");
+  expect(request.system).toContain("(DE)");
+  expect(request.max_tokens).toBe(400);
+  await expect(
+    generateGreeting(
+      "key",
+      "model",
+      "DE",
+      vi.fn<typeof fetch>().mockResolvedValue(new Response("boom", { status: 500 })),
+    ),
+  ).rejects.toThrow();
+  await expect(
+    generateGreeting(
+      "key",
+      "model",
+      "DE",
+      vi.fn<typeof fetch>().mockResolvedValue(Response.json({ content: [] })),
+    ),
+  ).rejects.toThrow();
+});
+it("passes through instantForm and whatsapp output instead of dropping them", async () => {
+  const outputs = {
+    variants,
+    instantForm: { questions: ["Hizmeti seçin", "Tarih uygun mu?"] },
+    whatsapp: { welcome: "Merhaba! Nasıl yardımcı olabiliriz?" },
+  };
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(payload(JSON.stringify(outputs)));
+  const result = await new AnthropicProvider(
+    "test-placeholder",
+    "test-model",
+    transport,
+  ).generate(brief);
+  expect(result.instantForm).toEqual(outputs.instantForm);
+  expect(result.whatsapp).toEqual(outputs.whatsapp);
+  expect(result.variants).toEqual(variants);
 });
 it("classifies advertising copy risk with validated output and overrides", async () => {
   const payload = (text: string) =>

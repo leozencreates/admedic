@@ -46,7 +46,12 @@ export async function POST(request: Request) {
           durationMs: Date.now() - started,
         },
       });
-      const content = { ...enriched, variants: result.variants };
+      const content = {
+        ...enriched,
+        variants: result.variants,
+        ...(result.instantForm ? { instantForm: result.instantForm } : {}),
+        ...(result.whatsapp ? { whatsapp: result.whatsapp } : {}),
+      };
       const policy = await policyFor(content, actor.workspaceId);
       return { content, policy };
     } catch {
