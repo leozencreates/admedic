@@ -155,6 +155,9 @@ export interface MetaInsightRow {
   spendMajor: number;
   purchases: number;
   purchaseValueMajor: number;
+  leads: number;
+  addsToCart: number;
+  initiatesCheckout: number;
 }
 
 export interface MetaApiErrorShape {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { loadEnv } from "@admedic/config";
-import { healthAllowedEvents, postConversionEvents, sanitizeConversionInput } from "./capi";
+import { healthAllowedEvents, hashUserData, eventIdFor, normalizePhone, postConversionEvents, sanitizeConversionInput } from "./capi";
 import { MetaGraphError } from "./http";
 
 function fakeResponse(bodyObj: unknown, ok: boolean, status: number): Response {
@@ -85,5 +85,35 @@ describe("capi yardımcısı", () => {
         fetchFn: fetchFn as unknown as typeof fetch,
       }),
     ).rejects.toThrow(MetaGraphError);
+  });
+
+  it("hashUserData em/ph/fn/ln'yi sha256 ile normalize edip gönderir; sağlık verisi sızmaz", () => {
+    const data = hashUserData({
+      email: "  Guest@Example.COM ",
+      phone: "+49 (0)123 456789",
+      firstName: "Ada",
+      lastName: "Yılmaz",
+      country: "DE",
+      externalId: "lookup-hash",
+    });
+    expect(data.em).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.ph).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.fn).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.ln).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.ct).toBe("DE");
+    expect(data.external_id).toBe("lookup-hash");
+    expect(data).not.toHaveProperty("diagnosis");
+    // normalize: e-posta küçük harfe iner, telefonda + ve rakamlar korunur
+    expect(normalizePhone("+49 (0)123 456789")).toBe("+490123456789");
+  });
+
+  it("eventIdFor aynı lead+olay+gün için kararlıdır (idempotente)", () => {
+    const d = new Date("2026-09-26T10:00:00Z");
+    const a = eventIdFor({ prefix: "crm", leadId: "L1", eventName: "LEAD", date: d });
+    const b = eventIdFor({ prefix: "crm", leadId: "L1", eventName: "LEAD", date: d });
+    const other = eventIdFor({ prefix: "crm", leadId: "L1", eventName: "PURCHASE", date: d });
+    expect(a).toBe(b);
+    expect(a).not.toBe(other);
+    expect(a).toContain("L1");
   });
 });

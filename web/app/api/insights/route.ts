@@ -11,7 +11,7 @@ export async function GET() {
     const [snapshots, alerts, recommendations, campaigns, campaignSums, leads, qualifiedLeads] = await Promise.all([
       prisma.insightSnapshot.findMany({
         where: { workspaceId: actor.workspaceId, date: { gte: last7d } },
-        select: { date: true, spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true, ctr: true, cpc: true, frequency: true, linkClicks: true, addsToCart: true, initiatesCheckout: true, reach: true },
+        select: { date: true, spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true, ctr: true, cpc: true, frequency: true, linkClicks: true, addsToCart: true, initiatesCheckout: true, leads: true, reach: true },
         orderBy: { date: "asc" }, take: 30,
       }),
       prisma.alert.findMany({
@@ -31,8 +31,8 @@ export async function GET() {
       prisma.insightSnapshot.groupBy({
         by: ["campaignId"],
         where: { workspaceId: actor.workspaceId, date: { gte: last7d }, campaignId: { not: null } },
-        _sum: { spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true, addsToCart: true, initiatesCheckout: true },
-      }) as unknown as Array<{ campaignId: string | null; _sum: { spend: number | null; impressions: number | null; clicks: number | null; purchases: number | null; conversionValue: number | null; addsToCart: number | null; initiatesCheckout: number | null } }>,
+        _sum: { spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true, leads: true },
+      }) as unknown as Array<{ campaignId: string | null; _sum: { spend: number | null; impressions: number | null; clicks: number | null; purchases: number | null; conversionValue: number | null; leads: number | null } }>,
       prisma.lead.aggregate({
         where: { workspaceId: actor.workspaceId, createdAt: { gte: last7d } },
         _count: { id: true },
@@ -47,25 +47,21 @@ export async function GET() {
     const totalClicks = snapshots.reduce((s, i) => s + i.clicks, 0);
     const totalPurchases = snapshots.reduce((s, i) => s + i.purchases, 0);
     const totalConvValue = snapshots.reduce((s, i) => s + i.conversionValue, 0);
-    const totalAddsToCart = snapshots.reduce((s, i) => s + (i.addsToCart ?? 0), 0);
-    const totalInitiatesCheckout = snapshots.reduce((s, i) => s + (i.initiatesCheckout ?? 0), 0);
-    const totalLeads = totalPurchases + totalAddsToCart + totalInitiatesCheckout;
-    const totalClicksForCpl = snapshots.reduce((s, i) => s + (i.linkClicks ?? i.clicks ?? 0), 0);
     const totalReach = snapshots.reduce((s, i) => s + (i.reach ?? 0), 0);
     const ctr = totalImpressions > 0 ? totalClicks / totalImpressions : 0;
     const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
     const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : null;
-    const cpl = totalLeads > 0 ? totalSpend / totalLeads : null;
     const reachRate = totalImpressions > 0 ? totalReach / totalImpressions : 0;
     const qualifiedCount = qualifiedLeads._count.id;
     const totalLeadCount = leads._count.id;
     const qualifiedRatio = totalLeadCount > 0 ? qualifiedCount / totalLeadCount : 0;
+    const cpl = totalLeadCount > 0 ? totalSpend / totalLeadCount : null;
     const daily = snapshots.map((s) => ({ date: s.date.toISOString().slice(0, 10), spend: s.spend, clicks: s.clicks, purchases: s.purchases, impressions: s.impressions, ctr: s.ctr, cpc: s.cpc }));
     const byCampaign = new Map(campaignSums.map((g) => [g.campaignId, g._sum]));
     const campaignBreakdown = campaigns.map((c) => {
       const sum = byCampaign.get(c.id);
       const spent = sum?.spend ?? 0;
-      const leadCount = (sum?.addsToCart ?? 0) + (sum?.initiatesCheckout ?? 0) + (sum?.purchases ?? 0);
+      const leadCount = sum?.leads ?? 0;
       const cplVal = leadCount > 0 ? spent / leadCount : null;
       return { id: c.id, name: c.name, objective: c.objective, budget: c.dailyBudget ?? 0, spent, spendPercent: c.dailyBudget ? Math.round((spent / c.dailyBudget) * 100) : 0, leadCount, cpl: cplVal };
     });

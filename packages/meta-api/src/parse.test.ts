@@ -66,6 +66,23 @@ describe("normalizeInsightRow", () => {
     expect(row.purchaseValueMajor).toBe(0);
     expect(row.adId).toBeUndefined();
   });
+
+  it("lead/add_to_cart/initiate_checkout action türlerini ayrıştırır (spec 3.9)", () => {
+    const row = normalizeInsightRow({
+      impressions: "120",
+      spend: "9.5",
+      actions: [
+        { action_type: "lead", value: "7" },
+        { action_type: "add_to_cart", value: "4" },
+        { action_type: "initiate_checkout", value: "2" },
+        { action_type: "purchase", value: "1" },
+      ],
+    });
+    expect(row.leads).toBe(7);
+    expect(row.addsToCart).toBe(4);
+    expect(row.initiatesCheckout).toBe(2);
+    expect(row.purchases).toBe(1);
+  });
 });
 
 describe("normalizeCtr", () => {

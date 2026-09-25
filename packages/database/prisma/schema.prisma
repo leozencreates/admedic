@@ -540,6 +540,7 @@ model InsightSnapshot {
   landingPageViews   Int @default(0)
   addsToCart         Int @default(0)
   initiatesCheckout  Int @default(0)
+  leads              Int @default(0) // Meta "lead"/"leadgen" action (spec 3.9)
   purchases          Int @default(0)
   conversionValue    Int @default(0) // minor
   frequency          Float?

@@ -1,10 +1,11 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
-import { postConversionEvents, healthAllowedEvents } from "@admedic/meta-api";
+import { postConversionEvents, healthAllowedEvents, hashUserData, eventIdFor } from "@admedic/meta-api";
 import { loadEnv } from "@admedic/config";
 import { z } from "zod";
 import { logAudit } from "../../../_lib/audit";
+import { decrypt } from "../../../_lib/encrypt";
 import { checkPolicy } from "@admedic/policy";
 import { requireLiveMetaConnection } from "../../../_lib/meta-connection";
 import { createMetaClient, MOCK_AD_ACCOUNT_ID } from "@admedic/meta-api";
@@ -49,16 +50,24 @@ export async function POST(request: Request) {
     const metaAccountId = (adAccount.metaAccountId ?? MOCK_AD_ACCOUNT_ID).replace(/^act_/, "");
     const meta = createMetaClient();
 
-    const externalId = `crm_${lead.id}_${input.eventName}_${Date.now()}`;
+    const externalId = eventIdFor({ prefix: "crm", leadId: lead.id, eventName: input.eventName });
+    const userData = hashUserData({
+      email: lead.email ? decrypt(lead.email) : null,
+      phone: lead.phone ? decrypt(lead.phone) : null,
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      country: lead.country,
+      externalId: lead.lookupHash,
+    });
     const metaResult = await postConversionEvents(
       metaAccountId,
       [
         {
           eventName: input.eventName,
           eventTime: new Date().toISOString(),
-          actionSource: input.eventName === "LEAD" ? "offline_conversion" : "website",
+          actionSource: "offline_conversion",
           eventId: externalId,
-          userData: { external_id: lead.lookupHash ?? undefined },
+          userData,
           customData: {
             leadId: lead.id,
             status: lead.status,

@@ -48,6 +48,12 @@ export function normalizeInsightRow(raw: RawInsightRow): MetaInsightRow {
     actionValue(actions, "omni_purchase") ||
     0;
   const purchaseValue = actionValue(actionValues, "purchase", "value");
+  const leads =
+    actionValue(actions, "lead") ||
+    actionValue(actions, "leadgen") ||
+    0;
+  const addsToCart = actionValue(actions, "add_to_cart");
+  const initiatesCheckout = actionValue(actions, "initiate_checkout");
   return {
     dateStart: String(raw.date_start ?? ""),
     dateStop: String(raw.date_stop ?? ""),
@@ -72,5 +78,8 @@ export function normalizeInsightRow(raw: RawInsightRow): MetaInsightRow {
     spendMajor: asNumber(raw.spend),
     purchases,
     purchaseValueMajor: purchaseValue,
+    leads,
+    addsToCart,
+    initiatesCheckout,
   };
 }

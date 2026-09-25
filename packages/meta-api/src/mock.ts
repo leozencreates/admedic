@@ -88,6 +88,9 @@ function dailyAdMetrics(
   ctr: number;
   cpc: number;
   cpm: number;
+  leads: number;
+  addsToCart: number;
+  initiatesCheckout: number;
   purchases: number;
   purchaseValueMajor: number;
 } {
@@ -101,6 +104,9 @@ function dailyAdMetrics(
   const clicks = Math.round(impressions * (0.008 + rnd() * 0.014));
   const ctr = clicks / Math.max(impressions, 1);
   const linkClicks = Math.round(clicks * 0.6);
+  const leads = Math.round(clicks * (0.12 + rnd() * 0.1));
+  const addsToCart = leads > 0 ? Math.round(leads * 0.5) : 0;
+  const initiatesCheckout = addsToCart > 0 ? Math.round(addsToCart * 0.6) : 0;
   const purchaseRoll = rnd();
   const purchases =
     purchaseRoll < 0.15 + quality * 0.4 ? 1 + Math.floor(rnd() * 6) : 0;
@@ -116,6 +122,9 @@ function dailyAdMetrics(
     ctr,
     cpc: clicks > 0 ? Math.round(spendMajor / clicks) : 0,
     cpm: Math.round(spendMajor / 1000),
+    leads,
+    addsToCart,
+    initiatesCheckout,
     purchases,
     purchaseValueMajor: Number(purchaseValueMajor.toFixed(2)),
   };
@@ -373,6 +382,9 @@ export class MockMetaClient {
       spendMajor: m.spendMajor,
       purchases: m.purchases,
       purchaseValueMajor: m.purchaseValueMajor,
+      leads: m.leads,
+      addsToCart: m.addsToCart,
+      initiatesCheckout: m.initiatesCheckout,
     };
   }
 
@@ -417,6 +429,9 @@ export class MockMetaClient {
       purchaseValueMajor: Number(
         rows.reduce((a, r) => a + r.purchaseValueMajor, 0).toFixed(2),
       ),
+      leads: rows.reduce((a, r) => a + r.leads, 0),
+      addsToCart: rows.reduce((a, r) => a + r.addsToCart, 0),
+      initiatesCheckout: rows.reduce((a, r) => a + r.initiatesCheckout, 0),
     };
   }
 }

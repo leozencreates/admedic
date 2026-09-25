@@ -1,7 +1,7 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
-import { postConversionEvents, healthAllowedEvents } from "@admedic/meta-api";
+import { postConversionEvents, healthAllowedEvents, hashUserData, sha256, type ConversionEventInput } from "@admedic/meta-api";
 import { loadEnv } from "@admedic/config";
 import { z } from "zod";
 import { logAudit } from "../../_lib/audit";
@@ -52,7 +52,17 @@ export async function POST(request: Request) {
       throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
     const live = await requireLiveMetaConnection(adAccount.connectionId, actor.orgId);
     const token = live.token;
-    const externalId = `ce_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const dedupe =
+      sha256(
+        [
+          eventName,
+          input.eventTime,
+          input.userData?.em?.trim().toLowerCase() ?? "",
+          input.userData?.ph ?? "",
+          input.customData ? JSON.stringify(input.customData) : "",
+        ].join("|"),
+      ).slice(0, 32);
+    const externalId = `ce_${dedupe}`;
     const result = await postConversionEvents(
       adAccount.id,
       [
@@ -61,7 +71,20 @@ export async function POST(request: Request) {
           eventTime: input.eventTime,
           actionSource: input.actionSource,
           eventId: externalId,
-          userData: input.userData,
+          userData: input.userData
+            ? ({
+                ...hashUserData({
+                  email: input.userData.em,
+                  phone: input.userData.ph,
+                }),
+                ...(input.userData.clientIp
+                  ? { client_ip: input.userData.clientIp }
+                  : {}),
+                ...(input.userData.clientUserAgent
+                  ? { client_user_agent: input.userData.clientUserAgent }
+                  : {}),
+              } as NonNullable<ConversionEventInput["userData"]>)
+            : undefined,
           customData: input.customData,
           eventSourceURL: input.eventSourceURL,
         },

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { loadEnv } from "@admedic/config";
 import { AdmedicError } from "@admedic/shared";
 import { getGraphVersion, rawGraph } from "./http";
@@ -112,4 +113,64 @@ export function sanitizeConversionInput(input: Record<string, unknown>): Record<
     );
   }
   return result;
+}
+
+/** E-postayı Meta kuralına göre normalize eder: küçük harf, yalın. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** Telefonu Meta kuralına göre normalize eder: + ve rakamlar korunur. */
+export function normalizePhone(phone: string): string {
+  const digits = phone.replace(/[^\d+]/g, "");
+  return digits.length > 0 ? digits : phone.trim();
+}
+
+/** Alanı SHA-256 ile hash'ler. */
+export function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Spec 3.9: Kullanıcı verisini Meta Conversions API için hazırlar — e-posta,
+ * telefon ve adlar SHA-256 ile hash'lenir (Meta kuralı: küçük harf/normalize);
+ * sağlık verisi gönderilmez. external_id (CRM lookup hash) hash'siz aktarılır.
+ */
+export function hashUserData(input: {
+  email?: string | null;
+  phone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  country?: string | null;
+  externalId?: string | null;
+}): NonNullable<ConversionEventInput["userData"]> {
+  const data: NonNullable<ConversionEventInput["userData"]> = {};
+  if (input.email && input.email.trim())
+    data.em = sha256(normalizeEmail(input.email));
+  if (input.phone && input.phone.trim())
+    data.ph = sha256(normalizePhone(input.phone));
+  if (input.firstName && input.firstName.trim())
+    data.fn = sha256(input.firstName.trim());
+  if (input.lastName && input.lastName.trim())
+    data.ln = sha256(input.lastName.trim());
+  if (input.country && input.country.trim()) data.ct = input.country.trim();
+  if (input.externalId && input.externalId.trim())
+    data.external_id = input.externalId.trim();
+  return data;
+}
+
+/** Kararlı olay kimliği: aynı lead+olay+günü tekrar gönderilirse Meta yanıtı eler (idempotente). */
+export function eventIdFor({
+  prefix,
+  leadId,
+  eventName,
+  date = new Date(),
+}: {
+  prefix: string;
+  leadId: string;
+  eventName: string;
+  date?: Date;
+}): string {
+  const day = date.toISOString().slice(0, 10).replace(/-/g, "");
+  return `${prefix}_${leadId}_${eventName}_${day}`;
 }
