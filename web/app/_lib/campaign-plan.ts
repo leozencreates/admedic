@@ -36,6 +36,25 @@ const METHOD_LABEL: Record<ConversionMethod, string> = {
   instagram_dm: "Instagram DM",
 };
 
+export const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
+  DE: ["DE"],
+  TR: ["TR"],
+  RU: ["RU"],
+  GB: ["EN"],
+  GULF: ["AR", "EN"],
+  USA: ["EN"],
+  NETHERLANDS: ["NL", "EN"],
+};
+
+export function marketLanguages(markets: string[]): string[] {
+  const langs = new Set<string>();
+  for (const m of markets) {
+    const mapped = COUNTRY_LANGUAGE_MAP[m] ?? ["EN"];
+    for (const l of mapped) langs.add(l);
+  }
+  return langs.size > 0 ? Array.from(langs) : ["EN"];
+}
+
 export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
   const blockingReasons: string[] = [];
   const ageMin = input.ageMin ?? 18;
@@ -57,17 +76,16 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
 
   const mainMarket = input.markets[0] ?? "belirsiz";
   const marketCount = input.markets.length;
-  const lang =
-    input.languages[0] ??
-    (mainMarket === "TR" ? "Türkçe" : mainMarket === "DE" ? "Almanca" : "İngilizce");
+  const autoLangs = input.languages.length === 0 ? marketLanguages(input.markets) : input.languages;
+  const lang = autoLangs[0] ?? "İngilizce";
   const label = OBJECTIVE_LABEL[input.objective];
   const name = `${label} — ${mainMarket}`;
 
-  const strategy: "CBO" | "ABO" = marketCount > 1 || input.languages.length > 1 ? "CBO" : "ABO";
+  const strategy: "CBO" | "ABO" = marketCount > 1 || autoLangs.length > 1 ? "CBO" : "ABO";
   const rationale =
     strategy === "CBO"
       ? `${marketCount} pazar tek bir bütçe kampanyasında birleştirilir; Meta, bütçeyi en iyi performans gösteren reklam setine otomatik dağıtır.`
-      : `${marketCount} pazar / ${input.languages.length} dil için tek bağımsız ad set ile hedefleme hassasiyeti korunur; bütçe elle dağıtılır.`;
+      : `${marketCount} pazar / ${autoLangs.length} dil için tek bağımsız ad set ile hedefleme hassasiyeti korunur; bütçe elle dağıtılır.`;
   const structure = `${strategy} — 1 kontrol + 2 varyant ad set, reklam dili ${lang}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`;
 
   return {

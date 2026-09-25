@@ -8,6 +8,7 @@ export * from "./mock";
 export * from "./http";
 export * from "./parse";
 export * from "./token";
+export * from "./capi";
 export * from "./types";
 
 export interface MetaClientFactoryOptions {
