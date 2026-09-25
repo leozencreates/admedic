@@ -943,6 +943,12 @@ enum RecommendationStatus {
   EXPIRED
 }
 
+enum RecommendationPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
 enum RecommendationType {
   BUDGET_REALLOCATION
   BUDGET_INCREASE
@@ -957,6 +963,7 @@ model Recommendation {
   experimentId   String
   type           RecommendationType  @default(BUDGET_REALLOCATION)
   status         RecommendationStatus @default(DRAFT)
+  priority       RecommendationPriority @default(MEDIUM)
   version        Int                 @default(1)
   title          String
   description    String

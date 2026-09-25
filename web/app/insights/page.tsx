@@ -13,6 +13,10 @@ interface InsightSummary {
   ctr: number;
   cpc: number | null;
   cpa: number | null;
+  cpl: number | null;
+  totalLeads: number;
+  qualifiedLeads: number;
+  qualifiedLeadRatio: number;
 }
 interface InsightDaily {
   date: string;
@@ -42,7 +46,7 @@ interface InsightRecommendation {
   priority: string;
   createdAt: string;
 }
-const SEVERITY_TONE: Record<string, Tone> = { HIGH: "red", MEDIUM: "amber", LOW: "blue" };
+const SEVERITY_TONE: Record<string, Tone> = { INFO: "blue", WARNING: "amber", CRITICAL: "red" };
 const TYPE_LABEL: Record<string, string> = { CREATIVE_FATIGUE: "Kreatif Yorgunluğu", HIGH_CPL: "Yüksek CPL", LOW_ROAS: "Düşük ROAS", ANOMALY: "Anomali", SCHEDULED: "Zamanlanmış" };
 export default function InsightsPage() {
   const [data, setData] = useState<{ insights: { summary: InsightSummary; daily: InsightDaily[]; campaigns: InsightCampaign[] }; alerts: InsightAlert[]; pendingRecommendations: InsightRecommendation[] } | null>(null);
@@ -91,11 +95,12 @@ export default function InsightsPage() {
           <LanguageSwitcher />
         </div>
       </header>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Toplam Harcama" value={`${(summary.totalSpend / 100).toFixed(0)} €`} hint={`${summary.totalPurchases} satın alma`} tone="violet" />
         <StatCard label="Gösterim" value={summary.totalImpressions.toLocaleString()} hint={`CTR: ${(summary.ctr * 100).toFixed(2)}%`} tone="blue" />
         <StatCard label="Tıklama" value={summary.totalClicks.toLocaleString()} hint={summary.cpc !== null ? `CPC: €${summary.cpc.toFixed(2)}` : undefined} tone="green" />
-        <StatCard label="CPA" value={summary.cpa !== null ? `€${summary.cpa.toFixed(2)}` : "—"} hint={`${summary.totalConvValue / 100} € değer`} tone="amber" />
+        <StatCard label="CPL" value={summary.cpl !== null ? `€${summary.cpl.toFixed(2)}` : "—"} hint={`${summary.totalLeads} lead`} tone="amber" />
+        <StatCard label="Nitelikli Lead" value={`${(summary.qualifiedLeadRatio * 100).toFixed(0)}%`} hint={`${summary.qualifiedLeads} ${summary.totalLeads} lead içinde`} tone="red" />
       </div>
       <div className="grid gap-6 md:grid-cols-3">
         <section className="studio-card md:col-span-2">

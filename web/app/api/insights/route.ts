@@ -21,7 +21,7 @@ export async function GET() {
       }),
       prisma.recommendation.findMany({
         where: { workspaceId: actor.workspaceId, status: "PENDING" },
-        select: { id: true, type: true, title: true, description: true, reasoning: true, createdAt: true },
+        select: { id: true, type: true, title: true, description: true, reasoning: true, priority: true, createdAt: true },
         orderBy: { createdAt: "desc" }, take: 5,
       }),
       prisma.campaign.findMany({
@@ -88,7 +88,7 @@ export async function GET() {
         campaigns: campaignBreakdown,
       },
       alerts: alerts.map((a) => ({ id: a.id, type: a.type, severity: a.severity, title: a.title, createdAt: a.createdAt })),
-      pendingRecommendations: recommendations.map((r) => ({ id: r.id, type: r.type, title: r.title, description: r.description, reasoning: r.reasoning, createdAt: r.createdAt })),
+      pendingRecommendations: recommendations.map((r) => ({ id: r.id, type: r.type, title: r.title, description: r.description, reasoning: r.reasoning, priority: r.priority, createdAt: r.createdAt })),
     };
   });
 }

@@ -16,6 +16,7 @@ export interface RecommendationOutput {
   evidence: Record<string, unknown>[];
   status: string;
   version: number;
+  priority: "HIGH" | "MEDIUM" | "LOW";
 }
 
 export async function generateRecommendations(input: RecommendationInput): Promise<RecommendationOutput[]> {
@@ -34,25 +35,35 @@ export async function generateRecommendations(input: RecommendationInput): Promi
   if (winner) {
     const winnerIdx = winner === "A" ? 0 : 1;
     const winnerVariant = snapshot.variants[winnerIdx];
-    const winnerCpl = a.spend > 0 ? a.spend / a.leads : Infinity;
-    const loserCpl = b.spend > 0 ? b.spend / b.leads : Infinity;
-    const savings = loserCpl < Infinity ? (loserCpl - winnerCpl) * a.leads : 0;
+    const variants = [a, b] as Array<{ spend: number; leads: number }>;
+    const winnerMetrics = variants[winnerIdx]!;
+    const loserMetrics = variants[winnerIdx === 0 ? 1 : 0]!;
+    const winnerCpl = winnerMetrics.leads > 0 ? winnerMetrics.spend / winnerMetrics.leads : Infinity;
+    const loserCpl = loserMetrics.leads > 0 ? loserMetrics.spend / loserMetrics.leads : Infinity;
+    const savings = loserCpl < Infinity ? Math.max(0, loserCpl - winnerCpl) * winnerMetrics.leads : 0;
+    const leadEdge = winnerMetrics.leads - loserMetrics.leads;
+    const priority: "HIGH" | "MEDIUM" | "LOW" =
+      Math.max(winnerMetrics.leads, loserMetrics.leads) >= 10 && leadEdge >= 5 && loserCpl > winnerCpl
+        ? "HIGH"
+        : "MEDIUM";
 
     recommendations.push({
       id: `rec-${experiment.id}-budget`,
       type: "BUDGET_REALLOCATION",
       title: `${winnerVariant.headline} — bütçe yeniden dağıtımı`,
-      description: `${winner} varyantı ${a.leads - b.leads} daha fazla lead üretti. Bütçe %70 ${winner} / %30 ${winner === "A" ? "B" : "A"} olarak yeniden dağıtılması önerilir.`,
+      description: `${winner} varyantı ${leadEdge} daha fazla lead üretti. Bütçe %70 ${winner} / %30 ${winner === "A" ? "B" : "A"} olarak yeniden dağıtılması önerilir.`,
       reasoning: `${winner} varyantı daha düşük CPL ile daha fazla lead üretti. Gerçek Meta metrikleri üzerinden hesaplanmıştır.`,
       action: { type: "BUDGET_REALLOCATION", variantWinner: winner, budgetSplit: [70, 30] },
-      expectedImpact: { estimatedAdditionalLeads: Math.max(0, a.leads - b.leads), estimatedSavings: Math.round(savings) },
+      expectedImpact: { estimatedAdditionalLeads: Math.max(0, leadEdge), estimatedSavings: Math.round(savings) },
       evidence: [{ metric: "leads", variantA: a.leads, variantB: b.leads, winner }],
       status: "DRAFT",
       version: 1,
+      priority,
     });
   }
 
   if (a.leads === 0 && b.leads === 0) {
+    const totalSpend = Number(a.spend ?? 0) + Number(b.spend ?? 0);
     recommendations.push({
       id: `rec-${experiment.id}-end`,
       type: "EXPERIMENT_END",
@@ -64,6 +75,7 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       evidence: [{ metric: "leads", variantA: 0, variantB: 0 }],
       status: "DRAFT",
       version: 1,
+      priority: totalSpend > 0 ? "MEDIUM" : "LOW",
     });
   }
 
@@ -91,6 +103,7 @@ export async function persistRecommendations(experimentId: string, recommendatio
            evidence: rec.evidence as any,
           status: rec.status as any,
           version: rec.version,
+          priority: rec.priority,
         },
       });
       saved.push({ ...rec, id: created.id });

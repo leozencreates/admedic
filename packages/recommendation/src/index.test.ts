@@ -21,6 +21,7 @@ describe("recommendation engine", () => {
     expect(recs.length).toBe(1);
     expect(recs[0].type).toBe("BUDGET_REALLOCATION");
     expect(recs[0].status).toBe("DRAFT");
+    expect(recs[0].priority).toBe("HIGH");
   });
 
   it("produces experiment-end suggestion when no leads exist", async () => {
@@ -32,6 +33,7 @@ describe("recommendation engine", () => {
     const recs = await generateRecommendations({ experimentId: "exp-2", workspaceId: "ws-1" });
     expect(recs.length).toBe(1);
     expect(recs[0].type).toBe("EXPERIMENT_END");
+    expect(recs[0].priority).toBe("MEDIUM");
   });
 
   it("returns empty for non-completed experiments", async () => {
