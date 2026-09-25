@@ -17,6 +17,8 @@ export interface CampaignPlan {
   dailyBudgetCents: number;
   monthlyProjectedCents: number;
   structure: string;
+  strategy: "CBO" | "ABO";
+  rationale: string;
   targetingRatione: string;
   blocked: boolean;
   blockingReasons: string[];
@@ -54,17 +56,27 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
     );
 
   const mainMarket = input.markets[0] ?? "belirsiz";
+  const marketCount = input.markets.length;
   const lang =
     input.languages[0] ??
     (mainMarket === "TR" ? "Türkçe" : mainMarket === "DE" ? "Almanca" : "İngilizce");
   const label = OBJECTIVE_LABEL[input.objective];
   const name = `${label} — ${mainMarket}`;
 
+  const strategy: "CBO" | "ABO" = marketCount > 1 || input.languages.length > 1 ? "CBO" : "ABO";
+  const rationale =
+    strategy === "CBO"
+      ? `${marketCount} pazar tek bir bütçe kampanyasında birleştirilir; Meta, bütçeyi en iyi performans gösteren reklam setine otomatik dağıtır.`
+      : `${marketCount} pazar / ${input.languages.length} dil için tek bağımsız ad set ile hedefleme hassasiyeti korunur; bütçe elle dağıtılır.`;
+  const structure = `${strategy} — 1 kontrol + 2 varyant ad set, reklam dili ${lang}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`;
+
   return {
     name,
     dailyBudgetCents: input.dailyBudgetCents,
     monthlyProjectedCents: monthlyProjectedCents,
-    structure: `1 kontrol + 2 varyant ad set, reklam dili ${lang}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`,
+    structure,
+    strategy,
+    rationale,
     targetingRatione: `${ageMin}-${ageMax} yaş, pazarlar: ${input.markets.join(", ")}`,
     blocked: blockingReasons.length > 0,
     blockingReasons,

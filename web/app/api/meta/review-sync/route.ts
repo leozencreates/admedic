@@ -2,8 +2,7 @@ import { prisma, Prisma } from "@admedic/database";
 import { requireActor, requireRole } from "../../../_lib/auth";
 import { body, respond, sameOrigin } from "../../../_lib/http";
 import { createMetaClient } from "@admedic/meta-api";
-import { loadEnv } from "@admedic/config";
-import { decrypt } from "../../../_lib/encrypt";
+import { requireLiveMetaConnection } from "../../../_lib/meta-connection";
 import { z } from "zod";
 import { logAudit } from "../../../_lib/audit";
 export const maxDuration = 30;
@@ -24,15 +23,23 @@ export async function POST(request: Request) {
       include: { adAccount: true },
     });
     const meta = createMetaClient();
-    const mockMode = loadEnv().META_MOCK_MODE;
     const results: Array<Record<string, unknown>> = [];
     for (const campaign of campaigns) {
       if (!campaign.adAccount?.connectionId) continue;
-      const conn = await prisma.metaConnection.findUnique({
-        where: { id: campaign.adAccount.connectionId },
-      });
-      if (!conn || conn.status !== "CONNECTED") continue;
-      const token = mockMode ? "mock-token" : decrypt(conn.tokenCiphertext ?? "");
+      let token: string;
+      try {
+        token = (
+          await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId)
+        ).token;
+      } catch (e) {
+        results.push({
+          campaignId: campaign.id,
+          name: campaign.name,
+          metaReviewStatus: "ERROR",
+          error: e instanceof Error ? e.message : "Meta bağlantısı aktif değil.",
+        });
+        continue;
+      }
       try {
         const { review } = await meta.getAdReview(campaign.metaCampaignId!, token);
         if (!review) {

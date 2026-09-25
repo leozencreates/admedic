@@ -3,6 +3,7 @@ import { getGraphVersion, graphGet } from "@admedic/meta-api";
 import { requireActor } from "../../../../_lib/auth";
 import { body, respond, sameOrigin } from "../../../../_lib/http";
 import { generateRecommendations, persistRecommendations } from "@admedic/recommendation";
+import { requireLiveMetaConnection } from "../../../../_lib/meta-connection";
 import { z } from "zod";
 export const maxDuration = 60;
 
@@ -23,8 +24,11 @@ export async function POST(request: Request) {
     const variantIds = snapshot.variants?.map((v: any) => v.id) ?? [];
     const adAccount = experiment.draft.workspace.adAccounts?.find((a: any) => a.isDefault) ?? experiment.draft.workspace.adAccounts?.[0];
     if (!adAccount) throw new Error("Varsayılan reklam hesabı yok.");
+    if (!adAccount.connectionId) throw new Error("Reklam hesabı Meta'ya bağlanmamış.");
     const version = getGraphVersion();
-    const token = "";
+    const token = (
+      await requireLiveMetaConnection(adAccount.connectionId, actor.orgId)
+    ).token;
 
     for (let i = 0; i < variantIds.length; i++) {
       const rows = await graphGet(version, `act_${adAccount.metaAccountId}/adsets`, { fields: "id,name,status,daily_budget", access_token: token, limit: "100" }, fetch).catch(() => []);

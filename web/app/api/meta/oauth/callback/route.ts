@@ -8,6 +8,7 @@ import {
   isOAuthStateUsedError,
 } from "../../../../_lib/oauth-state";
 import { encrypt } from "../../../../_lib/encrypt";
+import { requiredScopesMissing } from "../../../../_lib/meta-scopes";
 export const maxDuration = 15;
 
 export async function GET(request: Request) {
@@ -99,6 +100,7 @@ export async function GET(request: Request) {
         ? expiresIn * 1000
         : 60 * 24 * 60 * 60 * 1000;
     const tokenCiphertext = encrypt(accessToken);
+    const missingPermissions = requiredScopesMissing(grantedScopes);
     const data = {
       status: "CONNECTED" as const,
       name: accountName,
@@ -108,6 +110,7 @@ export async function GET(request: Request) {
       scopes: grantedScopes,
       appId: env.META_APP_ID,
       expiresAt: new Date(Date.now() + ttlMs),
+      missingPermissions,
       lastError: null as string | null,
     };
 

@@ -1,8 +1,28 @@
+import { randomBytes, createDecipheriv, scryptSync } from "node:crypto";
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
 import { createMetaClient, type MetaClientLike } from "@admedic/meta-api";
 import type { Alert } from "@admedic/database";
 import { AlertSeverity, AlertType } from "@admedic/database";
+
+const ALGORITHM = "aes-256-gcm";
+const IV_LENGTH = 16;
+function getKey(): Buffer {
+  const env = loadEnv();
+  if (env.ENCRYPTION_KEY && env.ENCRYPTION_KEY.length === 64)
+    return Buffer.from(env.ENCRYPTION_KEY, "hex");
+  return scryptSync(`admedic-enc:${env.AUTH_SECRET}`, "admedic-salt", 32);
+}
+function decryptToken(ciphertext: string): string {
+  const key = getKey();
+  const buffer = Buffer.from(ciphertext, "base64");
+  const iv = buffer.subarray(0, IV_LENGTH);
+  const authTag = buffer.subarray(IV_LENGTH, IV_LENGTH + 16);
+  const encrypted = buffer.subarray(IV_LENGTH + 16);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
 
 export interface ScheduledJob {
   run(): Promise<{
@@ -11,40 +31,109 @@ export interface ScheduledJob {
     completed: number;
   }>;
 }
-
 export function createMetaSyncScheduler(
   client?: MetaClientLike,
 ): ScheduledJob {
   const meta = client ?? createMetaClient();
-  return {
-    async run() {
-      loadEnv();
-      const experiments = await prisma.studioExperiment.findMany({
-        where: { status: "RUNNING" },
-        include: {
-          draft: {
-            include: { workspace: { include: { adAccounts: true } } },
-          },
-        },
-      });
-      let insightsSynced = 0;
-      let alertsCreated = 0;
-      let completed = 0;
-      for (const experiment of experiments) {
-        const result = await syncExperiment(meta, experiment);
-        insightsSynced += result.variantMetrics.reduce(
-          (s, v) => s + v.pointsCreated,
-          0,
-        );
-        alertsCreated += result.alerts.length;
-        completed += result.completed ? 1 : 0;
-      }
-      return { insightsSynced, alertsCreated, completed };
-    },
-  };
+  return { async run() { return runScheduled(meta); } };
 }
 
-async function syncExperiment(
+let timer: ReturnType<typeof setInterval> | null = null;
+
+export function start(intervalMs = 5 * 60 * 1000): void {
+  stop();
+  runScheduled(createMetaClient()).catch(() => {});
+  timer = setInterval(() => runScheduled(createMetaClient()).catch(() => {}), intervalMs);
+}
+export function stop(): void {
+  if (timer !== null) clearInterval(timer);
+  timer = null;
+}
+export async function runOnce(): Promise<{
+  insightsSynced: number;
+  alertsCreated: number;
+  completed: number;
+}> {
+  return runScheduled(createMetaClient());
+}
+
+async function runScheduled(meta: MetaClientLike) {
+  loadEnv();
+  const workspaceIds = (await prisma.workspace.findMany({ select: { id: true } })).map((w) => w.id);
+  let insightsSynced = 0;
+  let alertsCreated = 0;
+  let completed = 0;
+  for (const wsId of workspaceIds) {
+    const workspace = await prisma.workspace.findUniqueOrThrow({
+      where: { id: wsId },
+      include: { adAccounts: { include: { connection: true } } },
+    });
+    insightsSynced += await syncInsights(meta, workspace);
+    const experiments = await prisma.studioExperiment.findMany({
+      where: { draft: { workspaceId: wsId }, status: "RUNNING" },
+      include: { draft: { include: { workspace: { include: { adAccounts: true } } } } },
+    });
+    for (const experiment of experiments) {
+      const result = await syncExperiment(meta, experiment);
+      alertsCreated += result.alerts.length;
+      completed += result.completed ? 1 : 0;
+    }
+  }
+  return { insightsSynced, alertsCreated, completed };
+}
+
+async function syncInsights(meta: MetaClientLike, workspace: any): Promise<number> {
+  let synced = 0;
+  const accounts = workspace.adAccounts?.filter((a: any) => a.connectionId) ?? [];
+  for (const account of accounts) {
+    const token = decryptToken(account.connection.tokenCiphertext);
+    const campaigns = await meta.listCampaigns(account.id, token).catch(() => []);
+    for (const camp of campaigns) {
+      const rows = await meta
+        .getInsights({ type: "campaign", id: camp.id }, token, { datePreset: "last_7d", level: "campaign" })
+        .catch(() => []);
+      for (const row of rows) {
+        const date = new Date(String(row.dateStart ?? new Date().toISOString()).slice(0, 10));
+        const existing = await prisma.insightSnapshot.findFirst({
+          where: { workspaceId: workspace.id, adAccountId: account.id, campaignId: camp.id, date },
+        });
+        const data = {
+          workspaceId: workspace.id,
+          adAccountId: account.id,
+          campaignId: camp.id,
+          date,
+          granularity: "DAILY" as const,
+          source: "META",
+          spend: row.spendMajor ?? 0,
+          impressions: row.impressions ?? 0,
+          reach: row.reach ?? 0,
+          clicks: row.clicks ?? 0,
+          linkClicks: row.linkClicks ?? 0,
+          outboundClicks: (row as any).outboundClicks ?? 0,
+          landingPageViews: (row as any).landingPageViews ?? 0,
+          addsToCart: (row as any).addsToCart ?? 0,
+          initiatesCheckout: (row as any).initiatesCheckout ?? 0,
+          purchases: row.purchases ?? 0,
+          conversionValue: row.purchaseValueMajor ?? 0,
+          frequency: row.frequency,
+          ctr: row.ctr,
+          cpc: row.cpc,
+          cpm: row.cpm,
+          capturedAt: new Date(),
+        };
+        if (existing) {
+          await prisma.insightSnapshot.update({ where: { id: existing.id }, data });
+        } else {
+          await prisma.insightSnapshot.create({ data });
+        }
+        synced++;
+      }
+    }
+  }
+  return synced;
+}
+
+export async function syncExperiment(
   meta: MetaClientLike,
   experiment: any,
 ): Promise<{
@@ -59,8 +148,7 @@ async function syncExperiment(
     workspace.adAccounts?.[0];
   if (!adAccount)
     throw new Error(`No ad account for workspace ${workspace.id}`);
-  const token =
-    workspace.metaConnections?.[0]?.metaAccountId ?? "";
+  const token = decryptToken(adAccount.connection.tokenCiphertext);
   const snapshot = JSON.parse(experiment.snapshot as string) as {
     variants: Array<{ id: string }>;
     duration: number;
@@ -84,12 +172,10 @@ async function syncExperiment(
       try {
         rows = await meta.getInsights(
           { type: "adset", id: adSet.id },
-          "",
+          token,
           { datePreset: "last_7d", level: "adset" },
         );
-      } catch {
-        continue;
-      }
+      } catch { continue; }
       for (const row of rows) {
         const spendMajor = row.spendMajor ?? 0;
         totalSpend += spendMajor;
@@ -168,8 +254,7 @@ async function syncExperiment(
   );
   const totalClicks = variantTotals.reduce((s: number, v: any) => s + v.clicks, 0);
   const elapsedDays = experiment.elapsedDays + 1;
-  const completed =
-    elapsedDays >= snapshot.duration;
+  const completed = elapsedDays >= snapshot.duration;
 
   await prisma.studioExperiment.updateMany({
     where: { id: experiment.id },

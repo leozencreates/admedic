@@ -98,6 +98,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (!allowed.includes(input.status)) {
         throw new HttpError(409, `Geçersiz durum geçişi: ${lead.status} → ${input.status}`);
       }
+      if (input.status === "LOST" && !input.lostReason?.trim()) {
+        throw new HttpError(422, "LOST geçişi için lostReason zorunludur.");
+      }
       const timestamps = getTimestampForStatus(input.status);
       await prisma.lead.update({
         where: { id },

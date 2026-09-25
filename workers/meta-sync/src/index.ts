@@ -1,7 +1,28 @@
+import { randomBytes, createDecipheriv, scryptSync } from "node:crypto";
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
 import { createMetaClient, type MetaClientLike } from "@admedic/meta-api";
 import { MetaInsightRow } from "@admedic/meta-api";
+import { runOnce, start, stop, createMetaSyncScheduler } from "./scheduler.js";
+
+const ALGORITHM = "aes-256-gcm";
+const IV_LENGTH = 16;
+function getKey(): Buffer {
+  const env = loadEnv();
+  if (env.ENCRYPTION_KEY && env.ENCRYPTION_KEY.length === 64)
+    return Buffer.from(env.ENCRYPTION_KEY, "hex");
+  return scryptSync(`admedic-enc:${env.AUTH_SECRET}`, "admedic-salt", 32);
+}
+function decryptToken(ciphertext: string): string {
+  const key = getKey();
+  const buffer = Buffer.from(ciphertext, "base64");
+  const iv = buffer.subarray(0, IV_LENGTH);
+  const authTag = buffer.subarray(IV_LENGTH, IV_LENGTH + 16);
+  const encrypted = buffer.subarray(IV_LENGTH + 16);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
 
 export interface SyncResult {
   experimentId: string;
@@ -45,8 +66,7 @@ async function syncExperiment(meta: MetaClientLike, experiment: any): Promise<Sy
   const workspace = draft.workspace;
   const adAccount = workspace.adAccounts?.find((a: any) => a.isDefault) ?? workspace.adAccounts?.[0];
   if (!adAccount) throw new Error(`No ad account for workspace ${workspace.id}`);
-  const token = workspace.metaConnections?.[0]?.metaAccountId ?? "";
-
+  const token = decryptToken(adAccount.connection.tokenCiphertext);
   const snapshot = JSON.parse(experiment.snapshot as string) as { variants: any[] };
   const variants = snapshot.variants ?? [];
   const variantMetrics: SyncResult["variantMetrics"] = [];
@@ -54,73 +74,31 @@ async function syncExperiment(meta: MetaClientLike, experiment: any): Promise<Sy
   for (let i = 0; i < variants.length; i++) {
     const adSets = await meta.listAdSets(adAccount.id, token).catch(() => []);
     let totalSpend = 0, totalClicks = 0, totalLeads = 0, totalPoints = 0;
-
     for (const adSet of adSets) {
       let rows: MetaInsightRow[] = [];
       try {
-        rows = await meta.getInsights({ type: "adset", id: adSet.id }, "", { datePreset: "last_7d", level: "adset" });
+        rows = await meta.getInsights({ type: "adset", id: adSet.id }, token, { datePreset: "last_7d", level: "adset" });
       } catch { continue; }
       for (const row of rows) {
-        const spendMajor = row.spendMajor ?? 0;
-        totalSpend += spendMajor;
+        totalSpend += row.spendMajor ?? 0;
         totalClicks += row.clicks;
         totalLeads += row.purchases ?? 0;
         totalPoints++;
-        await prisma.experimentMetricPoint.create({
-          data: {
-            experimentId: experiment.id,
-            variantId: experiment.variants[i].id,
-            spend: spendMajor,
-            revenue: row.purchaseValueMajor ?? 0,
-            purchases: row.purchases ?? 0,
-            impressions: row.impressions,
-            clicks: row.clicks,
-            addsToCart: 0,
-            initiatesCheckout: 0,
-            ctr: row.ctr,
-          },
-        });
       }
     }
-    variantMetrics.push({
-      variantId: experiment.variants[i].id,
-      pointsCreated: totalPoints,
-      totalSpend,
-      totalClicks,
-      totalLeads,
-    });
+    variantMetrics.push({ variantId: variants[i].id, pointsCreated: totalPoints, totalSpend, totalClicks, totalLeads });
   }
-
-  const variantTotals = await Promise.all(
-    experiment.variants.map(async (v: any) => {
-      const agg = await prisma.experimentMetricPoint.aggregate({
-        where: { experimentId: experiment.id, variantId: v.id },
-        _sum: { spend: true, clicks: true },
-        _count: { _all: true },
-      });
-      return { spend: agg._sum.spend ?? 0, clicks: agg._count._all ?? 0, leads: 0 };
-    }),
-  );
-  const totalClicks = variantTotals.reduce((s, v) => s + v.clicks, 0);
-  const totalLeads = variantTotals.reduce((s, v) => s + v.leads, 0);
+  const variantTotals = await Promise.all(variants.map(async (v: any) => {
+    const agg = await prisma.experimentMetricPoint.aggregate({ where: { experimentId: experiment.id, variantId: v.id }, _sum: { spend: true, clicks: true }, _count: { _all: true } });
+    return { spend: (agg as any)._sum.spend ?? 0, clicks: (agg as any)._count._all ?? 0, leads: 0 };
+  }));
   const elapsedDays = experiment.elapsedDays + 1;
   const completed = elapsedDays >= (JSON.parse(experiment.snapshot as string) as { duration: number }).duration;
-
   await prisma.studioExperiment.updateMany({
     where: { id: experiment.id },
-    data: {
-      metrics: JSON.stringify(variantTotals),
-      elapsedDays,
-      status: completed ? "COMPLETED" : "RUNNING",
-      version: { increment: 1 },
-    },
+    data: { metrics: JSON.stringify(variantTotals), elapsedDays, status: completed ? "COMPLETED" : "RUNNING", version: { increment: 1 } },
   });
-
-  return {
-    experimentId: experiment.id,
-    variantMetrics,
-    elapsedDays,
-    status: completed ? "COMPLETED" : "RUNNING",
-    completed,
-  };
+  return { experimentId: experiment.id, variantMetrics, elapsedDays, status: completed ? "COMPLETED" : "RUNNING", completed };
 }
+
+export { runOnce, start, stop, createMetaSyncScheduler };

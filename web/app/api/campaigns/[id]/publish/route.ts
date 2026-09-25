@@ -3,11 +3,10 @@ import { requireActor, requireRole, EDIT_ROLES } from "../../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { createMetaClient, MOCK_AD_ACCOUNT_ID } from "@admedic/meta-api";
 import { checkPolicy } from "@admedic/policy";
-import { loadEnv } from "@admedic/config";
-import { decrypt } from "../../../../_lib/encrypt";
 import { z } from "zod";
 import { logAudit } from "../../../../_lib/audit";
 import { ownedCampaign } from "../../../../_lib/campaign-workflow";
+import { requireLiveMetaConnection } from "../../../../_lib/meta-connection";
 
 export const maxDuration = 15;
 
@@ -27,15 +26,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const adAccount = campaign.adAccount;
     if (!adAccount?.connectionId)
       throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
-    const conn = await prisma.metaConnection.findUnique({
-      where: { id: adAccount.connectionId },
-    });
-    if (!conn || conn.status !== "CONNECTED")
-      throw new HttpError(400, "Meta bağlantısı aktif değil.");
+    const live = await requireLiveMetaConnection(adAccount.connectionId, actor.orgId);
 
     const meta = createMetaClient();
-    const mockMode = loadEnv().META_MOCK_MODE;
-    const token = mockMode ? "mock-token" : decrypt(conn.tokenCiphertext ?? "");
+    const token = live.token;
 
     let workflowStatus = campaign.workflowStatus;
     let status = campaign.status;

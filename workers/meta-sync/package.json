@@ -4,7 +4,7 @@
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "scripts": { "test": "vitest run", "lint": "eslint src", "build": "tsc --noEmit" },
+  "scripts": { "test": "vitest run", "lint": "eslint src", "build": "tsc --noEmit", "start": "tsx src/cli.ts" },
   "dependencies": {
     "@admedic/config": "workspace:*",
     "@admedic/database": "workspace:*",

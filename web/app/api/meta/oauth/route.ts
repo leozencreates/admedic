@@ -3,6 +3,7 @@ import { requireActor, requireRole } from "../../../_lib/auth";
 import { respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { loadEnv } from "@admedic/config";
 import { createOAuthState } from "../../../_lib/oauth-state";
+import { META_REQUIRED_SCOPES } from "../../../_lib/meta-scopes";
 export const maxDuration = 15;
 export async function GET(request: Request) {
   return respond(async () => {
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
         "Meta uygulama kimliği ayarlanmamış (META_APP_ID ortam değişkeni).",
       );
     const { state } = createOAuthState(env.AUTH_SECRET, actor.userId, actor.orgId);
-    const scopes = ["business_management", "ads_management", "ads_read", "pages_manage_metadata", "pages_show_list"];
+    const scopes = [...META_REQUIRED_SCOPES];
     const url = `https://www.facebook.com/${env.META_API_VERSION}/dialog/oauth?client_id=${encodeURIComponent(env.META_APP_ID)}&redirect_uri=${encodeURIComponent(env.META_REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${scopes.join(",")}`;
     return { authUrl: url, appId: env.META_APP_ID };
   });

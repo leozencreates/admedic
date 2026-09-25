@@ -18,10 +18,10 @@
     "web:dev": "pnpm --filter @admedic/web dev",
     "test-lab:dev": "pnpm --filter @admedic/test-lab dev",
     "autopilot:dev": "pnpm --filter @admedic/roas-autopilot dev",
-    "worker:sync": "pnpm --filter @admedic/worker-meta-sync start",
-    "worker:opt": "pnpm --filter @admedic/worker-optimization start",
-    "worker:exp": "pnpm --filter @admedic/worker-experiments start",
-    "worker:report": "pnpm --filter @admedic/worker-reporting start",
+    "worker:sync": "pnpm --filter @admedic/meta-sync start",
+    "worker:opt": "echo \"worker-optimization bekleniyor\"",
+    "worker:exp": "echo \"worker-experiments bekleniyor\"",
+    "worker:report": "echo \"worker-reporting bekleniyor\"",
     "format:check": "prettier --check ."
   },
   "devDependencies": {
