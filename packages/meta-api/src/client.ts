@@ -264,10 +264,20 @@ export class MetaMarketingClient implements MetaClientLike {
     )) as { id?: unknown };
     const id = body?.id;
     if (!id) throw new Error("Meta kampanya oluşturmadı: id dönmedi.");
+    const campaignId = String(id);
+    const reviewRaw = await graphGet(
+      this.version,
+      campaignId,
+      { fields: "review_feedback", access_token: token },
+      this.fetchFn,
+    ) as { review_feedback?: { global?: Record<string, string>; placement_specific?: Record<string, Record<string, string>> } } | undefined;
+    const rf = reviewRaw?.review_feedback ?? {};
     return {
       success: true,
-      campaignId: String(id),
+      campaignId,
       metaResponse: body,
+      reviewFeedbackGlobal: rf.global,
+      reviewFeedbackPlacements: rf.placement_specific,
     };
   }
 

@@ -204,6 +204,8 @@ export interface MetaCreateCampaignResult {
   success: boolean;
   campaignId: string;
   metaResponse?: unknown;
+  reviewFeedbackGlobal?: Record<string, string>;
+  reviewFeedbackPlacements?: Record<string, Record<string, string>>;
 }
 
 export interface UpdateOrigin {

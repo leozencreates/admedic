@@ -68,7 +68,13 @@ async function runScheduled(meta: MetaClientLike) {
       where: { id: wsId },
       include: { adAccounts: { include: { connection: true } } },
     });
+    const org = await prisma.organization.findUnique({
+      where: { id: workspace.orgId },
+      select: { id: true, retentionDays: true },
+    });
     insightsSynced += await syncInsights(meta, workspace);
+    alertsCreated += await checkConnectionHealth(workspace);
+    alertsCreated += await runAnonRetention(org ?? { id: workspace.orgId, retentionDays: 0 }, workspace.id);
     const experiments = await prisma.studioExperiment.findMany({
       where: { draft: { workspaceId: wsId }, status: "RUNNING" },
       include: { draft: { include: { workspace: { include: { adAccounts: true } } } } },
@@ -80,6 +86,73 @@ async function runScheduled(meta: MetaClientLike) {
     }
   }
   return { insightsSynced, alertsCreated, completed };
+}
+
+async function runAnonRetention(org: { id: string; retentionDays: number | null }, workspaceId: string): Promise<number> {
+  const env = loadEnv();
+  if (!org || !org.retentionDays || org.retentionDays <= 0) return 0;
+  const cutoff = new Date(Date.now() - org.retentionDays * 24 * 3600 * 1000);
+  const stale = await prisma.lead.findMany({
+    where: {
+      organizationId: org.id,
+      updatedAt: { lt: cutoff },
+      OR: [{ status: "LOST" }, { status: "TREATED" }, { status: "CONSULTATION_BOOKED" }],
+    },
+    select: { id: true },
+  });
+  let anonymized = 0;
+  for (const lead of stale) {
+    await prisma.$transaction([
+      prisma.message.updateMany({
+        where: { conversation: { leadId: lead.id, workspaceId } },
+        data: { content: "[anonymized]", sender: null, metadata: {} },
+      }),
+      prisma.conversation.updateMany({
+        where: { leadId: lead.id, workspaceId },
+        data: { status: "CLOSED", closedAt: new Date(), initiatedBy: null, escalatedTo: null },
+      }),
+      prisma.consentRecord.updateMany({
+        where: { leadId: lead.id, workspaceId },
+        data: { status: "WITHDRAWN", withdrawnAt: new Date(), consentText: "[anonymized]", ip: null, userAgent: null },
+      }),
+      prisma.lead.update({
+        where: { id: lead.id },
+        data: { firstName: "[anonymized]", lastName: "[anonymized]", email: null, phone: null, country: null, lostReason: null, duplicateOf: null, metadata: {} },
+      }),
+    ]);
+    anonymized++;
+  }
+  return anonymized;
+}
+
+async function checkConnectionHealth(workspace: any): Promise<number> {
+  let alerts = 0;
+  const accounts = workspace.adAccounts?.filter((a: any) => a.connectionId) ?? [];
+  for (const account of accounts) {
+    const conn = account.connection;
+    if (!conn) continue;
+    if (conn.status === "EXPIRED" || conn.status === "REVOKED" || conn.status === "REJECTED") {
+      const env = loadEnv();
+      const existing = await prisma.alert.findFirst({
+        where: { workspaceId: workspace.id, type: AlertType.META_DISCONNECTED, entityId: conn.id, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } },
+      });
+      if (!existing) {
+        await prisma.alert.create({
+          data: {
+            workspaceId: workspace.id,
+            type: AlertType.META_DISCONNECTED,
+            severity: AlertSeverity.CRITICAL,
+            title: `Meta bağlantısı ${conn.status}: ${account.id}`,
+            message: `Ad account ${account.id} bağlantısı ${conn.status} durumunda. Kampanya işlemleri durduruldu.`,
+            entityType: "META_CONNECTION",
+            entityId: conn.id,
+          },
+        });
+        alerts++;
+      }
+    }
+  }
+  return alerts;
 }
 
 async function syncInsights(meta: MetaClientLike, workspace: any): Promise<number> {

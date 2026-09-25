@@ -26,11 +26,10 @@ export const EnvSchema = z.object({
     .string()
     .default("http://localhost:3000/api/meta/oauth/callback"),
   /** Meta Graph API sürümü — KODDA SABİT YAZILMAZ. Örn: v26.0 */
-  META_API_VERSION: z
-    .string()
-    .regex(/^v\d+\.\d+$/, "META_API_VERSION 'vNN.N' biçiminde olmalı (örn. v26.0)")
-    .default("v26.0"),
+  META_API_VERSION: z.string().regex(/^v\d+\.\d+$/, "META_API_VERSION 'vNN.N' biçiminde olmalı (örn. v26.0)").optional(),
+  META_GRAPH_API_VERSION: z.string().optional(),
   META_MOCK_MODE: z.coerce.boolean().default(true),
+  META_DISCONNECTED_WEBHOOK_URL: z.string().optional(),
 
   API_URL: z.string().default("http://localhost:4000"),
   NEXT_PUBLIC_API_URL: z.string().default("http://localhost:4000"),
@@ -44,9 +43,12 @@ export const EnvSchema = z.object({
   STRIPE_PRICE_STARTER: z.string().optional(),
   STRIPE_SUCCESS_URL: z.string().optional(),
   STRIPE_CANCEL_URL: z.string().optional(),
+
+  LLM_API_KEY: z.string().optional(),
+  LLM_MODEL: z.string().default("claude-sonnet-4"),
 });
 
-export type AppEnv = z.infer<typeof EnvSchema>;
+export type AppEnv = z.infer<typeof EnvSchema> & { metaGraphApiVersion: string };
 
 let cached: AppEnv | undefined;
 
@@ -67,8 +69,10 @@ export function loadEnv(options: LoadEnvOptions = {}): AppEnv {
       .join("; ");
     throw new Error(`Ortam değişkeni doğrulaması başarısız: ${issues}`);
   }
-  cached = parsed.data;
-  return cached;
+  cached = parsed.data as AppEnv & { metaGraphApiVersion: string };
+  const env = cached as AppEnv & { metaGraphApiVersion: string };
+  env.metaGraphApiVersion = env.META_GRAPH_API_VERSION ?? env.META_API_VERSION ?? "v26.0";
+  return env;
 }
 
 /** Monorepo'da cwd'den yukarı çıkarak en yakın `.env` dosyasını yükler (tek kaynak). */

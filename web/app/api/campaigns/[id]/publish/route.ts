@@ -36,6 +36,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     let metaCampaignId = campaign.metaCampaignId;
     let note: string | undefined;
 
+    let policyWarning: string | null = null;
+    let metaReviewStatus: string | undefined;
+    let metaRejectionReason: unknown = undefined;
     if (input.action === "PUBLISH") {
       if (campaign.workflowStatus !== "APPROVED")
         throw new HttpError(409, "Kampanya henüz onaylanmadı.");
@@ -44,6 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const policy = checkPolicy(campaign.name);
       if (policy.risk === "HIGH")
         throw new HttpError(422, "İçerik kontrolündeki yüksek riskli ifadeleri düzeltin.");
+      if (policy.risk === "MEDIUM") policyWarning = policy.findings.map((f) => f.reason).join("; ");
       const created = await meta.createCampaign(
         {
           accountId: (adAccount.metaAccountId ?? MOCK_AD_ACCOUNT_ID).replace(/^act_/, ""),
@@ -55,6 +59,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         token,
       );
       metaCampaignId = created.campaignId;
+      if (created.reviewFeedbackGlobal && Object.keys(created.reviewFeedbackGlobal).length > 0) {
+        metaReviewStatus = "DISAPPROVED";
+        metaRejectionReason = { global: created.reviewFeedbackGlobal, placement_specific: created.reviewFeedbackPlacements };
+      }
       workflowStatus = "PUBLISHED_PAUSED";
       status = "PAUSED";
       note = "Meta'da PAUSED olarak oluşturuldu.";
@@ -93,6 +101,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         status,
         metaCampaignId,
         syncedAt: new Date(),
+        ...(metaReviewStatus ? { metaReviewStatus } : {}),
+        ...(metaRejectionReason ? { metaRejectionReason } : {}),
+        ...(policyWarning ? { metaRejectionReason: { warning: policyWarning } } : {}),
       },
     });
     await logAudit({
@@ -111,6 +122,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         metaCampaignId,
         action: input.action,
         note,
+        policyWarning,
       },
     });
     return {
@@ -121,6 +133,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         workflowStatus,
         metaCampaignId,
         action: input.action,
+        policyWarning,
       },
     };
   });

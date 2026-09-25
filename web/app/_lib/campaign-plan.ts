@@ -22,6 +22,11 @@ export interface CampaignPlan {
   targetingRatione: string;
   blocked: boolean;
   blockingReasons: string[];
+  testPlan: {
+    creativeVariations: number;
+    testDurationDays: number;
+    decisionMetric: string;
+  };
 }
 
 const OBJECTIVE_LABEL: Record<PlanObjective, string> = {
@@ -88,6 +93,12 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
       : `${marketCount} pazar / ${autoLangs.length} dil için tek bağımsız ad set ile hedefleme hassasiyeti korunur; bütçe elle dağıtılır.`;
   const structure = `${strategy} — 1 kontrol + 2 varyant ad set, reklam dili ${lang}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`;
 
+  const testPlan = {
+    creativeVariations: 2,
+    testDurationDays: marketCount > 1 ? 7 : 14,
+    decisionMetric: strategy === "CBO" ? "CTR" : "CPL",
+  };
+
   return {
     name,
     dailyBudgetCents: input.dailyBudgetCents,
@@ -98,5 +109,6 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
     targetingRatione: `${ageMin}-${ageMax} yaş, pazarlar: ${input.markets.join(", ")}`,
     blocked: blockingReasons.length > 0,
     blockingReasons,
+    testPlan,
   };
 }

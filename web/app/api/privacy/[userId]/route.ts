@@ -26,10 +26,33 @@ export async function GET(_request: Request, { params }: Context) {
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
     return {
-      lead: {
-        ...lead,
-        email: safeDecrypt(lead.email),
-        phone: safeDecrypt(lead.phone),
+      export: {
+        lead: {
+          ...lead,
+          email: safeDecrypt(lead.email),
+          phone: safeDecrypt(lead.phone),
+        },
+        conversations: lead.conversations.map((c) => ({
+          id: c.id,
+          channel: c.channel,
+          status: c.status,
+          initiatedBy: c.initiatedBy,
+          messages: c.messages.map((m) => ({
+            direction: m.direction,
+            channel: m.channel,
+            content: m.content,
+            sender: m.sender,
+            createdAt: m.createdAt,
+          })),
+        })),
+        consentRecords: lead.consentRecords.map((cr) => ({
+          type: cr.type,
+          status: cr.status,
+          consentText: cr.consentText,
+          acceptedAt: cr.acceptedAt,
+          withdrawnAt: cr.withdrawnAt,
+        })),
+        exportedAt: new Date().toISOString(),
       },
     };
   });

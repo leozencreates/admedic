@@ -317,10 +317,13 @@ export class MockMetaClient {
     _token: string,
   ): Promise<MetaCreateCampaignResult> {
     const id = `cmp_mock_pub_${(seedFromString(input.name) % 9000) + 1000}`;
+    const isRejected = input.name.toLowerCase().includes("rejected");
     return {
       success: true,
       campaignId: id,
       metaResponse: { id, success: true, status: input.status ?? "PAUSED" },
+      reviewFeedbackGlobal: isRejected ? { personal_health: "İçerik sağlık iddiaları içeriyor." } : {},
+      reviewFeedbackPlacements: {},
     };
   }
 

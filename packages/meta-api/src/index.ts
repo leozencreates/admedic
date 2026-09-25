@@ -21,12 +21,13 @@ export interface MetaClientFactoryOptions {
 /**
  * Ortama göre istemci üretir: META_MOCK_MODE=true ise deterministik mock,
  * aksi halde gerçek Meta Marketing API istemcisi. Uygulama adı/sürümü kodda
- * sabitlenmez; `META_API_VERSION` ortam değişkeninden okunur.
+ * sabitlenmez; `META_GRAPH_API_VERSION` (veya fallback `META_API_VERSION`) ortam
+ * değişkeninden okunur.
  */
 export function createMetaClient(options: MetaClientFactoryOptions = {}) {
   const env = loadEnv();
   const mock = options.mock ?? env.META_MOCK_MODE;
-  const version = options.version ?? env.META_API_VERSION;
+  const version = options.version ?? env.metaGraphApiVersion;
   if (mock) {
     return new MockMetaClient({ version });
   }

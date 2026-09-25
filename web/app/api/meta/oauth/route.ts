@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       );
     const { state } = createOAuthState(env.AUTH_SECRET, actor.userId, actor.orgId);
     const scopes = [...META_REQUIRED_SCOPES];
-    const url = `https://www.facebook.com/${env.META_API_VERSION}/dialog/oauth?client_id=${encodeURIComponent(env.META_APP_ID)}&redirect_uri=${encodeURIComponent(env.META_REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${scopes.join(",")}`;
-    return { authUrl: url, appId: env.META_APP_ID };
+    const url = `https://www.facebook.com/${env.metaGraphApiVersion}/dialog/oauth?client_id=${encodeURIComponent(env.META_APP_ID)}&redirect_uri=${encodeURIComponent(env.META_REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${scopes.join(",")}`;
+    return { authUrl: url, appId: env.META_APP_ID, apiVersion: env.metaGraphApiVersion };
   });
 }

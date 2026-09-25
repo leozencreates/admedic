@@ -5,7 +5,31 @@ import { encrypt } from "../../../../_lib/encrypt";
 import { leadLookupHash } from "../../../../_lib/lead-hash";
 import { verifyWebhookSignature } from "../../../../_lib/verify";
 import { sendWhatsAppMessage } from "../../../../_lib/whatsapp";
-export const maxDuration = 10;
+import { AnthropicProvider } from "@admedic/llm";
+import { loadEnv } from "@admedic/config";
+export const maxDuration = 60;
+
+let _aiProvider: AnthropicProvider | null = null;
+function getAIProvider(): AnthropicProvider {
+  if (!_aiProvider) {
+    const env = loadEnv();
+    _aiProvider = new AnthropicProvider(env.LLM_API_KEY ?? "", env.LLM_MODEL ?? "claude-sonnet-4");
+  }
+  return _aiProvider;
+}
+
+const GREETING_PROMPT = `Bir sağlık turizmi kliniğinin WhatsApp karşılama asistanı ol. Lead'in dilinde ({language}) kısa, sıcak ve profesyonel bir karşılama mesajı yaz. 300 karakteri geçme. Tıbbi tavsiye, teşhis veya fiyat verme. Sadece karşılama ve yardıma yönlendirme yap.`;
+
+async function generateAIGreeting(language: string): Promise<string | null> {
+  try {
+    const provider = getAIProvider();
+    const key = language === "ar" ? "AR" : language.toUpperCase() as "TR" | "EN" | "DE" | "RU" | "AR";
+    const result = await provider.generate({ clinic: "Klinik", service: "Sağlık Turizmi", market: "global", language: key as any, budget: 0, duration: 1 });
+    return result.variants[0].text?.slice(0, 300) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const WebhookSchema = z.object({
   object: z.literal("page"),
@@ -210,6 +234,7 @@ async function ingestMessaging(input: {
       id: true,
       metadata: true,
       channel: true,
+      language: true,
       conversations: {
         where: { status: { in: ["ACTIVE", "ESCALATED"] } },
         take: 1,
@@ -226,6 +251,7 @@ async function ingestMessaging(input: {
   let conversationId = lead?.conversations[0]?.id ?? null;
   let metadata = lead?.metadata as Record<string, unknown> | null;
   let leadId = lead?.id ?? null;
+  let leadLanguage = lead?.language ?? "tr";
 
   if (!lead) {
     const created = await prisma.lead.create({
@@ -253,6 +279,7 @@ async function ingestMessaging(input: {
       },
     });
     leadId = created.id;
+    leadLanguage = created.language;
     metadata = created.metadata as Record<string, unknown>;
   }
 
@@ -270,6 +297,19 @@ async function ingestMessaging(input: {
     });
     conversationId = conversation.id;
     if (channel === "WHATSAPP") {
+      const aiGreeting = await generateAIGreeting(leadLanguage);
+      if (aiGreeting) {
+        await prisma.message.create({
+          data: {
+            conversationId,
+            direction: "OUTGOING",
+            channel: "WHATSAPP",
+            content: aiGreeting,
+            sender: "bot",
+            metadata: { autoGreet: true, source: "ai" },
+          },
+        });
+      }
       const templateName = process.env.WHATSAPP_GREETING_TEMPLATE ?? "";
       if (templateName) {
         const greeting = await sendWhatsAppMessage(
@@ -284,7 +324,7 @@ async function ingestMessaging(input: {
               conversationId,
               direction: "OUTGOING",
               channel: "WHATSAPP",
-              content: "(otomatik karşılama)",
+              content: "(şablon karşılama)",
               sender: "bot",
               metadata: {
                 whatsappTemplate: templateName,

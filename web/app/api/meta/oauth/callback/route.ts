@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       );
 
     const tokenUrl = new URL(
-      `https://graph.facebook.com/${env.META_API_VERSION}/oauth/access_token`,
+      `https://graph.facebook.com/${env.metaGraphApiVersion}/oauth/access_token`,
     );
     tokenUrl.searchParams.set("client_id", env.META_APP_ID);
     tokenUrl.searchParams.set("redirect_uri", env.META_REDIRECT_URI);
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       throw new HttpError(400, "Meta erişim tokenı alınamadı.");
 
     const meUrl = new URL(
-      `https://graph.facebook.com/${env.META_API_VERSION}/me`,
+      `https://graph.facebook.com/${env.metaGraphApiVersion}/me`,
     );
     meUrl.searchParams.set("fields", "id,name");
     meUrl.searchParams.set("access_token", accessToken);
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
     let metaAccountId: string | null = null;
     try {
       const bmUrl = new URL(
-        `https://graph.facebook.com/${env.META_API_VERSION}/me/businesses`,
+        `https://graph.facebook.com/${env.metaGraphApiVersion}/me/businesses`,
       );
       bmUrl.searchParams.set("fields", "id,name");
       bmUrl.searchParams.set("access_token", accessToken);
