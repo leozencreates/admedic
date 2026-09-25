@@ -72,3 +72,17 @@ Kural (spec §6): emin olmadığın her konuda güncel resmi dokümantasyona bak
 
 - `classifyRisk(adCopy,key,model)` Meta Advertising Standards'a göre risk skorlar (prompt `policy-risk-v1`); uluslararası garantili/öncelik klişelerini ve "garanti sonuç/üstünlük" vaatlerini bayraklar.
 - Katmanlar birleşik: kural motoru risk'i korunur; LLM bulunursa `policy.llm` olarak eklenir (`risk` alanı katman 1'den gelir). LLM anahtarı yoksa/hata olursa sessizce `llm: null` — yayın engellenmez.
+
+## 2026-09-26 — T9: Rıza, Stripe ve CAPI güncellemesi
+
+### 3.11 — KVKK/GDPR uyumu ve rıza yönetimi
+
+- **CAPI rıza kapısı**: `web/app/api/capi/lead/route.ts` artık `lead.consentGiven` kontrolü yapmadan PII (hashed email/phone) içeren CAPI dönüşümü göndermez. `consentGiven=false` (veya `WITHDRAWN` status) lead'e CAPI olayı → **409** hata + audit log. Bu, KVKK/GDPR'a uyum sağlar; rıza verilmemiş lead'lere dönüşüm kaydı oluşturulmaz.
+
+- **Stripe `stripeSubscriptionId`**: `Subscription` modeline `stripeSubscriptionId String? @unique` eklendi (migration 07). Checkout rotası: `STRIPE_SECRET_KEY` yoksa **mock mod** (Stripe SDK çağrısı yapmadan yerel ACTIVE + `mock:true` dönüşü, metadata'ya `plan` eklenir). Webhook: `checkout.session.completed` → local `subscription` upsert ile `stripeSubscriptionId` kaydedilir; `invoice.payment_succeeded/failed`, `customer.subscription.deleted/updated` → `stripeSubscriptionId` ile eşleştirilip local abonelik senkronize edilir; `customer.subscription.updated` → dönem sonu ve `cancelAtPeriodEnd` senkronizasyonu. İmza doğrulaması `STRIPE_WEBHOOK_SECRET` ile; yoksa payload parse edilir (dev ortamı uyumluluğu).
+
+### 3.12 — Faturalandırma ve checkout
+
+- **Checkout mock modu**: `STRIPE_SECRET_KEY` ortam değişkeni tanımlı değilse, `getStripe()` `new Stripe("")` yerine yerel işlem yapar; `subscription` `ACTIVE` olarak işaretlenir; `checkoutUrl` boş döner; `mock: true` flagü yanıtta gönderilir. Bu sayede `STRIPE_SECRET_KEY` tanımlanmayan geliştirme ortamlarında test edilebilir.
+- **Faturanın yükseltme/güncelleme senkronu**: `invoice.payment_succeeded` → yerel `invoice` `PAID` + `paidAt` ayarlanır; `invoice.payment_failed` → `PAST_DUE`; `customer.subscription.deleted` → `CANCELED`; `customer.subscription.updated` → dönem sonu ve `cancelAtPeriodEnd` senkronizasyonu.
+

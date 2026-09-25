@@ -50,9 +50,3 @@ CREATE INDEX "Invoice_subscriptionId_index" ON "Invoice"("subscriptionId");
 
 -- CreateIndex
 CREATE INDEX "Invoice_organizationId_index" ON "Invoice"("organizationId");
-
--- AddForeignKey
-ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
