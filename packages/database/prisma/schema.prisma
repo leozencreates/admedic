@@ -498,6 +498,11 @@ model Creative {
   imageUrl      String?
   thumbnailUrl  String?
   status        String    @default("DRAFT") // DRAFT | IN_REVIEW | APPROVED | PAUSED | ACTIVE | REJECTED
+  languages     String[]  @default([]) // Üretimde hedeflenen reklam dilleri (spec 3.4)
+  variations    Int       @default(1) // Üretilen/yayınlanacak varyasyon sayısı (spec 3.4)
+  brief         Json? // Kreatif brief + üretilen varyant çıktısı (spec 3.4)
+  policyRisk    PolicyRisk? // Üretim sonrası içerik kontrolü risk düzeyi (spec 3.4)
+  policyReport  Json? // checkPolicy çıktısı (version, findings)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
