@@ -413,6 +413,7 @@ model Campaign {
   rejectionReason String?
   metaReviewStatus String?  // Meta reklam inceleme durumu (APPROVED/REJECTED/...)
   metaRejectionReason Json? // Meta red gerekçesi (kural iyileştirme için raporlanır)
+  plan Json? // Planlayıcı çıktısı + girişler (structure/strategy/rationale/testPlan/pazarlar/diller) — spec 3.3
 
   adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)

@@ -10,6 +10,10 @@ export interface CampaignPlanInput {
   ageMax?: number;
   languages: string[];
   conversionMethod: ConversionMethod;
+  /** Kullanıcı CBO/ABO'yu elle seçebilir; verilmezse bütçe stratejisi otomatik türetilir. */
+  strategy?: "CBO" | "ABO";
+  /** Doğal dilde reklam hedefi (serbest metin; plan kaydına işlenir). */
+  brief?: string;
 }
 
 export interface CampaignPlan {
@@ -53,6 +57,18 @@ export const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
   POLAND: ["PL"],
 };
 
+export const PLANNER_MARKETS: Record<string, string> = {
+  DE: "Almanya",
+  TR: "Türkiye",
+  RU: "Rusya",
+  GB: "Birleşik Krallık",
+  GULF: "Körfez",
+  USA: "ABD",
+  NETHERLANDS: "Hollanda",
+  FRANCE: "Fransa",
+  POLAND: "Polonya",
+};
+
 export function marketLanguages(markets: string[]): string[] {
   const langs = new Set<string>();
   for (const m of markets) {
@@ -88,7 +104,9 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
   const label = OBJECTIVE_LABEL[input.objective];
   const name = `${label} — ${mainMarket}`;
 
-  const strategy: "CBO" | "ABO" = marketCount > 1 || autoLangs.length > 1 ? "CBO" : "ABO";
+  const strategy: "CBO" | "ABO" =
+    input.strategy ??
+    (marketCount > 1 || autoLangs.length > 1 ? "CBO" : "ABO");
   const rationale =
     strategy === "CBO"
       ? `${marketCount} pazar tek bir bütçe kampanyasında birleştirilir; Meta, bütçeyi en iyi performans gösteren reklam setine otomatik dağıtır.`

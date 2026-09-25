@@ -20,6 +20,8 @@ const PlannerSchema = z
     conversionMethod: z
       .enum(["landing_form", "whatsapp", "instagram_dm"])
       .default("landing_form"),
+    strategy: z.enum(["CBO", "ABO"]).optional(),
+    brief: z.string().trim().max(2000).optional(),
   })
   .strict();
 
@@ -41,6 +43,8 @@ export async function POST(request: Request) {
       ageMax: input.ageMax,
       languages: input.languages ?? [],
       conversionMethod: input.conversionMethod ?? "landing_form",
+      strategy: input.strategy,
+      brief: input.brief,
     });
     return { plan };
   });
