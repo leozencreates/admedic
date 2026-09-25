@@ -8,6 +8,7 @@ const OBJECTIVE_LABEL: Record<string, string> = { MAX_ROAS: "Maksimum ROAS", MAX
 interface CampaignData { id: string; name: string; status: string; workflowStatus: string; policyRisk: string | null; objective: string; budget: number; adSets: number; createdAt: string; metaCampaignId: string | null; rejectionReason: string | null; }
 export default function CampaignPlannerPage() {
   const [campaigns, setCampaigns] = useState<CampaignData[]>([]);
+  const [conns, setConns] = useState<{ id: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [draftName, setDraftName] = useState("");
   const [objective, setObjective] = useState("MAX_ROAS");
@@ -16,6 +17,7 @@ export default function CampaignPlannerPage() {
   async function load() {
     setLoading(true);
     try { const data = await api<{ campaigns: CampaignData[] }>("/api/campaigns"); setCampaigns(data.campaigns); } catch { setCampaigns([]); }
+    try { const c = await api<{ connections: { id: string; status: string }[] }>("/api/meta/connections"); setConns(c.connections ?? []); } catch { setConns([]); }
     setLoading(false);
   }
   async function createDraft() {
@@ -55,6 +57,11 @@ export default function CampaignPlannerPage() {
         <h1>Kampanya Taslak Oluştur</h1>
         <p className="text-sm text-slate-500">AI ajan taslağı üretir; onaylanmadan yayınlanmaz.</p>
       </header>
+      {conns.some((c) => c.status === "EXPIRED" || c.status === "REVOKED") && (
+        <a href="/meta-connections" className="block rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700 hover:bg-rose-100">
+          Meta bağlantısı kesik. Kampanya işlemlerini sürdürmek için bağlantıları yenileyin →
+        </a>
+      )}
       <Card>
         <SectionHeading title="Yeni Taslak" description="Hedef, bütçe ve hedefleme ayarları." />
         <div className="mt-6 space-y-4">

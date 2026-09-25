@@ -1,9 +1,20 @@
-import { randomBytes, createDecipheriv, scryptSync } from "node:crypto";
+import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from "node:crypto";
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
-import { createMetaClient, type MetaClientLike } from "@admedic/meta-api";
+import {
+  createMetaClient,
+  exchangeUserToken,
+  getAppAccessToken,
+  getTokenDebug,
+  type MetaClientLike,
+} from "@admedic/meta-api";
 import type { Alert } from "@admedic/database";
 import { AlertSeverity, AlertType } from "@admedic/database";
+
+/** Meta token yenileme eşiği: Süresi bu pencerenin altına inen bağlantılar yenilenir. */
+const META_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+/** debug_token ile geçerlilik kontrolüne girilecek pencere (revoked token tespiti). */
+const META_DEBUG_WINDOW_MS = 10 * 24 * 60 * 60 * 1000;
 import {
   buildWeeklyReport,
   isReportDay,
@@ -35,6 +46,7 @@ export interface ScheduledJob {
   run(): Promise<{
     insightsSynced: number;
     alertsCreated: number;
+    webhooksDelivered: number;
     completed: number;
     emailsSent: number;
   }>;
@@ -60,6 +72,7 @@ export function stop(): void {
 export async function runOnce(): Promise<{
   insightsSynced: number;
   alertsCreated: number;
+  webhooksDelivered: number;
   completed: number;
   emailsSent: number;
 }> {
@@ -71,6 +84,7 @@ async function runScheduled(meta: MetaClientLike) {
   const workspaceIds = (await prisma.workspace.findMany({ select: { id: true } })).map((w) => w.id);
   let insightsSynced = 0;
   let alertsCreated = 0;
+  let webhooksDelivered = 0;
   let completed = 0;
   let emailsSent = 0;
   for (const wsId of workspaceIds) {
@@ -83,7 +97,9 @@ async function runScheduled(meta: MetaClientLike) {
       select: { id: true, retentionDays: true },
     });
     insightsSynced += await syncInsights(meta, workspace);
-    alertsCreated += await checkConnectionHealth(workspace);
+    const health = await checkConnectionHealth(workspace);
+    alertsCreated += health.alerts;
+    webhooksDelivered += health.webhooks;
     alertsCreated += await runAnonRetention(org ?? { id: workspace.orgId, retentionDays: 0 }, workspace.id);
     emailsSent += await deliverWeeklyReport(workspace.id);
     const experiments = await prisma.studioExperiment.findMany({
@@ -96,7 +112,7 @@ async function runScheduled(meta: MetaClientLike) {
       completed += result.completed ? 1 : 0;
     }
   }
-  return { insightsSynced, alertsCreated, completed, emailsSent };
+  return { insightsSynced, alertsCreated, webhooksDelivered, completed, emailsSent };
 }
 
 async function deliverWeeklyReport(workspaceId: string): Promise<number> {
@@ -166,34 +182,201 @@ async function runAnonRetention(org: { id: string; retentionDays: number | null 
   return anonymized;
 }
 
-async function checkConnectionHealth(workspace: any): Promise<number> {
+async function checkConnectionHealth(
+  workspace: any,
+): Promise<{ alerts: number; webhooks: number }> {
+  const env = loadEnv();
   let alerts = 0;
+  let webhooks = 0;
   const accounts = workspace.adAccounts?.filter((a: any) => a.connectionId) ?? [];
   for (const account of accounts) {
     const conn = account.connection;
     if (!conn) continue;
-    if (conn.status === "EXPIRED" || conn.status === "REVOKED" || conn.status === "REJECTED") {
-      const env = loadEnv();
-      const existing = await prisma.alert.findFirst({
-        where: { workspaceId: workspace.id, type: AlertType.META_DISCONNECTED, entityId: conn.id, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } },
+
+    // 1) DB durumu zaten kopmuş → bildir.
+    if (conn.status === "EXPIRED" || conn.status === "REVOKED") {
+      const created = await ensureDisconnectAlert(workspace.id, conn, account.id, conn.status);
+      alerts += created;
+      if (created) webhooks += (await deliverDisconnectWebhook(workspace.id, conn, account.id, conn.status)) ? 1 : 0;
+      continue;
+    }
+    if (conn.status !== "CONNECTED") continue;
+
+    // Mock modda gerçek token yoktur; DB durumu yeterlidir.
+    if (env.META_MOCK_MODE) continue;
+    if (!conn.tokenCiphertext || !conn.expiresAt) continue;
+
+    const token = decryptToken(conn.tokenCiphertext);
+    const now = Date.now();
+
+    if (conn.expiresAt.getTime() <= now) {
+      // Süresi dolmuş token → EXPIRED, kritik uyarı.
+      await prisma.metaConnection.update({
+        where: { id: conn.id },
+        data: { status: "EXPIRED", lastError: "Token süresi doldu." },
       });
-      if (!existing) {
-        await prisma.alert.create({
-          data: {
-            workspaceId: workspace.id,
-            type: AlertType.META_DISCONNECTED,
-            severity: AlertSeverity.CRITICAL,
-            title: `Meta bağlantısı ${conn.status}: ${account.id}`,
-            message: `Ad account ${account.id} bağlantısı ${conn.status} durumunda. Kampanya işlemleri durduruldu.`,
-            entityType: "META_CONNECTION",
-            entityId: conn.id,
-          },
-        });
-        alerts++;
+      const created = await ensureDisconnectAlert(workspace.id, conn, account.id, "EXPIRED");
+      alerts += created;
+      if (created) webhooks += (await deliverDisconnectWebhook(workspace.id, conn, account.id, "EXPIRED")) ? 1 : 0;
+      continue;
+    }
+
+    // 2) debug_token ile geçersiz/iptal tespiti (son kullanma yakınsa veya belirsizse).
+    const nearExpiry = conn.expiresAt.getTime() - now < META_DEBUG_WINDOW_MS;
+    if (!conn.expiresAt || nearExpiry) {
+      if (env.META_APP_ID && env.META_APP_SECRET) {
+        try {
+          const debug = await getTokenDebug(token, getAppAccessToken());
+          if (debug.isValid === false) {
+            await prisma.metaConnection.update({
+              where: { id: conn.id },
+              data: {
+                status: "REVOKED",
+                lastError: debug.error ?? "Token geçersiz veya iptal edilmiş.",
+              },
+            });
+            const created = await ensureDisconnectAlert(workspace.id, conn, account.id, "REVOKED");
+            alerts += created;
+            if (created) webhooks += (await deliverDisconnectWebhook(workspace.id, conn, account.id, "REVOKED")) ? 1 : 0;
+            continue;
+          }
+          if (debug.expiresAt && (!conn.expiresAt || debug.expiresAt.getTime() > conn.expiresAt.getTime())) {
+            await prisma.metaConnection.update({ where: { id: conn.id }, data: { expiresAt: debug.expiresAt } });
+            conn.expiresAt = debug.expiresAt;
+          }
+        } catch {
+          // debug_token çağrısı başarısızsa sessiz geç; işlem devam eder.
+        }
+      }
+    }
+
+    // 3) Süre dolmadan proaktif yenileme; başarısızsa TOKEN_EXPIRING uyarısı.
+    if (conn.expiresAt.getTime() - now < META_REFRESH_WINDOW_MS) {
+      if (env.META_APP_ID && env.META_APP_SECRET) {
+        try {
+          const exchanged = await exchangeUserToken(token);
+          await prisma.metaConnection.update({
+            where: { id: conn.id },
+            data: {
+              tokenCiphertext: encryptToken(exchanged.accessToken),
+              expiresAt: exchanged.expiresAt ?? conn.expiresAt,
+              status: "CONNECTED",
+              lastError: null,
+            },
+          });
+        } catch (err) {
+          const created = await ensureExpiringAlert(
+            workspace.id,
+            conn,
+            account.id,
+            err instanceof Error ? err.message : String(err),
+          );
+          alerts += created;
+        }
+      } else {
+        const created = await ensureExpiringAlert(
+          workspace.id,
+          conn,
+          account.id,
+          "META_APP_ID/META_APP_SECRET ayarlanmamış; proaktif yenileme yapılamadı.",
+        );
+        alerts += created;
       }
     }
   }
-  return alerts;
+  return { alerts, webhooks };
+}
+
+function encryptToken(token: string): string {
+  const key = getKey();
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString("base64");
+}
+
+async function ensureDisconnectAlert(
+  workspaceId: string,
+  conn: any,
+  accountId: string,
+  status: string,
+): Promise<number> {
+  const existing = await prisma.alert.findFirst({
+    where: { workspaceId, type: AlertType.META_DISCONNECTED, entityId: conn.id, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } },
+  });
+  if (existing) return 0;
+  await prisma.alert.create({
+    data: {
+      workspaceId,
+      type: AlertType.META_DISCONNECTED,
+      severity: AlertSeverity.CRITICAL,
+      title: `Meta bağlantısı ${status}: ${accountId}`,
+      message: `Ad account ${accountId} bağlantısı ${status} durumunda. Kampanya işlemleri durduruldu.`,
+      entityType: "META_CONNECTION",
+      entityId: conn.id,
+    },
+  });
+  return 1;
+}
+
+async function ensureExpiringAlert(
+  workspaceId: string,
+  conn: any,
+  accountId: string,
+  reason: string,
+): Promise<number> {
+  const existing = await prisma.alert.findFirst({
+    where: { workspaceId, type: AlertType.TOKEN_EXPIRING, entityId: conn.id, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } },
+  });
+  if (existing) return 0;
+  await prisma.alert.create({
+    data: {
+      workspaceId,
+      type: AlertType.TOKEN_EXPIRING,
+      severity: AlertSeverity.WARNING,
+      title: `Meta token'ı süresi dolmak üzere: ${accountId}`,
+      message: `Bağlantı ${conn.name ?? accountId} token'ı ${conn.expiresAt?.toISOString() ?? "kısa"}. Yenilenemedi: ${reason}`,
+      entityType: "META_CONNECTION",
+      entityId: conn.id,
+    },
+  });
+  return 1;
+}
+
+async function deliverDisconnectWebhook(
+  workspaceId: string,
+  conn: any,
+  accountId: string,
+  status: string,
+): Promise<boolean> {
+  const env = loadEnv();
+  if (!env.META_DISCONNECTED_WEBHOOK_URL) return false;
+  try {
+    const res = await fetch(env.META_DISCONNECTED_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        event: "meta.connection.disconnected",
+        workspaceId,
+        connectionId: conn.id,
+        adAccountId: accountId,
+        connectionType: conn.type,
+        status,
+        connectionName: conn.name ?? null,
+        metaAccountId: conn.metaAccountId ?? null,
+        occurredAt: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[meta-sync] webhook teslimi ${res.status}: ${await res.text().catch(() => "")}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[meta-sync] webhook teslimi başarısız: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
 }
 
 async function syncInsights(meta: MetaClientLike, workspace: any): Promise<number> {

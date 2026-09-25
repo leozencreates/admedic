@@ -95,6 +95,19 @@ export default function MetaConnectionsPage() {
     }
     setTimeout(load, 1500);
   }
+  async function disconnect(id: string) {
+    if (!window.confirm("Bağlantı kesilecek ve ilgili reklam hesapları duraklatılacak. Emin misiniz?")) return;
+    try {
+      const r = await api<{ connection: { id: string; status: string; adAccountsPaused: number } }>(
+        "/api/meta/connections/" + id,
+        "DELETE",
+      );
+      setMsg({ kind: "ok", text: `Bağlantı kesildi (${r.connection.adAccountsPaused} reklam hesabı duraklatıldı).` });
+    } catch (e: any) {
+      setMsg({ kind: "err", text: e?.message ?? "Bağlantı kesilemedi." });
+    }
+    setTimeout(load, 2000);
+  }
   function daysLeft(expiresAt: string | undefined): number | null {
     if (!expiresAt) return null;
     const d = Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 86_400_000));
@@ -141,6 +154,9 @@ export default function MetaConnectionsPage() {
                     )}
                     {!expired && daysLeft(c.expiresAt) !== null && daysLeft(c.expiresAt)! <= 3 && (
                       <button onClick={() => refresh(c.id)} className="rounded bg-amber-600 px-2 py-0.5 text-white hover:bg-amber-700">Yenile</button>
+                    )}
+                    {!expired && (
+                      <button onClick={() => disconnect(c.id)} className="rounded bg-rose-600 px-2 py-0.5 text-white hover:bg-rose-700">Bağlantıyı Kes</button>
                     )}
                   </div>
                   {c.missingPermissions.length > 0 && (

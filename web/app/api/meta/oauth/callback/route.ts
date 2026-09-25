@@ -9,6 +9,7 @@ import {
 } from "../../../../_lib/oauth-state";
 import { encrypt } from "../../../../_lib/encrypt";
 import { requiredScopesMissing } from "../../../../_lib/meta-scopes";
+import { createMetaClient } from "@admedic/meta-api";
 export const maxDuration = 15;
 
 export async function GET(request: Request) {
@@ -118,13 +119,56 @@ export async function GET(request: Request) {
       where: { orgId: actor.orgId, type: "BUSINESS_MANAGER" },
       select: { id: true },
     });
+    let connectionId: string;
     if (existing) {
       await prisma.metaConnection.update({ where: { id: existing.id }, data });
+      connectionId = existing.id;
     } else {
-      await prisma.metaConnection.create({
+      const created = await prisma.metaConnection.create({
         data: { orgId: actor.orgId, type: "BUSINESS_MANAGER", ...data },
       });
+      connectionId = created.id;
     }
+
+    // Ad account keşfi: bağlı Business Manager'daki reklam hesaplarını senkronla.
+    // Mock modda gerçek Graph çağrısı atlanır (token gerçek olsa bile).
+    if (!env.META_MOCK_MODE) {
+      try {
+        const discovered = await createMetaClient({ mock: false }).getAdAccounts(accessToken);
+        const hasDefault = await prisma.adAccount.findFirst({
+          where: { workspaceId: actor.workspaceId, isDefault: true },
+          select: { id: true },
+        });
+        for (const acc of discovered) {
+          await prisma.adAccount.upsert({
+            where: { orgId_metaAccountId: { orgId: actor.orgId, metaAccountId: acc.id } },
+            create: {
+              orgId: actor.orgId,
+              workspaceId: actor.workspaceId,
+              connectionId,
+              metaAccountId: acc.id,
+              name: acc.name !== "" ? acc.name : "Meta Reklam Hesabı",
+              currency: acc.currency ?? "EUR",
+              timezone: acc.timezone ?? "Europe/Istanbul",
+              status: "ACTIVE",
+              isDefault: !hasDefault,
+              syncedAt: new Date(),
+            },
+            update: {
+              connectionId,
+              name: acc.name !== "" ? acc.name : undefined,
+              currency: acc.currency ?? undefined,
+              timezone: acc.timezone ?? undefined,
+              status: "ACTIVE",
+              syncedAt: new Date(),
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("[oauth] reklam hesabı keşfi başarısız:", err);
+      }
+    }
+
     await prisma.auditLog.create({
       data: {
         orgId: actor.orgId,

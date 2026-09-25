@@ -196,6 +196,7 @@ enum AlertType {
   PIXEL_ERROR
   CREATIVE_FATIGUE
   BUDGET_MODIFIED_EXTERNAL
+  TOKEN_EXPIRING
 }
 
 enum InsightGranularity {
