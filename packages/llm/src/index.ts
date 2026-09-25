@@ -2,13 +2,29 @@ import { z } from "zod";
 import { SYSTEM, LOCALIZATION, PROMPT_VERSION } from "../prompts/creative-v1";
 export { PROMPT_VERSION };
 
+export const BriefLanguageEnum = z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"]);
+
+/** Klinik profili (spec 3.2): üretim bağlamı — sunucu tarafında DB'den zenginleştirilir. */
+export const BriefProfileSchema = z
+  .object({
+    brandTone: z.string().max(2000).optional(),
+    languages: z.array(BriefLanguageEnum).optional(),
+    targetMarket: z
+      .enum(["TURKEY", "GERMANY", "UK", "NETHERLANDS", "USA", "GULF", "OTHER"])
+      .optional(),
+    services: z.array(z.string().min(1).max(100)).optional(),
+    bannedPhrases: z.array(z.string().min(2).max(200)).optional(),
+  })
+  .strict();
+
 export const BriefSchema = z.object({
   clinic: z.string().trim().min(1).max(100),
   service: z.string().trim().min(1).max(100),
   market: z.string().trim().min(1).max(80),
-  language: z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"]),
+  language: BriefLanguageEnum,
   budget: z.number().positive().max(1_000_000).finite(),
   duration: z.number().int().min(1).max(90),
+  profile: BriefProfileSchema.optional(),
 });
 export const VariantSchema = z
   .object({

@@ -1,6 +1,11 @@
 import { prisma, type Prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
-import { classifyRisk, DraftSchema, type DraftContent } from "@admedic/llm";
+import {
+  classifyRisk,
+  DraftSchema,
+  type Brief,
+  type DraftContent,
+} from "@admedic/llm";
 import { z } from "zod";
 import { type Actor, EDIT_ROLES, requireRole } from "./auth";
 import { checkPolicyWithRules } from "./policy-loader";
@@ -22,6 +27,37 @@ export const DraftActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
+/**
+ * Klinik profili üretim bağlamı (spec 3.2): brief'te geçen klinik adıyla eşleşen
+ * (veya tek aktif klinikse) profil verisi — marka tonu, diller, hedef pazar,
+ * hizmet kataloğu, yasaklı ifadeler — brief'e eklenir. LLM yalnız sağlanan
+ * gerçekleri kullanır; bannedPhrases profil dışı kullanılmaz.
+ */
+export async function enrichBriefWithProfile(input: Brief, workspaceId: string): Promise<Brief> {
+  const clinics = await prisma.clinicProfile.findMany({
+    where: { workspaceId, status: "ACTIVE" },
+    include: {
+      services: { where: { status: "ACTIVE" }, select: { name: true } },
+    },
+  });
+  if (clinics.length === 0) return input;
+  const q = input.clinic.trim().toLocaleLowerCase("tr");
+  let clinic =
+    clinics.find((c) => c.name.toLocaleLowerCase("tr") === q) ??
+    (clinics.length === 1 ? clinics[0] : undefined);
+  if (!clinic) return input;
+  const profile: NonNullable<Brief["profile"]> = {
+    ...(clinic.brandTone ? { brandTone: clinic.brandTone } : {}),
+    ...(clinic.languages.length > 0 ? { languages: [...clinic.languages] } : {}),
+    targetMarket: clinic.targetMarket,
+    ...(clinic.services.length > 0 ? { services: clinic.services.map((s) => s.name) } : {}),
+    ...(clinic.brandBannedPhrases.length > 0
+      ? { bannedPhrases: clinic.brandBannedPhrases }
+      : {}),
+  };
+  return { ...input, profile };
+}
+
 /**
  * Politika kontrolü (spec 3.5): katman 1 kural motoru + tenant brand yasaklı
  * ifadeleri, katman 2 LLM best-effort (anahtar yoksa/hata olursa llm:null).

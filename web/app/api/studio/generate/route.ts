@@ -8,7 +8,7 @@ import {
   quota,
 } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
-import { policyFor } from "../../../_lib/studio-service";
+import { policyFor, enrichBriefWithProfile } from "../../../_lib/studio-service";
 export const maxDuration = 60;
 export async function POST(request: Request) {
   return respond(async () => {
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
       },
     });
     try {
-      const result = await new AnthropicProvider(key, model).generate(brief);
+      const enriched = await enrichBriefWithProfile(brief, actor.workspaceId);
+      const result = await new AnthropicProvider(key, model).generate(enriched);
       await prisma.llmCallLog.update({
         where: { id: log.id },
         data: {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
           durationMs: Date.now() - started,
         },
       });
-      const content = { ...brief, variants: result.variants };
+      const content = { ...enriched, variants: result.variants };
       const policy = await policyFor(content, actor.workspaceId);
       return { content, policy };
     } catch {

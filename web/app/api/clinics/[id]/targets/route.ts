@@ -16,34 +16,36 @@ const TargetSchema = z
   })
   .strict();
 
-export async function GET(request: Request) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
+    const { id } = await params;
     const clinic = await prisma.clinicProfile.findFirst({
-      where: { workspaceId: actor.workspaceId },
+      where: { id, workspaceId: actor.workspaceId },
     });
     if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
     const targets = await prisma.marketTarget.findMany({
-      where: { clinicId: clinic.id },
+      where: { clinicId: id },
       orderBy: { country: "asc" },
     });
     return { targets };
   });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
     requireRole(actor, ["OWNER", "ADMIN", ...EDIT_ROLES]);
+    const { id } = await params;
     const input = await body(request, TargetSchema);
     return prisma.$transaction(async (tx) => {
       const clinic = await tx.clinicProfile.findFirst({
-        where: { workspaceId: actor.workspaceId },
+        where: { id, workspaceId: actor.workspaceId },
       });
       if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
       const existing = await tx.marketTarget.findUnique({
-        where: { clinicId_country: { clinicId: clinic.id, country: input.country } },
+        where: { clinicId_country: { clinicId: id, country: input.country } },
       });
       if (existing) {
         const updated = await tx.marketTarget.update({
