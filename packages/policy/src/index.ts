@@ -22,21 +22,21 @@ export type PolicyResult = {
 const HARD_RULES = [
   {
     id: "guarantee",
-    pattern: /garanti|kesin sonuç|guarantee|guaranteed|garantiert|гарант|مضمون|مضمونة/iu,
+    pattern: /garanti|kesin sonuç|guarantee|guaranteed|garantiert|гарант|مضمون|مضمونة|garantie|gegarandeerd|gwarancj|gwarantowan/iu,
     reason: "Kesin sonuç veya garanti ifadesi.",
     suggestion: "Sonuç vaadi yerine hizmet ve görüşme sürecini anlatın.",
   },
   {
     id: "before-after",
     pattern:
-      /önce\s*[/–—-]?\s*sonra|before\s*(?:and|&|[/–—-])?\s*after|vorher\s*(?:und|&|[/–—-])?\s*nachher|до\s*(?:и|[/–—-])?\s*после|قبل\s*(?:و|[/–—-])?\s*بعد/iu,
+      /önce\s*[/–—-]?\s*sonra|before\s*(?:and|&|[/–—-])?\s*after|vorher\s*(?:und|&|[/–—-])?\s*nachher|до\s*(?:и|[/–—-])?\s*после|قبل\s*(?:و|[/–—-])?\s*بعد|avant\s*(?:et|&|[/–—-])?\s*après|voor\s*(?:en|&|[/–—-])?\s*na|przed\s*(?:i|&|[/–—-])?\s*po/iu,
     reason: "Önce/sonra karşılaştırması.",
     suggestion: "Karşılaştırmayı kaldırıp tarafsız hizmet bilgisi kullanın.",
   },
   {
     id: "personal-attribute",
     pattern:
-      /(?:saçların(?:ız)? dökül|dişlerin(?:iz)? eksik|kel misin|are you bald|your missing teeth|sind sie kahl|ihre fehlenden zähne|вы лыс|ваши отсутствующие зубы|هل أنت أصلع|أسنانك المفقودة)/iu,
+      /(?:saçların(?:ız)? dökül|dişlerin(?:iz)? eksik|kel misin|are you bald|your missing teeth|sind sie kahl|ihre fehlenden zähne|вы лыс|ваши отсутствующие зубы|هل أنت أصلع|أسنانك المفقودة|êtes-vous chauve|vos dents manquantes|bent u kaal|uw ontbrekende tanden|czy jesteś łysy|brakujące zęby)/iu,
     reason: "Okuyucunun sağlık veya görünüş özelliği varsayılıyor.",
     suggestion:
       "Kişiye özellik atfetmek yerine hizmeti genel ifadelerle tanıtın.",

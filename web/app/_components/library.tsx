@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, labels } from "../_lib/client-api";
+import { rtlFor } from "../_lib/creative-lang";
 type Item = {
   id: string;
   name: string;
@@ -124,7 +125,7 @@ export function Library() {
               <h2>{item.name}</h2>
               <p
                 className="text-sm text-slate-500"
-                dir={item.content.language === "AR" ? "rtl" : "auto"}
+                dir={rtlFor(item.content.language)}
               >
                 {item.content.variants[0]?.headline}
               </p>

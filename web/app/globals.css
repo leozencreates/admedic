@@ -203,6 +203,10 @@ a:focus-visible {
   background: linear-gradient(135deg, #d4ecea, #effaf7 60%, #bcddd5);
   color: #306e63;
 }
+.ad-art[dir="rtl"] {
+  align-items: flex-end;
+  text-align: right;
+}
 .ad-art span {
   font-size: 10px;
   letter-spacing: 0.16em;

@@ -5,7 +5,7 @@ import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
 import { LanguageSwitcher } from "../_components/language-switcher";
 type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
 const STATUS_TONE: Record<string, Tone> = { DRAFT: "gray", IN_REVIEW: "amber", APPROVED: "green", PUBLISHED: "blue", REJECTED: "red" };
-const LANG_LABEL: Record<string, string> = { TR: "Türkçe", EN: "English", DE: "Deutsch", RU: "Русский", AR: "العربية" };
+const LANG_LABEL: Record<string, string> = { TR: "Türkçe", EN: "English", DE: "Deutsch", RU: "Русский", AR: "العربية", FR: "Français", NL: "Nederlands", PL: "Polski" };
 interface CreativeData { id: string; name: string; status: string; languages: string[]; variations: number; primaryText?: string; headline?: string; createdAt: string; }
 export default function CreativePage() {
   const [creatives, setCreatives] = useState<CreativeData[]>([]);
@@ -26,7 +26,7 @@ export default function CreativePage() {
       <header className="studio-hero">
         <span className="eyebrow">KREATİF ÜRETİMİ</span>
         <h1>Kreatif Üret</h1>
-        <p className="text-sm text-slate-500">TR/EN/DE/RU/AR için çok dilli kreatif üretimi.</p>
+        <p className="text-sm text-slate-500">TR/EN/DE/RU/AR + FR/NL/PL için çok dilli kreatif üretimi.</p>
       </header>
       <Card>
         <SectionHeading title="Yeni Kreatif" description="Kampanya için çok dilli kreatif üretin." />

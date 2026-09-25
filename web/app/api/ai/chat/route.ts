@@ -22,6 +22,9 @@ const LOCALIZATION: Record<string, string> = {
   DE: "Begrüßen Sie in der Sprache des Leads. Verwenden Sie eine formelle, klare Sprache.",
   RU: "Поздравьте на языке лида. Используйте вежливый, профессиональный тон.",
   AR: "صافح باللغة الخاصة بالعميل. استخدم لغة احترافية واضحة.",
+  FR: "Saluez le prospect dans sa propre langue. Utilisez un ton professionnel et clair.",
+  NL: "Groet de lead in de eigen taal. Gebruik een professionele, duidelijke toon.",
+  PL: "Przywitaj się w języku potencjalnego klienta. Używaj profesjonalnego, jasnego tonu.",
 };
 
 const SYSTEM_PROMPT = `You are a health tourism lead qualification assistant bot. Your tasks:
@@ -52,7 +55,7 @@ function detectUrgent(text: string): boolean {
 
 function getLeadLanguage(lead: { language: string }): string {
   const map: Record<string, string> = {
-    tr: "TR", en: "EN", de: "DE", ru: "RU", ar: "AR",
+    tr: "TR", en: "EN", de: "DE", ru: "RU", ar: "AR", fr: "FR", nl: "NL", pl: "PL",
   };
   return map[lead.language?.toLowerCase() ?? "tr"] ?? "TR";
 }

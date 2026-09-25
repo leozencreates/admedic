@@ -6,7 +6,7 @@ export const BriefSchema = z.object({
   clinic: z.string().trim().min(1).max(100),
   service: z.string().trim().min(1).max(100),
   market: z.string().trim().min(1).max(80),
-  language: z.enum(["TR", "EN", "DE", "RU", "AR"]),
+  language: z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"]),
   budget: z.number().positive().max(1_000_000).finite(),
   duration: z.number().int().min(1).max(90),
 });

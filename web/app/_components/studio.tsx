@@ -10,6 +10,7 @@ import {
 } from "@admedic/llm";
 import { checkPolicy } from "@admedic/policy";
 import { api, labels } from "../_lib/client-api";
+import { rtlFor } from "../_lib/creative-lang";
 
 type Saved = {
   id: string;
@@ -192,13 +193,13 @@ export function Studio({
     <div className="space-y-7">
       <header className="studio-hero">
         <span className="eyebrow">AI KREATİF STÜDYO / 01</span>
-        <h1>Bir fikir. Beş dil. Yeni olasılıklar.</h1>
+        <h1>Bir fikir. Sekiz dil. Yeni olasılıklar.</h1>
         <p>
           Klinik ve hedef pazarınıza göre reklam metinleri hazırlayın, inceleyin
           ve test planına dönüştürün.
         </p>
         <div className="hero-tags">
-          <span>TR · EN · DE · RU · AR</span>
+          <span>TR · EN · DE · RU · AR · FR · NL · PL</span>
           <span>Claude ile üretim</span>
           <span>{saved ? labels[saved.status] : "Yeni taslak"}</span>
         </div>
@@ -266,6 +267,9 @@ export function Studio({
                     <option value="DE">Deutsch</option>
                     <option value="RU">Русский</option>
                     <option value="AR">العربية</option>
+                    <option value="FR">Français</option>
+                    <option value="NL">Nederlands</option>
+                    <option value="PL">Polski</option>
                   </select>
                 </label>
               </div>
@@ -373,7 +377,7 @@ export function Studio({
               <div className="grid gap-4 md:grid-cols-2">
                 {draft.variants.map((v, i) => (
                   <article className="ad-preview" key={i}>
-                    <div className="flex items-center gap-3 p-5">
+                    <div dir={rtlFor(draft.language)} className="flex items-center gap-3 p-5">
                       <span className="variant-marker">{i ? "B" : "A"}</span>
                       <div>
                         <p className="font-semibold">{draft.clinic}</p>
@@ -383,7 +387,7 @@ export function Studio({
                       </div>
                     </div>
                     <div
-                      dir={draft.language === "AR" ? "rtl" : "auto"}
+                      dir={rtlFor(draft.language)}
                       className={`ad-art ${i ? "ad-art-b" : ""}`}
                     >
                       <span>
@@ -404,7 +408,7 @@ export function Studio({
                                 : "CTA"}
                           <textarea
                             disabled={busy || !canEdit}
-                            dir={draft.language === "AR" ? "rtl" : "auto"}
+                            dir={rtlFor(draft.language)}
                             rows={key === "text" ? 4 : key === "description" ? 2 : 2}
                             maxLength={key === "text" ? 2000 : key === "description" ? 500 : 150}
                             value={v[key] ?? ""}
@@ -431,16 +435,16 @@ export function Studio({
                   <div className="section-kicker">LEAD TOPLAMA UZANTILARI</div>
                   {draft.instantForm && (
                     <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm">
-                      <strong>Instant Form</strong>
-                      <p className="mt-1" dir={draft.language === "AR" ? "rtl" : "auto"}>
+                      <strong dir={rtlFor(draft.language)}>Instant Form</strong>
+                      <p className="mt-1" dir={rtlFor(draft.language)}>
                         Sorular: {draft.instantForm.questions.join(" · ")}
                       </p>
                     </div>
                   )}
                   {draft.whatsapp && (
                     <div className="mt-3 rounded-xl bg-emerald-50 p-4 text-sm">
-                      <strong>WhatsApp karşılama</strong>
-                      <p className="mt-1" dir={draft.language === "AR" ? "rtl" : "auto"}>
+                      <strong dir={rtlFor(draft.language)}>WhatsApp karşılama</strong>
+                      <p className="mt-1" dir={rtlFor(draft.language)}>
                         {draft.whatsapp.welcome}
                       </p>
                     </div>

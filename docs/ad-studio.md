@@ -19,7 +19,7 @@ Anahtar yoksa AI düğmesi açık hata gösterir. "Metinleri kendim yazacağım"
 
 ## Ekranlar ve akış
 
-- `/studio`: TR/EN/DE/RU/AR brifi, AI üretimi, düzenlenebilir iki reklam kartı, Arapça RTL. İki varyant başlık bakımından farklı, metin ve CTA aynı olacak şekilde üretilir. Eski tarayıcı taslağı isteğe bağlı içe aktarılabilir; otomatik olarak sunucuya gönderilmez.
+- `/studio`: TR/EN/DE/RU/AR/FR/NL/PL brifi, AI üretimi, düzenlenebilir iki reklam kartı, Arapça RTL önizleme. İki varyant başlık bakımından farklı, metin ve CTA aynı olacak şekilde üretilir. Eski tarayıcı taslağı isteğe bağlı içe aktarılabilir; otomatik olarak sunucuya gönderilmez.
 - `/library`: kliniğin reklam kütüphanesi, arama ve durum filtresi. Son güncellenen 100 taslak gösterilir.
 - Taslak → Onaya gönder → İçeriği onayla veya Düzeltme iste. Owner/admin onaylar; media buyer taslak oluşturabilir/düzenleyebilir. Viewer/analyst yalnızca okur. Yüksek riskli içerik sunucu tarafında engellenir. Kaydedilen her düzenleme önceki onayı sıfırlar. İşlemler sürüm kontrolü ve audit kaydıyla transaction içinde tamamlanır.
 - Onaylı taslaktan A/B deneyi oluşturun. Deney reklam metinlerinin değişmez kopyasını tutar; taslağın sonraki düzenlemeleri deneyi değiştirmez. Her taslak için bir deney oluşturulur.

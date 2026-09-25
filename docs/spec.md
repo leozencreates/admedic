@@ -67,7 +67,7 @@ Kabul kriterleri:
 - Her öneri "neden" açıklamasıyla gelir.
 
 ### 3.4 Çok Dilli Kreatif Üretimi (P0)
-Diller: TR, EN, DE, RU, AR (P0); FR, NL, PL (P1). Arapça için RTL önizleme.
+Diller: TR, EN, DE, RU, AR, FR, NL, PL. Arapça için RTL önizleme.
 Üretilenler: primary text, headline, description, CTA önerisi, Instant Form soruları, WhatsApp karşılama mesajı. Her kreatif için birden fazla varyasyon.
 Görsel tarafı (P1): görsel brief, format uyarlama (1:1, 4:5, 9:16). Yapay "önce/sonra" görseli üretimi yapılmaz.
 Çeviri değil yerelleştirme: her pazar için ayrı prompt'la üretilir.

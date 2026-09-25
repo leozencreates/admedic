@@ -1,0 +1,4 @@
+-- Spec 3.4 (P1): FR/NL/PL dilleri plus RTL önizleme
+ALTER TYPE "Language" ADD VALUE IF NOT EXISTS 'FR';
+ALTER TYPE "Language" ADD VALUE IF NOT EXISTS 'NL';
+ALTER TYPE "Language" ADD VALUE IF NOT EXISTS 'PL';

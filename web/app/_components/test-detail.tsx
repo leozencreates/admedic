@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { DraftContent } from "@admedic/llm";
 import { api, labels } from "../_lib/client-api";
+import { rtlFor } from "../_lib/creative-lang";
 import {
   compare,
   validMetrics,
@@ -176,7 +177,7 @@ export function TestDetail({
             <section className="studio-card" key={i}>
               <div className="mb-4 flex items-center gap-3">
                 <span className="variant-marker">{i ? "B" : "A"}</span>
-                <h2 dir={content.language === "AR" ? "rtl" : "auto"}>
+                <h2 dir={rtlFor(content.language)}>
                   {content.variants[i].headline}
                 </h2>
               </div>
@@ -186,11 +187,11 @@ export function TestDetail({
                 </summary>
                 <p
                   className="mt-3 leading-6"
-                  dir={content.language === "AR" ? "rtl" : "auto"}
+                  dir={rtlFor(content.language)}
                 >
                   {content.variants[i].text}
                 </p>
-                <p className="mt-2" dir="auto">
+                <p className="mt-2" dir={rtlFor(content.language)}>
                   {content.variants[i].cta}
                 </p>
               </details>

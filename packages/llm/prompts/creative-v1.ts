@@ -7,10 +7,14 @@ Also produce a short list of Instant Form questions (privacy-safe, e.g. country,
 Respond ONLY with JSON:
 {"variants":[{"headline":"...","text":"...","description":"...","cta":"..."},{"headline":"...","text":"...","description":"...","cta":"..."}],"instantForm":{"questions":["..."]},"whatsapp":{"welcome":"..."}}
 Limits: headline 150, text 2000, description 500, CTA 150, questions max 8 each max 200, welcome max 2000. No markdown, no extra keys.`;
-export const LOCALIZATION = {
+export const LOCALIZATION: Record<BriefLanguage, string> = {
   TR: "Write natural Turkish. Use a professional, clear tone and a neutral invitation to learn about the service.",
   EN: "Write natural English for the target market. Explain the service clearly, with no tourism or treatment outcome guarantees.",
   DE: "Write native German for the target market, using formal Sie where needed. Prefer factual service information over superlatives.",
   RU: "Write native Russian for the target market, using respectful professional language. Do not imply medical suitability.",
   AR: "Write Modern Standard Arabic for the target market, suitable for RTL display. Avoid transliterated English and outcome promises.",
+  FR: "Write native French for the target market. Use a clear, professional tone suitable for the market; avoid tourism or treatment outcome guarantees.",
+  NL: "Write native Dutch for the target market. Use a clear, professional tone; avoid tourism or treatment outcome guarantees.",
+  PL: "Write native Polish for the target market. Use respectful professional language; do not imply medical suitability.",
 };
+export type BriefLanguage = "TR" | "EN" | "DE" | "RU" | "AR" | "FR" | "NL" | "PL";

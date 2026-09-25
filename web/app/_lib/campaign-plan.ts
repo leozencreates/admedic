@@ -49,6 +49,8 @@ export const COUNTRY_LANGUAGE_MAP: Record<string, string[]> = {
   GULF: ["AR", "EN"],
   USA: ["EN"],
   NETHERLANDS: ["NL", "EN"],
+  FRANCE: ["FR"],
+  POLAND: ["PL"],
 };
 
 export function marketLanguages(markets: string[]): string[] {

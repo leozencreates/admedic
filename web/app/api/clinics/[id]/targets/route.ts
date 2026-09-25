@@ -10,7 +10,7 @@ const TargetSchema = z
   .object({
     country: z.string().min(2).max(3),
     region: z.string().optional(),
-    language: z.enum(["TR", "EN", "DE", "RU", "AR"]).optional(),
+    language: z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"]).optional(),
     currency: z.string().optional(),
     demand: z.number().optional(),
   })

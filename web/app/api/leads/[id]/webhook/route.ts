@@ -23,7 +23,7 @@ const GREETING_PROMPT = `Bir sağlık turizmi kliniğinin WhatsApp karşılama a
 async function generateAIGreeting(language: string): Promise<string | null> {
   try {
     const provider = getAIProvider();
-    const key = language === "ar" ? "AR" : language.toUpperCase() as "TR" | "EN" | "DE" | "RU" | "AR";
+    const key = language === "ar" ? "AR" : language.toUpperCase() as "TR" | "EN" | "DE" | "RU" | "AR" | "FR" | "NL" | "PL";
     const result = await provider.generate({ clinic: "Klinik", service: "Sağlık Turizmi", market: "global", language: key as any, budget: 0, duration: 1 });
     return result.variants[0].text?.slice(0, 300) ?? null;
   } catch {

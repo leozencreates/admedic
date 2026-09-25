@@ -13,7 +13,7 @@ const ClinicSchema = z.object({
   email: z.string().email().optional().nullable(),
   website: z.string().url().optional().nullable(),
   description: z.string().optional().nullable(),
-  languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR"])).optional().default(["TR"]),
+  languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"])).optional().default(["TR"]),
   targetMarket: z.enum(["TURKEY", "GERMANY", "UK", "NETHERLANDS", "USA", "GULF", "OTHER"]).optional().default("TURKEY"),
   licenseNumber: z.string().optional().nullable(),
   accreditations: z.array(z.string().min(1).max(100)).optional().default([]),

@@ -41,6 +41,30 @@ const fixtures = [
     personal: "أسنانك المفقودة",
     banned: "عبارة محظورة",
   },
+  {
+    lang: "FR",
+    good: "Contactez notre équipe pour plus d'informations.",
+    guarantee: "Garantie de résultats",
+    before: "Avant et après",
+    personal: "Vos dents manquantes",
+    banned: "phrase interdite",
+  },
+  {
+    lang: "NL",
+    good: "Neem contact op met ons team voor meer informatie.",
+    guarantee: "Gegarandeerde resultaten",
+    before: "Voor en na",
+    personal: "Uw ontbrekende tanden",
+    banned: "verboden zin",
+  },
+  {
+    lang: "PL",
+    good: "Skontaktuj się z naszym zespołem, aby uzyskać więcej informacji.",
+    guarantee: "Gwarancja wyników",
+    before: "Przed i po",
+    personal: "Brakujące zęby",
+    banned: "zabronione zdanie",
+  },
 ];
 for (const f of fixtures)
   describe(f.lang, () => {

@@ -12,7 +12,7 @@ const UpdateSchema = z.object({
   email: z.string().email().optional().nullable(),
   website: z.string().url().optional().nullable(),
   description: z.string().optional().nullable(),
-  languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR"])).optional(),
+  languages: z.array(z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"])).optional(),
   targetMarket: z.enum(["TURKEY", "GERMANY", "UK", "NETHERLANDS", "USA", "GULF", "OTHER"]).optional(),
   licenseNumber: z.string().optional().nullable(),
   accreditations: z.array(z.string().min(1).max(100)).optional(),

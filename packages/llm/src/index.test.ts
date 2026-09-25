@@ -34,7 +34,7 @@ const payload = (text = JSON.stringify({ variants }), reason = "end_turn") =>
   });
 
 it("uses configured model and target-language context with validated output", async () => {
-  for (const language of ["TR", "EN", "DE", "RU", "AR"] as const) {
+  for (const language of ["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"] as const) {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(payload());
     const result = await new AnthropicProvider(
       "test-placeholder",
@@ -82,7 +82,7 @@ it("enforces a single-variable experiment and validates brief limits", () => {
     }).success,
   ).toBe(false);
   expect(BriefSchema.safeParse({ ...brief, budget: -1 }).success).toBe(false);
-  expect(BriefSchema.safeParse({ ...brief, language: "FR" }).success).toBe(
+  expect(BriefSchema.safeParse({ ...brief, language: "XX" }).success).toBe(
     false,
   );
 });
