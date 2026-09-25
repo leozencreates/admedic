@@ -39,6 +39,11 @@ export const EnvSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{0,64}$/, "ENCRYPTION_KEY 64 hex karakter (32 byte) olmalı")
     .optional(),
+
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_PRICE_STARTER: z.string().optional(),
+  STRIPE_SUCCESS_URL: z.string().optional(),
+  STRIPE_CANCEL_URL: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
