@@ -45,8 +45,8 @@ export function LeadChat({ leadId }: { leadId: string }) {
     setError("");
     setLoading(true);
     try {
-      await api(`/api/conversations/${conversationId}/messages`, "POST", {
-        content: input.trim(), direction: "OUTGOING", channel: "WHATSAPP",
+      await api(`/api/leads/${leadId}/messages`, "POST", {
+        content: input.trim(), channel: "WHATSAPP",
       });
       await loadMessages();
     } catch (e) {
@@ -80,7 +80,7 @@ export function LeadChat({ leadId }: { leadId: string }) {
     <section className="studio-card">
       <div className="section-kicker">MESAJLAR & AI DESTEK</div>
       <h2>Konuşma Geçmişi</h2>
-      <p className="text-sm text-slate-500">Panel içi asistan denemesi. Bu mesajlar WhatsApp'a gönderilmez.</p>
+      <p className="text-sm text-slate-500">WhatsApp Cloud API üzerinden iletilir (mock modda simüle edilir). Serbest metin 24 saatlik pencere içinde, dışında şablonla gönderilir.</p>
       {escalated && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           ⚠ Bu konuşma koordinatöre devredildi. Mesaj gönderilemez.
