@@ -1277,6 +1277,7 @@ model Subscription {
   organizationId String
   plan          SubscriptionPlan
   status        SubscriptionStatus @default(ACTIVE)
+  stripeSubscriptionId String?     @unique
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean        @default(false)

@@ -32,6 +32,8 @@ export async function POST(request: Request) {
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
     if (lead.status === "LOST") throw new HttpError(409, "Kayıp lead'e dönüşüm gönderilemez.");
+    if (!lead.consentGiven)
+      throw new HttpError(409, "Bu lead için pazarlama rızası verilmemiş; CAPI dönüşümü gönderilmedi.");
 
     const policy = checkPolicy(lead.firstName);
     if (policy.risk === "HIGH") throw new HttpError(422, "Bu lead için içerik kontrol riskli.");

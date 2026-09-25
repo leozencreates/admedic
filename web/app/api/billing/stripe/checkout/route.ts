@@ -25,30 +25,36 @@ export async function POST(request: Request) {
     const input = await body(request, CheckoutSchema);
     const env = loadEnv();
 
-    let stripeCustomerId: string;
-    const existing = await prisma.stripeCustomer.findUnique({ where: { organizationId: actor.orgId } });
-    if (existing) {
-      stripeCustomerId = existing.customerId;
-    } else {
-      const session = await getStripe().customers.create({
-        metadata: { organizationId: actor.orgId },
-      });
-      stripeCustomerId = session.id;
-      await prisma.stripeCustomer.create({ data: { organizationId: actor.orgId, customerId: stripeCustomerId } });
-    }
+    let checkoutUrl = "";
+    let mock = false;
+    if (input.plan !== "FREE" && env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_STARTER) {
+      let stripeCustomerId: string;
+      const existing = await prisma.stripeCustomer.findUnique({ where: { organizationId: actor.orgId } });
+      if (existing) {
+        stripeCustomerId = existing.customerId;
+      } else {
+        const customer = await getStripe().customers.create({
+          metadata: { organizationId: actor.orgId },
+        });
+        stripeCustomerId = customer.id;
+        await prisma.stripeCustomer.create({ data: { organizationId: actor.orgId, customerId: stripeCustomerId } });
+      }
 
-    const url = input.plan === "FREE"
-      ? ""
-      : await getStripe().checkout.sessions.create({
+      const result = await getStripe().checkout.sessions
+        .create({
           customer: stripeCustomerId,
           payment_method_types: ["card"],
-          line_items: [{ price: env.STRIPE_PRICE_STARTER ?? "", quantity: 1 }],
+          line_items: [{ price: env.STRIPE_PRICE_STARTER, quantity: 1 }],
           mode: "subscription",
           success_url: env.STRIPE_SUCCESS_URL ?? "http://localhost:3000/billing?status=paid",
           cancel_url: env.STRIPE_CANCEL_URL ?? "http://localhost:3000/billing?status=cancel",
-          metadata: { organizationId: actor.orgId },
-        }).then((s) => s.url ?? "")
-        .catch(() => "");
+          metadata: { organizationId: actor.orgId, plan: input.plan },
+        })
+        .catch(() => null);
+      checkoutUrl = result?.url ?? "";
+    } else if (input.plan !== "FREE") {
+      mock = true;
+    }
 
     await prisma.subscription.upsert({
       where: { organizationId: actor.orgId },
@@ -59,8 +65,8 @@ export async function POST(request: Request) {
       actor,
       action: "PLAN_CHANGED",
       entityType: "SUBSCRIPTION",
-      after: { plan: input.plan, status: "ACTIVE", checkoutUrl: url ? "(checkout)" : "free" },
+      after: { plan: input.plan, status: "ACTIVE", checkoutUrl: checkoutUrl ? "(checkout)" : "free", mock },
     });
-    return { checkoutUrl: url, plan: input.plan, status: "ACTIVE" as const };
+    return { checkoutUrl, plan: input.plan, status: "ACTIVE" as const, mock };
   });
 }
