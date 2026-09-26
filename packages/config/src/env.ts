@@ -15,10 +15,10 @@ const graphVersion = () =>
 export const DEV_AUTH_SECRET = "admedic-dev-only-secret";
 
 export const EnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  NODE_ENV: z.preprocess(blankToUndefined, z.enum(["development", "test", "production"]).default("development")),
+  LOG_LEVEL: z.preprocess(blankToUndefined, z.enum(["debug", "info", "warn", "error"]).default("info")),
   /** Uygulama adı — kodda sabit yazılmaz (spec §9). */
-  APP_NAME: z.string().min(1).default("Admedic"),
+  APP_NAME: z.preprocess(blankToUndefined, z.string().min(1).default("Admedic")),
 
   DATABASE_URL: z
     .string()
@@ -27,8 +27,8 @@ export const EnvSchema = z.object({
   /** Kuyruk altyapısı (spec §4, henüz kullanılmıyor); ayarlanmadıysa undefined. */
   REDIS_URL: optionalString(),
 
-  AUTH_SECRET: z.string().min(8).default(DEV_AUTH_SECRET),
-  AUTH_URL: z.string().default("http://localhost:3000"),
+  AUTH_SECRET: z.preprocess(blankToUndefined, z.string().min(8).default(DEV_AUTH_SECRET)),
+  AUTH_URL: z.preprocess(blankToUndefined, z.string().default("http://localhost:3000")),
 
   META_APP_ID: optionalString(),
   META_APP_SECRET: optionalString(),

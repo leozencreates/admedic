@@ -51,8 +51,10 @@ export function resolveWebhookSecret(): string | undefined {
 
 /** Abonelik doğrulama belirteci (hub.verify_token karşılığı). */
 export function resolveVerifyToken(): string | undefined {
-  const direct = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim();
-  if (direct) return direct;
+  // process.env'de açıkça tanımlıysa (boş dahil) o geçerlidir; boş → ayarlanmamış (503).
+  // Yalnızca hiç tanımlı değilse .env üzerinden yüklenir.
+  const direct = process.env.META_WEBHOOK_VERIFY_TOKEN;
+  if (direct !== undefined) return direct.trim() || undefined;
   return loadEnv().META_WEBHOOK_VERIFY_TOKEN;
 }
 

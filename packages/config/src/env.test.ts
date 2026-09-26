@@ -23,6 +23,14 @@ describe("environment boundaries", () => {
     expect(env.ENCRYPTION_KEY).toBeUndefined();
     expect(env.LLM_MODEL).toBeUndefined();
   });
+  it("treats blank defaulted fields from the example env file as unset", () => {
+    const env = EnvSchema.parse({ NODE_ENV: "", LOG_LEVEL: "", APP_NAME: "", AUTH_SECRET: "", AUTH_URL: "" });
+    expect(env.NODE_ENV).toBe("development");
+    expect(env.LOG_LEVEL).toBe("info");
+    expect(env.APP_NAME).toBe("Admedic");
+    expect(env.AUTH_SECRET).toBe(DEV_AUTH_SECRET);
+    expect(env.AUTH_URL).toBe("http://localhost:3000");
+  });
   it("has no hard-coded LLM model", () => {
     const prevKey = process.env.ANTHROPIC_API_KEY;
     const prevModel = process.env.LLM_MODEL;

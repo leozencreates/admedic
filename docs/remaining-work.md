@@ -4,28 +4,25 @@ Son güncelleme: 2026-09-26 (spec denetimi + düzeltme turu). Bu dosya `docs/spe
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
 ADR'ler yeterli). Her maddede öncelik (P0/P1/P2), ilgili spec bölümü ve önerilen yaklaşım vardır.
 
-## 0. Bu turun ardından yapılacak operatör adımları
+## 0. Operatör adımları
 
-1. `pnpm install` — lockfile değişti (`workers/meta-sync` → `@admedic/llm` bağımlılığı).
-2. `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy` — iki yeni migration:
-   `20260926090000_webhook_idempotency_and_routing`, `20260926100000_spec_gap_followups`
-   (enum değerleri, `ClinicProfile.city`, `Lead(organizationId, lookupHash)` benzersiz indeks onarımı,
-   `Message.externalId`, `Lead.leadgenId`, `MetaConnection.pixelId/whatsapp*`, `Organization.reportRecipient`).
-3. `.env`: `.env.example` ile karşılaştırın. Yeni/önemli anahtarlar: `META_WEBHOOK_VERIFY_TOKEN`,
-   `WHATSAPP_GREETING_TEMPLATE`, `API_TOKEN`, `STRIPE_PRICE_*`, `RESEND_FROM`. `ENCRYPTION_KEY` artık
-   tam 64 hex karakter olmalı (eskiden kısa değer kabul ediliyordu).
-4. Şu dosyaları elle silin (araç bu derinlikte dosya silemedi):
-   - `web/app/api/billing/invoices/[id]/pay/route.ts` — yerine `POST /api/billing/invoices { invoiceId, action: "mark-paid" }`
-     geldi; eski uç MEDIA_BUYER'a açık ve mock kapısı yok, **silinmeden güvenlik açığı sürer** (bu değişiklik
-     setinde silinmiş sayılır; klasörde elle silinmeli).
-   - `packages/database/prisma/seed.ts.bakZ7` (yedek artığı).
-   - `desktop/src-tauri/app-icon-source.png` (kullanılmayan çift kopya; `icons/app-icon-source.png` kullanılır).
-5. `pnpm db:seed` — demo veri ADR-0011 birimleriyle (kuruş) yeniden yüklenir. Canlı veritabanında API ile
-   oluşturulmuş eski kampanya bütçeleri major birimde kalmış olabilir; ADR-0011'deki tek seferlik `UPDATE`
-   operatör kararıyla uygulanır.
-6. `pnpm verify` (PowerShell'de veritabanlı testler için `$env:STUDIO_DB_TEST="1"; pnpm verify`).
-7. Meta uygulama panelinde webhook URL'si `https://<host>/api/webhooks/meta` ve doğrulama belirteci
-   (`META_WEBHOOK_VERIFY_TOKEN`); Stripe panelinde webhook imza gizli anahtarı.
+2026-09-26 tarihinde yerelde tamamlananlar: `pnpm install`, `db:generate` + `@admedic/database` build,
+`db:deploy` (21/21 migration uygulandı; `20260926090000_webhook_idempotency_and_routing` ve
+`20260926100000_spec_gap_followups` dahil), `.env` → `.env.example` ile eşitlendi (`META_WEBHOOK_VERIFY_TOKEN`
+ve `API_TOKEN` yerel geliştirme için rastgele üretildi, `ENCRYPTION_KEY` 64 hex), artık dosyalar silindi,
+`pnpm db:seed` (kuruş birimli demo veri), `STUDIO_DB_TEST=1 pnpm verify` (46/46 görev yeşil).
+
+Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda (`NODE_ENV`, `LOG_LEVEL`,
+`APP_NAME`, `AUTH_SECRET`, `AUTH_URL`) `.env.example`'ın izin verdiği boş string'i reddediyordu;
+`resolveVerifyToken` process.env'de açıkça boş bırakılan belirteç için `.env` önbelleğine düşüyordu.
+
+**Hâlâ açık:**
+
+1. Meta uygulama panelinde webhook URL'si `https://<host>/api/webhooks/meta` ve doğrulama belirteci
+   (`META_WEBHOOK_VERIFY_TOKEN`); Stripe panelinde webhook imza gizli anahtarı (`STRIPE_WEBHOOK_SECRET`).
+2. Canlı veritabanında API ile oluşturulmuş eski kampanya bütçeleri major birimde kalmış olabilir; ADR-0011'deki
+   tek seferlik `UPDATE` operatör kararıyla uygulanır (yerel demo veritabanı seed ile yenilendiği için gerekmedi).
+3. Yerel `.env` içinde `AUTH_SECRET` yenilendi; çalışan `next dev` oturumları yeniden giriş ister.
 
 ## 1. Mimari (spec §4) — P1
 
