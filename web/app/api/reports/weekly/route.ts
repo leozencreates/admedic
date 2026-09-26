@@ -1,16 +1,22 @@
-import { requireActor } from "../../../_lib/auth";
-import { sameOrigin, HttpError } from "../../../_lib/http";
+import { loadEnv } from "@admedic/config";
 import { buildWeeklyReport, renderReportPdf } from "@admedic/reporting";
+import { requireActor } from "../../../_lib/auth";
+import { errorToHttp } from "../../../_lib/http";
 
 export const maxDuration = 30;
 
+/**
+ * Haftalık rapor (spec 3.10): son tamamlanan hafta, `WEEKLY_REPORT_DAY` hafta başlangıcına göre.
+ * `?pdf=1` PDF indirir; aksi halde JSON döner. GET olduğu için `sameOrigin` uygulanmaz
+ * (tarayıcı aynı kaynaklı GET'te Origin göndermez); oturum zorunludur.
+ */
 export async function GET(request: Request) {
   try {
-    sameOrigin(request);
     const actor = await requireActor();
+    const env = loadEnv();
     const asPdf = new URL(request.url).searchParams.get("pdf") === "1";
+    const report = await buildWeeklyReport(actor.workspaceId, new Date(), env.WEEKLY_REPORT_DAY);
     if (asPdf) {
-      const report = await buildWeeklyReport(actor.workspaceId);
       const pdf = await renderReportPdf(report);
       return new Response(new Uint8Array(pdf), {
         headers: {
@@ -20,20 +26,9 @@ export async function GET(request: Request) {
         },
       });
     }
-    const report = await buildWeeklyReport(actor.workspaceId);
     return Response.json({ report }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof HttpError
-            ? error.message
-            : "İşlem tamamlanamadı. Veritabanı bağlantısını kontrol edip tekrar deneyin.",
-      },
-      {
-        status: error instanceof HttpError ? error.status : 503,
-        headers: { "Cache-Control": "no-store" },
-      },
-    );
+    const mapped = errorToHttp(error);
+    return Response.json({ error: mapped.message }, { status: mapped.status, headers: { "Cache-Control": "no-store" } });
   }
 }

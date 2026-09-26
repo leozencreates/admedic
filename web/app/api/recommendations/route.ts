@@ -1,6 +1,7 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole } from "../../_lib/auth";
-import { body, respond, sameOrigin } from "../../_lib/http";
+import { body, HttpError, respond, sameOrigin } from "../../_lib/http";
+import { logAudit } from "../../_lib/audit";
 import { generateRecommendations, persistRecommendations } from "@admedic/recommendation";
 import { z } from "zod";
 export const maxDuration = 60;
@@ -19,20 +20,29 @@ export async function GET() {
   });
 }
 
+/** Tamamlanan deney için öneri üretir ve PENDING olarak kaydeder (OWNER/ADMIN). */
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
     requireRole(actor, ["OWNER", "ADMIN"]);
     const input = await body(request, GenerateSchema);
-    const experiment = await prisma.studioExperiment.findUnique({
+    const experiment = await prisma.studioExperiment.findFirst({
       where: { id: input.experimentId, draft: { workspaceId: actor.workspaceId } },
+      select: { id: true, status: true },
     });
-    if (!experiment) throw new Error("Deney bulunamadı.");
-    if (experiment.status !== "COMPLETED") throw new Error("Tamamlanan deney için öneri oluşturulabilir.");
+    if (!experiment) throw new HttpError(404, "Deney bulunamadı.");
+    if (experiment.status !== "COMPLETED") throw new HttpError(409, "Öneri yalnızca tamamlanan deney için oluşturulabilir.");
     const recs = await generateRecommendations({ experimentId: experiment.id, workspaceId: actor.workspaceId });
-    if (!recs.length) throw new Error("Oluşturulacak öneri yok.");
-    await persistRecommendations(experiment.id, recs, actor);
-    return { recommendations: recs };
+    if (!recs.length) throw new HttpError(409, "Oluşturulacak öneri yok.");
+    const saved = await persistRecommendations(experiment.id, recs, actor);
+    await logAudit({
+      actor,
+      action: "RECOMMENDATIONS_GENERATED",
+      entityType: "STUDIO_EXPERIMENT",
+      entityId: experiment.id,
+      after: { recommendations: saved.map((r) => ({ id: r.id, type: r.type, priority: r.priority })) },
+    });
+    return { recommendations: saved };
   });
 }

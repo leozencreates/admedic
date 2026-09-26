@@ -57,3 +57,15 @@ web/Next.js'i öngörüyor (spec §1.7 "Web"), ancak ürün sahibi dağıtım or
 - Dağıtım adresi: kullanıcının Masaüstü (yerel).
 
 Kararı özetleyen tek cümle: "GitHub yok = repo yerel kalır; ad kuralı değişmez."
+
+## Durum notu (2026-09-26)
+
+- Rev. 2 geçerlidir: GitHub Actions/Windows CI yoktur; paket **yerel** üretilir
+  (`APP_NAME="…" pnpm --filter @admedic/desktop build:ci`, ürün adı `--config` ile APP_NAME'den).
+- `tauri.conf.json` hedefleri `nsis`/`msi` (Windows) **korunur**; yerel macOS üretimi için `app`/`dmg` eklendi.
+  Tauri, çalışılan platformda desteklenmeyen hedefleri atlar. `identifier` (`com.admedic.desktop`) uygulama
+  veri dizinleri için sabit kalır; ürün adı kuralı değişmez.
+- CSP açık: `default-src 'self'; connect-src http://127.0.0.1:3001` (stil dosyası ayrı, inline yok).
+- Kabuk `apps/api` salt okunur REST'ini `API_TOKEN` Bearer belirteciyle tüketir; `web/` Next.js paneli
+  SPA+API modeline **taşınmadı** (ADR-0001 durum notu) — masaüstü ile web aynı veritabanını, farklı HTTP
+  katmanlarını kullanır. Kurulum: `desktop/README.md`.

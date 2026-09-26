@@ -1,7 +1,7 @@
 import { prisma, type PolicyMatcher } from "@admedic/database";
 import { z } from "zod";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
-import { requirePlatformAdmin } from "../../_lib/auth";
+import { requireActor, requirePlatformAdmin } from "../../_lib/auth";
 import { logAudit } from "../../_lib/audit";
 import { invalidatePolicyRuleCache } from "../../_lib/policy-loader";
 
@@ -22,9 +22,18 @@ const PolicyRuleSchema = z
       ctx.addIssue({ code: "custom", path: ["phrases"], message: "Phrases kuralı en az bir ifade içermeli." });
   });
 
+/**
+ * Kural listesi (anahtar başına en güncel sürüm). Oturum açmış herkes okuyabilir
+ * (kurallar tüm tenant'ları bağlar, şeffaflık); düzenleme yalnızca Platform Admin
+ * (`canEdit`). Global kurallar tenant verisi içermez.
+ */
 export async function GET() {
   return respond(async () => {
-    const actor = await requirePlatformAdmin();
+    const actor = await requireActor();
+    const user = await prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { isPlatformAdmin: true },
+    });
     const rows = await prisma.policyRule.groupBy({
       by: ["key"],
       _max: { version: true },
@@ -41,6 +50,7 @@ export async function GET() {
     }
     return {
       actor: { userId: actor.userId, workspaceName: actor.workspaceName },
+      canEdit: user?.isPlatformAdmin === true,
       rules: [...latest.values()].map((r) => ({
         id: r.id,
         key: r.key,
@@ -99,7 +109,10 @@ export async function POST(request: Request) {
           entityType: "PolicyRule",
           entityId: rule.id,
           before: {},
-          after: { key: rule.key, version: rule.version, matcher: rule.matcher, active: rule.active },
+          after: {
+            key: rule.key, version: rule.version, matcher: rule.matcher, active: rule.active,
+            risk: rule.risk, phrases: rule.phrases, reason: rule.reason, suggestion: rule.suggestion,
+          },
         },
         tx,
       );

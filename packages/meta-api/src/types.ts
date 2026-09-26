@@ -1,6 +1,9 @@
 /**
  * Meta Marketing API tipleri — ham Graph API yanıtlarının normalize edilmiş şekli.
- * Tüm tutarlar "major" (birim) olarak döner; DB'ye cents'e çeviri ajan tarafında yapılır.
+ * Insight tutarları (spend, cpc, cpm, action_values) "major" (birim) olarak döner;
+ * bütçe alanları (`daily_budget`, `lifetime_budget`) Meta'da hesabın minor unit'i
+ * (cent/kuruş) olduğundan `…Cents` adıyla ve dönüşümsüz taşınır (ADR-0011,
+ * docs/meta-constraints.md "Bütçe (daily_budget) birimi").
  * Kaynak: developers.facebook.com/docs/marketing-api (v26.0, 2026-09-16 kontrol edildi).
  */
 
@@ -21,8 +24,10 @@ export interface MetaCampaign {
   objective?: string;
   status?: string;
   effectiveStatus?: string;
-  dailyBudgetMajor?: number;
-  lifetimeBudgetMajor?: number;
+  /** Meta `daily_budget` — minor unit (cent), dönüşüm yapılmaz. */
+  dailyBudgetCents?: number;
+  /** Meta `lifetime_budget` — minor unit (cent), dönüşüm yapılmaz. */
+  lifetimeBudgetCents?: number;
   startDate?: string;
   stopDate?: string;
 }
@@ -36,8 +41,10 @@ export interface MetaAdSet {
   bidStrategy?: string;
   optimizationGoal?: string;
   billingEvent?: string;
-  dailyBudgetMajor?: number;
-  lifetimeBudgetMajor?: number;
+  /** Meta `daily_budget` — minor unit (cent), dönüşüm yapılmaz. */
+  dailyBudgetCents?: number;
+  /** Meta `lifetime_budget` — minor unit (cent), dönüşüm yapılmaz. */
+  lifetimeBudgetCents?: number;
   targeting?: unknown;
 }
 
@@ -194,13 +201,29 @@ export interface SetStatusInput {
   status: "ACTIVE" | "PAUSED";
 }
 
+/** Planlayıcı hedefleri (ürün içi) — Meta ODAX objective'lerine `toMetaObjective` ile eşlenir. */
+export type PlannerObjective = "MAX_ROAS" | "MAX_CONVERSIONS" | "MAX_IMPRESSIONS";
+
+/** Meta ODAX (outcome-driven) kampanya objective'leri (v26). */
+export type MetaOutcomeObjective =
+  | "OUTCOME_SALES"
+  | "OUTCOME_LEADS"
+  | "OUTCOME_AWARENESS"
+  | "OUTCOME_TRAFFIC"
+  | "OUTCOME_ENGAGEMENT"
+  | "OUTCOME_APP_PROMOTION";
+
 export interface CreateCampaignInput {
   accountId: string; // act_... olmadan, ham hesap id
   name: string;
-  objective: string;
+  /** `MAX_ROAS | MAX_CONVERSIONS | MAX_IMPRESSIONS` (planlayıcı) veya doğrudan `OUTCOME_*`. */
+  objective: PlannerObjective | MetaOutcomeObjective | string;
+  /** Minor unit (cent). Yalnızca CBO'da (`budgetStrategy` ABO değilse) `daily_budget` olarak gönderilir. */
   dailyBudgetCents?: number;
-  /** Yayın zinciri kuralı: yeni kampanyalar her zaman önce PAUSED oluşturulur. */
-  status?: "PAUSED" | "ACTIVE";
+  /** CBO: bütçe kampanya seviyesinde; ABO: bütçe ad set seviyesinde, kampanyaya `daily_budget` gönderilmez. */
+  budgetStrategy?: "CBO" | "ABO";
+  /** Yayın zinciri kuralı: yeni kampanyalar her zaman önce PAUSED oluşturulur; başka değer kabul edilmez. */
+  status?: "PAUSED";
 }
 
 export interface MetaCreateCampaignResult {

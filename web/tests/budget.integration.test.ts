@@ -25,8 +25,9 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
   beforeAll(async () => {
     vi.stubEnv("META_MOCK_MODE", "true");
     for (const foreign of [false, true]) {
+      // monthlyAdBudgetCap minor unit (ADR-0011): 30.000,00 = 3_000_000 cent.
       const org = await prisma.organization.create({ data: {
-        name: "Budget fixture", slug: `budget-${suffix}-${foreign}`, monthlyAdBudgetCap: 30_000,
+        name: "Budget fixture", slug: `budget-${suffix}-${foreign}`, monthlyAdBudgetCap: 3_000_000,
         workspaces: { create: { name: "Budget", slug: "budget" } },
       }, include: { workspaces: true } });
       orgs.push(org.id);
@@ -60,11 +61,13 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
     vi.unstubAllEnvs();
     await prisma.$disconnect();
   });
+  // Kampanya bütçesi DB'de cent: 200,00 = 20_000 cent.
   const draft = (published = false) => prisma.campaign.create({ data: {
-    adAccountId: accountId, workspaceId, name: "Budget test", dailyBudget: 200,
+    adAccountId: accountId, workspaceId, name: "Budget test", dailyBudget: 20_000,
     workflowStatus: published ? "PUBLISHED_PAUSED" : "DRAFT",
     metaCampaignId: published ? `meta-${randomBytes(8).toString("hex")}` : null,
   } });
+  // API girdisi major (insan) birim; sunucu cent'e çevirir.
   const change = (id: string, role: string, dailyBudget: number, origin = "http://localhost:3000") => {
     cookieJar.set(SESSION_COOKIE, tokens[role]);
     return PATCH(new Request(`http://localhost:3000/api/campaigns/${id}/budget`, {
@@ -72,33 +75,38 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
       body: JSON.stringify({ dailyBudget, reason: "Budget review" }),
     }), { params: Promise.resolve({ id }) });
   };
-  it("buyer can decrease but cannot increase; owner/admin can increase; audit includes before/after", async () => {
+  it("buyer can decrease but cannot increase; owner/admin can increase; audit includes before/after in cents", async () => {
     const c = await draft();
     expect((await change(c.id, "MEDIA_BUYER", 300)).status).toBe(403);
-    expect((await change(c.id, "MEDIA_BUYER", 100)).status).toBe(200);
+    const decreased = await change(c.id, "MEDIA_BUYER", 100);
+    expect(decreased.status).toBe(200);
+    expect((await decreased.json()).campaign).toMatchObject({ dailyBudgetCents: 10_000, dailyBudget: 100 });
     expect((await change(c.id, "OWNER", 300)).status).toBe(200);
-    expect((await change(c.id, "ADMIN", 400)).status).toBe(200);
+    expect((await change(c.id, "ADMIN", 400.5)).status).toBe(200);
     const logs = await prisma.auditLog.findMany({ where: { entityId: c.id }, orderBy: { createdAt: "asc" } });
     expect(logs).toHaveLength(3);
-    expect(logs[0].before).toMatchObject({ dailyBudget: 200 });
-    expect(logs[0].after).toMatchObject({ dailyBudget: 100, reason: "Budget review" });
+    expect(logs[0].before).toMatchObject({ dailyBudgetCents: 20_000 });
+    expect(logs[0].after).toMatchObject({ dailyBudgetCents: 10_000, reason: "Budget review" });
+    expect(logs[2].after).toMatchObject({ dailyBudgetCents: 40_050 });
+    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } })).dailyBudget).toBe(40_050);
     expect(updateBudget).not.toHaveBeenCalled();
   });
   it("rejects viewer, foreign tenant, invalid input, foreign origin and over-cap budgets", async () => {
     const c = await draft();
     expect((await change(c.id, "VIEWER", 100)).status).toBe(403);
     expect((await change(c.id, "FOREIGN", 100)).status).toBe(404);
-    for (const value of [0, -1, 1.5]) expect((await change(c.id, "OWNER", value)).status).toBe(400);
+    for (const value of [0, -1, 0.001]) expect((await change(c.id, "OWNER", value)).status).toBe(400);
     expect((await change(c.id, "OWNER", 100, "https://other.invalid")).status).toBe(403);
+    // 1001 × 30 gün = 3.003.000 cent > 3.000.000 cent üst sınır.
     expect((await change(c.id, "OWNER", 1001)).status).toBe(422);
     expect((await change(c.id, "OWNER", 1000)).status).toBe(200);
   });
-  it("updates Meta for a published campaign and persists its synchronized budget", async () => {
+  it("updates Meta for a published campaign with cents and persists its synchronized budget", async () => {
     const c = await draft(true);
     expect((await change(c.id, "OWNER", 300)).status).toBe(200);
     expect(updateBudget).toHaveBeenCalledWith({ entityType: "campaign", entityId: c.metaCampaignId, dailyBudgetCents: 30_000 }, "mock-token");
     const saved = await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } });
-    expect(saved.dailyBudget).toBe(300);
+    expect(saved.dailyBudget).toBe(30_000);
     expect(saved.syncedAt).not.toBeNull();
   });
   it("keeps budget and audit unchanged on Meta exceptions and unsuccessful responses", async () => {
@@ -109,7 +117,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
     expect(await failed.text()).not.toContain("upstream secret");
     updateBudget.mockResolvedValueOnce({ success: false });
     expect((await change(c.id, "OWNER", 300)).status).toBe(502);
-    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } })).dailyBudget).toBe(200);
+    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } })).dailyBudget).toBe(20_000);
     expect(await prisma.auditLog.count({ where: { entityId: c.id } })).toBe(0);
   });
   it("rejects disconnected Meta and archived campaigns; equal budgets are idempotent", async () => {

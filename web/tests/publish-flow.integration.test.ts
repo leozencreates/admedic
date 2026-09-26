@@ -50,6 +50,8 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
     let tokenBuyer = "";
     let tokenForeign = "";
     const campaignIds: string[] = [];
+    const policyRuleKeys: string[] = [];
+    const clinicIds: string[] = [];
 
     beforeAll(async () => {
       vi.stubEnv("ENCRYPTION_KEY", "82da20c19f1765f384e674dc19d7c4ecdc7dd6475527fa1cf5465f43092e21cf");
@@ -64,7 +66,8 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
         data: {
           name: "Publish fixture A",
           slug: `pubfix-a-${suffix}`,
-          monthlyAdBudgetCap: 10_000,
+          // minor unit (ADR-0011): 10.000,00 EUR = 1_000_000 cent
+          monthlyAdBudgetCap: 1_000_000,
           members: {
             create: [
               { userId: owner.id, role: "OWNER" },
@@ -126,6 +129,8 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
 
     afterAll(async () => {
       cookieJar.clear();
+      await prisma.policyRule.deleteMany({ where: { key: { in: policyRuleKeys } } });
+      await prisma.clinicProfile.deleteMany({ where: { id: { in: clinicIds } } });
       await prisma.campaign.deleteMany({ where: { id: { in: campaignIds } } });
       await prisma.auditLog.deleteMany({ where: { orgId: { in: orgIds } } });
       await prisma.adAccount.deleteMany({ where: { orgId: { in: orgIds } } });
@@ -172,10 +177,22 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       expect(plan.blocked).toBe(true);
       expect(plan.blockingReasons.join()).toMatch(/18 yaş/);
 
+      const inverted = await plannerPost(
+        req("/api/campaign-planner", "POST", {
+          objective: "MAX_CONVERSIONS",
+          dailyBudgetCents: 20_000,
+          markets: ["TR"],
+          ageMin: 45,
+          ageMax: 30,
+        }),
+      );
+      expect(inverted.status).toBe(200);
+      expect((await inverted.json()).plan.blockingReasons.join()).toMatch(/Alt yaş sınırı/);
+
       const overCap = await plannerPost(
         req("/api/campaign-planner", "POST", {
           objective: "MAX_CONVERSIONS",
-          dailyBudgetCents: 400_000, // 400*30 = 12000 > 10000 cap
+          dailyBudgetCents: 400_000, // 400.000 × 30 = 12.000.000 cent > 1.000.000 cent cap
           markets: ["DE"],
         }),
       );
@@ -184,17 +201,78 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       expect(plan2.blockingReasons.join()).toMatch(/üst sınır/);
     });
 
-    it("draft creation applies policy and budget cap", async () => {
+    it("planner accepts long market keys, maps languages per market and explains each recommendation", async () => {
+      cookieJar.set(SESSION_COOKIE, tokenOwner);
+      const res = await plannerPost(
+        req("/api/campaign-planner", "POST", {
+          objective: "MAX_CONVERSIONS",
+          dailyBudgetCents: 30_000,
+          markets: ["GULF", "NETHERLANDS", "DE", "POLAND"],
+          conversionMethod: "instant_form",
+          strategy: "ABO",
+        }),
+      );
+      expect(res.status).toBe(200);
+      const plan = (await res.json()).plan;
+      expect(plan.blocked).toBe(false);
+      expect(plan.currency).toBe("EUR");
+      expect(plan.adSets).toHaveLength(3);
+      expect(plan.adSets.map((a: { market: string }) => a.market)).toEqual(["GULF", "NETHERLANDS", "DE"]);
+      expect(plan.adSets[0].targeting).toMatchObject({
+        geo_locations: { countries: ["AE", "SA", "QA", "KW", "BH", "OM"] },
+        locales: ["AR", "EN"],
+        age_min: 18,
+        age_max: 54,
+      });
+      expect(plan.adSets[2].targeting.locales).toEqual(["DE", "TR"]);
+      expect(plan.adSets.map((a: { dailyBudgetCents: number }) => a.dailyBudgetCents)).toEqual([10_000, 10_000, 10_000]);
+      expect(plan.testPlan).toMatchObject({ creativeVariations: 3, decisionMetric: expect.stringMatching(/CPL/) });
+      expect(plan.structure).toMatch(/1 kontrol \+ 2 varyant/);
+      for (const key of ["objective", "targeting", "conversionMethod", "testPlan", "strategy"])
+        expect(typeof plan.reasons[key]).toBe("string");
+      expect(plan.reasons.conversionMethod).toMatch(/Instant Form/);
+    });
+
+    it("draft creation applies policy and budget cap in cents", async () => {
       const { res, campaign } = await makeDraft("Yaz Kampanyası", 300);
       expect(res.status).toBe(200);
       expect(campaign.workflowStatus).toBe("DRAFT");
       expect(campaign.status).toBe("PAUSED");
+      expect(campaign).toMatchObject({ budgetCents: 30_000, budget: 300, currency: "EUR" });
       expect(["LOW", "MEDIUM", "HIGH"]).toContain(campaign.policyRisk);
+      const stored = await prisma.campaign.findUniqueOrThrow({ where: { id: campaign.id } });
+      expect(stored.dailyBudget).toBe(30_000);
 
       const over = await campaignsPost(
-        req("/api/campaigns", "POST", { name: "Çok Uzun", budget: 400 }),
+        req("/api/campaigns", "POST", { name: "Çok Uzun", budget: 400 }), // 40.000 × 30 > 1.000.000
       );
       expect(over.status).toBe(422);
+
+      const listed = await campaignsGet();
+      const mine = (await listed.json()).campaigns.find((c: { id: string }) => c.id === campaign.id);
+      expect(mine).toMatchObject({ budgetCents: 30_000, dailyBudget: 30_000, currency: "EUR" });
+    });
+
+    it("draft with a plan creates one ad set per market with cent budgets", async () => {
+      cookieJar.set(SESSION_COOKIE, tokenOwner);
+      const res = await campaignsPost(
+        req("/api/campaigns", "POST", {
+          name: "Pazar Bazlı",
+          budget: 90,
+          markets: ["DE", "GB"],
+          strategy: "ABO",
+          conversionMethod: "instant_form",
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      campaignIds.push(json.campaign.id);
+      expect(json.campaign.adSets).toBe(2);
+      const adSets = await prisma.adSet.findMany({ where: { campaignId: json.campaign.id }, orderBy: { name: "asc" } });
+      expect(adSets.map((a) => a.dailyBudget).sort()).toEqual([4500, 4500]);
+      expect(adSets.every((a) => a.status === "PAUSED" && a.bidStrategy === "ABO")).toBe(true);
+      const de = adSets.find((a) => (a.targeting as { market?: string }).market === "DE");
+      expect(de?.targeting).toMatchObject({ geo_locations: { countries: ["DE"] }, locales: ["DE", "TR"], conversionMethod: "instant_form" });
     });
 
     it("cannot publish before approval", async () => {
@@ -267,6 +345,46 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
 
       const archive = await publish(id, "ARCHIVE");
       expect((await archive.json()).campaign.workflowStatus).toBe("ARCHIVED");
+
+      const actions = (await prisma.auditLog.findMany({ where: { entityId: id }, orderBy: { createdAt: "asc" } })).map((l) => l.action);
+      expect(actions).toEqual([
+        "CAMPAIGN_CREATED", "CAMPAIGN_SUBMITTED", "CAMPAIGN_APPROVED",
+        "CAMPAIGN_PUBLISHED", "CAMPAIGN_ACTIVATED", "CAMPAIGN_PAUSED", "CAMPAIGN_ARCHIVED",
+      ]);
+      const stored = await prisma.campaign.findUniqueOrThrow({ where: { id } });
+      expect(stored.metaRejectionReason).toBeNull();
+    });
+
+    it("rechecks the fresh policy rule snapshot and clinic banned phrases at submit/approve", async () => {
+      cookieJar.set(SESSION_COOKIE, tokenOwner);
+      const phrase = `fixturephrase${suffix}`;
+      const ruleKey = `fixture-rule-${suffix}`;
+      policyRuleKeys.push(ruleKey);
+      const draft = await makeDraft(`Kampanya ${phrase}`, 100);
+      expect(draft.campaign.policyRisk).toBe("LOW");
+      // Kural yayınlandıktan hemen sonra (önbellek yok) submit engellenir.
+      await prisma.policyRule.create({
+        data: { key: ruleKey, version: 1, matcher: "PHRASES_V1", phrases: [phrase], risk: "HIGH", reason: "Fixture yasak", suggestion: "Kaldırın", active: true },
+      });
+      expect((await submit(draft.campaign.id)).status).toBe(422);
+      // En yüksek sürüm pasifse kural devre dışı; submit geçer.
+      await prisma.policyRule.create({
+        data: { key: ruleKey, version: 2, matcher: "PHRASES_V1", phrases: [phrase], risk: "HIGH", reason: "Fixture yasak", suggestion: "Kaldırın", active: false },
+      });
+      expect((await submit(draft.campaign.id)).status).toBe(200);
+
+      // Klinik yasaklı ifadesi orta risk üretir: onay uyarıyla geçer, uyarı yanıt + audit'te.
+      const clinic = await prisma.clinicProfile.create({
+        data: { workspaceId: workspaceIds[0], name: "Fixture Klinik", slug: `fixture-${suffix}`, brandBannedPhrases: [phrase] },
+      });
+      clinicIds.push(clinic.id);
+      const approved = await approve(draft.campaign.id);
+      expect(approved.status).toBe(200);
+      const approvedJson = await approved.json();
+      expect(approvedJson.campaign.policyRisk).toBe("MEDIUM");
+      expect(approvedJson.campaign.policyWarning).toMatch(/Klinik/);
+      const audit = await prisma.auditLog.findFirst({ where: { entityId: draft.campaign.id, action: "CAMPAIGN_APPROVED" } });
+      expect(audit?.after).toMatchObject({ policyWarning: expect.stringMatching(/Klinik/) });
     });
 
     it("isolates workflow access across tenants", async () => {

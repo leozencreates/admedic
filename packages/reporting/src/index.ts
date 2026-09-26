@@ -26,17 +26,16 @@ export interface WeeklyReport {
 
 export function reportPeriod(now = new Date(), reportDay = 0): { start: Date; end: Date } {
   const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const diff = (start.getDay() - reportDay + 7) % 7;
-  start.setDate(start.getDate() - diff);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
+  start.setUTCHours(0, 0, 0, 0);
+  const diff = (start.getUTCDay() - reportDay + 7) % 7;
+  start.setUTCDate(start.getUTCDate() - diff);
+  const end = new Date(start.getTime() - 1);
+  start.setUTCDate(start.getUTCDate() - 7);
   return { start, end };
 }
 
 export function isReportDay(now = new Date(), reportDay = 0): boolean {
-  return now.getDay() === reportDay;
+  return now.getUTCDay() === reportDay;
 }
 
 export async function buildWeeklyReport(
@@ -59,7 +58,7 @@ export async function buildWeeklyReport(
       select: { id: true, name: true, status: true, createdAt: true },
     }),
     prisma.alert.findMany({
-      where: { workspaceId: { equals: workspaceId }, createdAt: { gte: start }, read: false },
+      where: { workspaceId: { equals: workspaceId }, createdAt: { gte: start, lte: end }, read: false },
       select: { id: true, type: true, severity: true, title: true, createdAt: true },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -71,9 +70,9 @@ export async function buildWeeklyReport(
   const totalPurchases = insights.reduce((s, i) => s + i.purchases, 0);
   const ctr = totalImpressions > 0 ? totalClicks / totalImpressions : 0;
   const qualifiedCount = leads.filter((l) =>
-    ["QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED"].includes(l.status),
+    ["QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED"].includes(l.status),
   ).length;
-  const cpl = qualifiedCount > 0 ? Number((totalSpend / qualifiedCount / 100).toFixed(2)) : null;
+  const cpl = leads.length > 0 ? Number((totalSpend / leads.length / 100).toFixed(2)) : null;
   const newLeads = leads.filter((l) => l.status === "NEW").length;
   return {
     period: { start: start.toISOString(), end: end.toISOString() },
@@ -106,7 +105,7 @@ export function renderReportPdf(report: WeeklyReport): Promise<Buffer> {
         style: "sub",
       },
       {
-        text: `Bütçe: ${tl(report.summary.totalSpend)} · Gösterim: ${tl(report.summary.totalImpressions)} · Tıklama: ${tl(report.summary.totalClicks)} · Satın Alma: ${tl(report.summary.totalPurchases)}`,
+        text: `Harcama: ${tl(report.summary.totalSpend / 100)} · Gösterim: ${tl(report.summary.totalImpressions)} · Tıklama: ${tl(report.summary.totalClicks)} · Satın Alma: ${tl(report.summary.totalPurchases)}`,
         style: "body",
       },
       {
@@ -165,17 +164,27 @@ export interface SendReportResult {
   error?: string;
 }
 
-export async function sendWeeklyReportEmail(report: WeeklyReport, pdf: Buffer): Promise<SendReportResult> {
+/**
+ * Haftalık raporu e-posta ile gönderir. Alıcı tenant bazlıdır (Organization.reportRecipient);
+ * verilmezse ortam düzeyindeki WEEKLY_REPORT_RECIPIENT kullanılır.
+ */
+export async function sendWeeklyReportEmail(
+  report: WeeklyReport,
+  pdf: Buffer,
+  recipient?: string | null,
+): Promise<SendReportResult> {
   const env = loadEnv();
+  const to = recipient ?? env.WEEKLY_REPORT_RECIPIENT;
   if (!env.RESEND_API_KEY) return { error: "RESEND_API_KEY yapılandırılmadı." };
-  if (!env.WEEKLY_REPORT_RECIPIENT) return { error: "WEEKLY_REPORT_RECIPIENT yapılandırılmadı." };
+  if (!env.RESEND_FROM) return { error: "RESEND_FROM yapılandırılmadı." };
+  if (!to) return { error: "Rapor alıcısı yapılandırılmadı (Organization.reportRecipient / WEEKLY_REPORT_RECIPIENT)." };
   try {
     const resend = new Resend(env.RESEND_API_KEY);
     const { data, error } = await resend.emails.send({
       from: env.RESEND_FROM,
-      to: [env.WEEKLY_REPORT_RECIPIENT],
+      to: [to],
       subject: `Haftalık Reklam Raporu — ${new Date(report.period.start).toLocaleDateString("tr-TR")}`,
-      text: "Haftalık rapor ektedir. Özet: yeni lead " + report.summary.newLeads + ", harcama " + tl(report.summary.totalSpend) + ".",
+      text: "Haftalık rapor ektedir. Özet: yeni lead " + report.summary.newLeads + ", harcama " + tl(report.summary.totalSpend / 100) + ".",
       attachments: [
         {
           filename: `haftalik-rapor-${report.period.start.slice(0, 10)}.pdf`,

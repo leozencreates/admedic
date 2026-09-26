@@ -2,31 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { NavLink } from "../_lib/i18n";
 
-const LINKS = [
-  { href: "/", label: "Genel Bakış" },
-  { href: "/studio", label: "✦ Reklam Oluştur" },
-  { href: "/library", label: "Reklam Kütüphanesi" },
-  { href: "/tests", label: "Kayıtlı Deneyler" },
-  { href: "/experiments", label: "A/B Test Merkezi" },
-  { href: "/campaigns", label: "Kampanyalar" },
-  { href: "/platforms", label: "Platformlar" },
-  { href: "/meta-connections", label: "Meta Bağlantılar" },
-  { href: "/recommendations", label: "Öneriler" },
-  { href: "/decisions", label: "Kararlar & Onaylar" },
-  { href: "/insights", label: "İçgörüler" },
-  { href: "/policy-rules", label: "Politika Kuralları" },
-  { href: "/clinic", label: "Klinik & Marka" },
-  { href: "/leads", label: "Lead CRM" },
-  { href: "/billing", label: "Faturalar" },
-  { href: "/alerts", label: "Uyarılar" },
-];
-
-export function Nav() {
+/**
+ * Yan menü. `usePathname` gerektirdiği için istemci bileşeni kalır; etiketler dile göre
+ * sunucuda (`layout.tsx` → `navLinks(lang)`) üretilip prop olarak gelir.
+ */
+export function Nav({ links }: { links: NavLink[] }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-col gap-1">
-      {LINKS.map((link) => {
+      {links.map((link) => {
         const active =
           pathname === link.href ||
           (link.href !== "/" && pathname.startsWith(`${link.href}/`));

@@ -1,34 +1,28 @@
 import { type FastifyInstance } from "fastify";
-import { z } from "zod";
+import { loadEnv } from "@admedic/config";
 
-import { prisma, getPrimaryWorkspace, daysAgoUTC, roas } from "./lib";
+import { prisma, getPrimaryWorkspace, daysAgoUTC, roas, parseDays, campaignSummaries, serviceName } from "./lib";
 
 /** ADR-0001: read-only REST. Tüm iş mantığı `@admedic/database` + `@admedic/shared`'de; API yalnızca taşır. */
 
-const daysQuery = z.object({
-  days: z.coerce.number().int().min(1).max(90).default(7),
-});
-
-function parseDays(query: unknown): number {
-  const parsed = daysQuery.safeParse(query);
-  return parsed.success ? parsed.data.days : 7;
-}
+const ENDPOINTS = ["/health", "/v1/overview", "/v1/campaigns", "/v1/decisions", "/v1/alerts"];
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/", async () => ({
-    name: "admedic-api",
-    endpoints: ["/health", "/v1/overview", "/v1/campaigns", "/v1/decisions", "/v1/alerts"],
-  }));
+  app.get("/", async () => {
+    const env = loadEnv();
+    return { name: serviceName(env), appName: env.APP_NAME, endpoints: ENDPOINTS };
+  });
 
-  app.get("/health", async () => ({ ok: true, service: "admedic-api" }));
+  app.get("/health", async () => ({ ok: true, service: serviceName() }));
 
   app.get("/v1/overview", async (req) => {
     const days = parseDays(req.query);
+    const env = loadEnv();
     const ws = await getPrimaryWorkspace();
-    if (!ws) return { workspace: null, days, counts: null };
+    if (!ws) return { appName: env.APP_NAME, workspace: null, days, counts: null, campaigns: [] };
 
     const since = daysAgoUTC(days - 1);
-    const [counts, agg, budget, pending, openAlerts, policy] = await Promise.all([
+    const [counts, agg, budget, pending, openAlerts, policy, campaigns] = await Promise.all([
       Promise.all([
         prisma.campaign.count({ where: { workspaceId: ws.id } }),
         prisma.adSet.count({ where: { workspaceId: ws.id } }),
@@ -45,12 +39,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       prisma.agentDecision.count({ where: { workspaceId: ws.id, approval: "PENDING" } }),
       prisma.alert.count({ where: { workspaceId: ws.id, status: "OPEN" } }),
       prisma.optimizationPolicy.findUnique({ where: { workspaceId: ws.id } }),
+      campaignSummaries(ws.id, days),
     ]);
 
     const spend = agg._sum.spend ?? 0;
     const revenue = agg._sum.conversionValue ?? 0;
 
     return {
+      appName: env.APP_NAME,
       workspace: { id: ws.id, slug: ws.slug, name: ws.name, currency: ws.currency },
       days,
       counts: { campaigns: counts[0], adsets: counts[1], ads: counts[2] },
@@ -67,6 +63,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       policy: policy
         ? { mode: policy.mode, enabled: policy.enabled, targetRoas: policy.targetRoas }
         : null,
+      // Masaüstü kabuğunun beklediği liste (dailyBudgetCents minor unit, ADR-0011).
+      campaigns,
     };
   });
 
@@ -74,46 +72,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const days = parseDays(req.query);
     const ws = await getPrimaryWorkspace();
     if (!ws) return { workspace: null, days, campaigns: [] };
-
-    const since = daysAgoUTC(days - 1);
-    const [campaigns, grouped] = await Promise.all([
-      prisma.campaign.findMany({
-        where: { workspaceId: ws.id },
-        include: { adAccount: { select: { name: true, currency: true } }, _count: { select: { adsets: true } } },
-        orderBy: { name: "asc" },
-      }),
-      prisma.insightSnapshot.groupBy({
-        by: ["campaignId"],
-        where: { workspaceId: ws.id, date: { gte: since }, campaignId: { not: null } },
-        _sum: { spend: true, conversionValue: true, purchases: true, clicks: true },
-      }),
-    ]);
-
-    const byCampaign = new Map(grouped.map((g) => [g.campaignId, g._sum]));
-    return {
-      workspace: { id: ws.id },
-      days,
-      campaigns: campaigns.map((c) => {
-        const sum = byCampaign.get(c.id);
-        const spend = sum?.spend ?? 0;
-        const revenue = sum?.conversionValue ?? 0;
-        return {
-          id: c.id,
-          name: c.name,
-          status: c.status,
-          dailyBudgetCents: c.dailyBudget ?? 0,
-          adAccount: c.adAccount,
-          adSetCount: c._count.adsets,
-          lastNDays: {
-            spendCents: spend,
-            revenueCents: revenue,
-            purchases: sum?.purchases ?? 0,
-            clicks: sum?.clicks ?? 0,
-            roas: roas(revenue, spend),
-          },
-        };
-      }),
-    };
+    return { workspace: { id: ws.id }, days, campaigns: await campaignSummaries(ws.id, days) };
   });
 
   app.get("/v1/decisions", async () => {

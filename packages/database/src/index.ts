@@ -22,3 +22,4 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 export { isAdmedicError };
 
 export * from "@prisma/client";
+export { anonymizeLead, anonymizeExpiredLeads } from "./privacy";

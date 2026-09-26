@@ -1,8 +1,14 @@
 {
   "name": "@admedic/stripe",
   "version": "0.1.0",
+  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\""
+  },
   "dependencies": {
     "@admedic/database": "workspace:*",
     "stripe": "^16.0.0"

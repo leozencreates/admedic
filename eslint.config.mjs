@@ -10,7 +10,6 @@ export default [
       "**/coverage/**",
       "**/*.generated.*",
       "legacy/**",
-      "**/prisma/seed.generated.ts",
     ],
   },
   {

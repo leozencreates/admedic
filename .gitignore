@@ -10,6 +10,7 @@ build/
 next-env.d.ts
 apps/*/dist/
 packages/*/dist/
+coverage/
 
 # Next.js
 .next/
@@ -20,6 +21,7 @@ prisma/dev.db
 prisma/dev.db-journal
 *.db
 *.db-journal
+**/generated/
 
 # Env & secrets
 .env
@@ -28,7 +30,9 @@ prisma/dev.db-journal
 
 # Tauri / desktop
 desktop/src-tauri/target/
-desktop/scripts/*.json
+
+# Yedek / geçici dosyalar
+*.bak*
 
 # OS
 .DS_Store
@@ -39,6 +43,3 @@ test-results/
 playwright-report/
 npm-debug.log*
 pnpm-debug.log*
-
-# Prisma
-**/generated/

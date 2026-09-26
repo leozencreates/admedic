@@ -13,7 +13,7 @@ export function verifyWebhookSignature(
   if (!secret || secret.length === 0) return false;
   if (!signature) return false;
   const prefix = "sha256=";
-  if (!signature.startsWith(prefix)) return false;
+  if (!/^sha256=[0-9a-fA-F]{64}$/.test(signature)) return false;
   const provided = Buffer.from(signature.slice(prefix.length), "hex");
   const expected = createHmac("sha256", secret).update(payload).digest();
   return (

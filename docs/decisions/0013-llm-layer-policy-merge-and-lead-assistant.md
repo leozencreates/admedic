@@ -1,0 +1,21 @@
+# 0013 — LLM katmanı: sürümlü prompt'lar, çağrı günlüğü, politika birleşimi ve AI asistan
+
+- Tarih: 2026-09-26
+- Durum: Kabul
+- İlgili spec: 3.4, 3.5, 3.8, 3.11, §4
+
+## Bağlam
+LLM çağrıları üç ayrı yerde (stüdyo üretimi, politika riski, sohbet) kendi `fetch` kodunu taşıyor, prompt metinleri route dosyalarına gömülüydü, `LlmCallLog` sohbet için `creative-v1` ve 0 token yazıyordu, `LlmCallLogStatus` enum'una aykırı `"SUCCESS"` kullanılıyordu. Politika LLM katmanı yalnızca "ek bilgi" idi (risk kural katmanından geliyordu) ve `changeDraft` LLM çağrısını Prisma interactive transaction içinde yapıp 5 sn zaman aşımına takılıyordu. `/api/ai/chat` personel metnini lead'in INCOMING mesajı gibi kaydediyor, lead DB anahtarını prompta koyuyor ve kanaldan hiçbir şey göndermiyordu; webhook (W2) gelen mesajı kaydediyor ama yanıt üretmiyordu.
+
+## Karar
+1. **Prompt'lar sürümlü dosyalarda** (`packages/llm/prompts/*-v1.ts`): `creative-v1` (N başlık varyasyonu, 2–4), `policy-risk-v1`, `greeting-v1`, `lead-assistant-v1`. Dil listesi tek kaynaktan (`BriefLanguageEnum`, `packages/llm/src/languages.ts`): `LOCALIZATION`, `LANGUAGE_LABELS`, UI seçenekleri buradan türetilir (ADR-0009).
+2. **Tek çağrı çekirdeği + günlük sarmalayıcı**: `anthropicMessages` (metin + `usage`) ve `callWithLog({ workspaceId, agent, promptVersion, model, sink, run })` (`packages/llm/src/logging.ts`). Web'de `web/app/_lib/llm-log.ts` Prisma sink'i sağlar; worker kendi sink'ini verir. Her çağrı gerçek token sayısı ve süreyle `COMPLETED`, hata durumunda `FAILED` yazar; içerik asla loglanmaz. Model adı yalnızca `getLlmConfig()`'ten gelir (varsayılan yok).
+3. **Kreatif çıktısı**: `instantForm` ve `whatsapp` zorunlu; `cta` Meta `call_to_action.type` alt kümesi (`META_CTA_TYPES`), serbest metin `normalizeCta` ile en yakın türe eşlenir. Kaydedilen taslaklar (`DraftSchema`) eski serbest CTA'yı korur; stüdyo arayüzü yeni taslaklarda enum sunar. `/api/creative` istenen her dil için ayrı üretim yapar ve tüm varyantları `Creative.brief.content` altında dil bazlı saklar; AI kotası stüdyoyla ortaktır.
+4. **Politika birleşimi (spec 3.5)**: `risk = max(kural, LLM)`; anahtar yoksa `llm:null`, hata varsa `llm:{error:true}` — her iki durumda karar kural sonucudur. Kontrol metni varyantlar + Instant Form soruları + WhatsApp karşılamasını kapsar. MEDIUM onaya gönderim `acknowledgeWarning:true` ister (422 + `policyWarning`), onay audit'e yazılır; HIGH engellenir. LLM çağrısı transaction dışında; kısa transaction yalnızca sürüm korumalı yazım + audit. Reject LLM çağırmaz. İstemci politika hesaplamaz; sunucu sonucu gösterilir (kaydedilmemiş metin için yalnızca ön tarama ipucu).
+5. **AI asistan (spec 3.8)**: saf katman `packages/llm/src/assistant.ts` (`buildAssistantReply`, `detectHandoff`, `maskContact`, `leadAlias`, `HANDOFF_NOTICE`); DB + kanal katmanı web'de `web/app/_lib/lead-assistant.ts` (`respondToInbound`) ve worker'da `workers/meta-sync/src/assistant.ts` (`runAssistant`, zamanlayıcı turunda). Yanıt yalnızca ACTIVE konuşmada son mesaj INCOMING iken üretilir, kanaldan gönderilir ve OUTGOING `sender:"ai"` kaydedilir; eşzamanlı devralma danışma kilidiyle 409/atlama. Devir (acil / insan / kapsam dışı) kelime sınırlı çok dilli sözlükle LLM'siz de çalışır: ESCALATED + lead'e kendi dilinde bilgilendirme + koordinatör `Alert` + audit. Prompt'ta takma kimlik (`sha256(orgId:leadId)[0:8]`), lead serbest metninde e-posta/telefon maskesi; ilk bot mesajına `BOT_DISCLOSURE` (webhook-ingest'ten) eklenir. `/api/ai/chat` eski sözleşmeyi korur: `message` verilirse `sender:"simulated"` INCOMING olarak kaydedilir; verilmezse son gelen mesaja yanıt üretir.
+6. WhatsApp/Messenger taşıyıcıları paket düzeyinde (`packages/meta-api/src/whatsapp.ts` — web kopyası, `messenger.ts` — Prisma'sız Send API); web'in `_lib` dosyaları değişmedi.
+
+## Sonuç
+- Şema önerisi: `AlertType.CONVERSATION_ESCALATED` (şimdilik `PAUSE_APPLIED` + `entityType:"CONVERSATION"`), `LlmCallLog.status` sütununun `LlmCallLogStatus` enum'una bağlanması.
+- Worker bağımlılığı: `@admedic/llm` (`workers/meta-sync/package.json`).
+- Testler: `packages/llm` (prompt/CTA/handoff/logging), `web/tests/studio.integration.test.ts` (politika birleşimi, MEDIUM onayı, günlük), `web/tests/assistant.integration.test.ts`, `workers/meta-sync/src/assistant.db.test.ts`, `packages/meta-api/src/whatsapp.test.ts`.

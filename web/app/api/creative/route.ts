@@ -1,11 +1,24 @@
 import { prisma, type Prisma } from "@admedic/database";
-import { requireActor, requireRole, EDIT_ROLES } from "../../_lib/auth";
-import { body, respond, sameOrigin } from "../../_lib/http";
+import { requireActor, requireRole, EDIT_ROLES, quota } from "../../_lib/auth";
+import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
-import { loadEnv } from "@admedic/config";
+import { getLlmConfig, LLM_NOT_CONFIGURED_MESSAGE } from "@admedic/config";
 import { logAudit } from "../../_lib/audit";
-import { AnthropicProvider, BriefSchema, BriefLanguageEnum } from "@admedic/llm";
-import { enrichBriefWithProfile, policyFor } from "../../_lib/studio-service";
+import {
+  AnthropicProvider,
+  BriefSchema,
+  BriefLanguageEnum,
+  BRIEF_LANGUAGES,
+  LANGUAGE_LABELS,
+  MAX_VARIATIONS,
+  MIN_VARIATIONS,
+  PROMPT_VERSION,
+  type BriefLanguage,
+  type GenerateResult,
+} from "@admedic/llm";
+import { enrichBriefWithProfile, maxRisk, policyFor, type StudioPolicy } from "../../_lib/studio-service";
+import { withLlmLog } from "../../_lib/llm-log";
+import type { PolicyRisk } from "@admedic/policy";
 
 export const maxDuration = 60;
 
@@ -13,22 +26,18 @@ const CreativeSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     brief: BriefSchema.optional(),
-    languages: z.array(BriefLanguageEnum).max(10).default([]),
-    variations: z.number().int().min(2).max(4).default(2),
+    /** Hedeflenen reklam dilleri; boşsa brief dili. Dil başına ayrı üretim (çeviri değil yerelleştirme, spec 3.4). */
+    languages: z.array(BriefLanguageEnum).max(BRIEF_LANGUAGES.length).default([]),
+    variations: z.number().int().min(MIN_VARIATIONS).max(MAX_VARIATIONS).default(2),
   })
   .strict();
 
-let _provider: AnthropicProvider | null = null;
-function getProvider(): AnthropicProvider {
-  if (!_provider) {
-    const env = loadEnv();
-    const key = process.env.ANTHROPIC_API_KEY ?? env.LLM_API_KEY ?? "";
-    _provider = new AnthropicProvider(
-      key,
-      process.env.LLM_MODEL ?? env.LLM_MODEL ?? "claude-sonnet-4",
-    );
-  }
-  return _provider;
+interface LanguageResult {
+  language: BriefLanguage;
+  variants: GenerateResult["variants"];
+  instantForm: GenerateResult["instantForm"];
+  whatsapp: GenerateResult["whatsapp"];
+  policy: StudioPolicy;
 }
 
 export async function GET() {
@@ -62,50 +71,67 @@ export async function POST(request: Request) {
     const actor = await requireActor();
     requireRole(actor, EDIT_ROLES);
     const input = await body(request, CreativeSchema);
-    loadEnv();
 
-    let primaryText: string | undefined;
-    let headline: string | undefined;
-    let description: string | undefined;
-    let cta: string | undefined;
+    let results: LanguageResult[] = [];
     let brief: Prisma.InputJsonValue | undefined;
-    let policyRisk: string | null | undefined;
+    let policyRisk: PolicyRisk | undefined;
     let policyReport: Prisma.InputJsonValue | undefined;
-    let preview: { headline: string; text: string; cta: string } | undefined;
+    let languages = [...new Set(input.languages)];
 
     if (input.brief) {
-      const key = process.env.ANTHROPIC_API_KEY;
-      const model = process.env.LLM_MODEL;
-      if (!key || !model) throw new Error("AI için ANTHROPIC_API_KEY ve LLM_MODEL ayarlanmalı.");
+      const llm = getLlmConfig();
+      if (!llm) throw new HttpError(503, LLM_NOT_CONFIGURED_MESSAGE);
+      languages = languages.length > 0 ? languages : [input.brief.language];
+      // Dil başına bir üretim = bir kota birimi; kota üretime başlamadan önce ayrılır (stüdyo ile aynı saatlik limit).
+      for (let i = 0; i < languages.length; i++) await quota(`ai:${actor.workspaceId}`, 20, 3600);
       const enriched = await enrichBriefWithProfile(input.brief, actor.workspaceId);
-      const provider = getProvider();
-      const result = await provider.generate(enriched);
-      primaryText = result.variants[0].text;
-      headline = result.variants[0].headline;
-      description = result.variants[0].description;
-      cta = result.variants[0].cta;
-      preview = {
-        headline: result.variants[0].headline,
-        text: result.variants[0].text,
-        cta: result.variants[0].cta,
-      };
-      const content = {
-        ...enriched,
-        variants: result.variants,
-        ...(result.instantForm ? { instantForm: result.instantForm } : {}),
-        ...(result.whatsapp ? { whatsapp: result.whatsapp } : {}),
-      };
-      const policy = await policyFor(content, actor.workspaceId);
-      policyRisk = policy.risk;
-      policyReport = policy as Prisma.InputJsonValue;
+      const provider = new AnthropicProvider(llm.apiKey, llm.model);
+      results = await Promise.all(
+        languages.map(async (language): Promise<LanguageResult> => {
+          const localized = { ...enriched, language };
+          let generated: GenerateResult;
+          try {
+            generated = await withLlmLog({
+              workspaceId: actor.workspaceId,
+              agent: "creative-writer",
+              promptVersion: PROMPT_VERSION,
+              model: llm.model,
+              run: () => provider.generate(localized, { variations: input.variations }),
+            });
+          } catch {
+            throw new HttpError(
+              502,
+              `AI ${LANGUAGE_LABELS[language]} için geçerli kreatif üretemedi. Model/anahtar ayarını kontrol edin veya tekrar deneyin.`,
+            );
+          }
+          const policy = await policyFor(generated, actor.workspaceId);
+          return {
+            language,
+            variants: generated.variants,
+            instantForm: generated.instantForm,
+            whatsapp: generated.whatsapp,
+            policy,
+          };
+        }),
+      );
+      policyRisk = results.map((r) => r.policy.risk).reduce(maxRisk, "LOW");
+      policyReport = {
+        risk: policyRisk,
+        languages: Object.fromEntries(results.map((r) => [r.language, r.policy])),
+      } as unknown as Prisma.InputJsonValue;
       brief = {
         input: enriched,
-        variants: result.variants,
-        ...(result.instantForm ? { instantForm: result.instantForm } : {}),
-        ...(result.whatsapp ? { whatsapp: result.whatsapp } : {}),
-      } as Prisma.InputJsonValue;
+        languages,
+        variations: input.variations,
+        content: {
+          variants: Object.fromEntries(results.map((r) => [r.language, r.variants])),
+          instantForm: Object.fromEntries(results.map((r) => [r.language, r.instantForm])),
+          whatsapp: Object.fromEntries(results.map((r) => [r.language, r.whatsapp])),
+        },
+      } as unknown as Prisma.InputJsonValue;
     }
 
+    const primary = results[0]?.variants[0];
     const creative = await prisma.creative.create({
       data: {
         workspaceId: actor.workspaceId,
@@ -113,14 +139,14 @@ export async function POST(request: Request) {
         name: input.name,
         status: "DRAFT",
         type: "IMAGE",
-        primaryText,
-        headline,
-        description,
-        cta,
-        languages: input.languages,
+        primaryText: primary?.text,
+        headline: primary?.headline,
+        description: primary?.description,
+        cta: primary?.cta,
+        languages,
         variations: input.variations,
         brief,
-        policyRisk: (policyRisk as "LOW" | "MEDIUM" | "HIGH" | null) ?? undefined,
+        policyRisk,
         policyReport,
       },
     });
@@ -152,10 +178,11 @@ export async function POST(request: Request) {
         headline: creative.headline,
         description: creative.description,
       },
-      policy: policyRisk
-        ? { risk: policyRisk, report: policyReport }
-        : null,
-      preview,
+      policy: policyRisk ? { risk: policyRisk, report: policyReport } : null,
+      preview: primary
+        ? { headline: primary.headline, text: primary.text, cta: primary.cta }
+        : undefined,
+      results,
     };
   });
 }

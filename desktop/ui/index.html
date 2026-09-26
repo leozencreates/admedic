@@ -3,32 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admedic — tauri.conf dokunulmadı; ad env merge'ten</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f5f6f8; }
-    header { padding: 18px 24px; border-bottom: 1px solid var(--line, #e2e5ea); background: #fff; display: flex; align-items: baseline; gap: 14px; }
-    h1 { font-size: 1.2rem; margin: 0; }
-    .muted { color: var(--muted, #6b7280); font-size: .85rem; }
-    main { padding: 20px 24px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
-    .card { background: #fff; border: 1px solid var(--line, #e2e5ea); border-radius: 10px; padding: 14px 16px; }
-    .card .label { font-size: .8rem; color: var(--muted, #6b7280); }
-    .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 2px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 18px; background: #fff; }
-    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line, #eef0f3); font-size: .92rem; }
-    th { color: var(--muted, #6b7280); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
-    #status { font-size: .85rem; }
-  </style>
+  <!-- Başlık ve h1 çalışma zamanında /v1/overview yanıtındaki appName (APP_NAME) ile doldurulur; sabit ad yazılmaz. -->
+  <title>Panel</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header>
-    <h1></h1>
+    <h1>Panel</h1>
     <span class="muted" id="ws"></span>
     <span id="status" class="muted"></span>
+    <form id="token-form" autocomplete="off">
+      <label for="token-input">API belirteci</label>
+      <input id="token-input" type="password" placeholder="API_TOKEN" />
+      <button type="submit">Bağlan</button>
+    </form>
   </header>
   <main>
-    <div id="meta" class="muted" style="margin-bottom:14px"></div>
+    <div id="meta" class="muted"></div>
     <div id="cards" class="cards"></div>
     <table id="table"></table>
     <div id="alerts"></div>

@@ -52,11 +52,20 @@ async function Decisions() {
   const workspace = await getPrimaryWorkspace();
   if (!workspace) return null;
 
-  const decisions = await prisma.agentDecision.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { createdAt: "desc" },
-    take: 40,
-  });
+  const [decisions, account] = await Promise.all([
+    prisma.agentDecision.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    }),
+    prisma.adAccount.findFirst({
+      where: { workspaceId: workspace.id, status: "ACTIVE" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: { currency: true },
+    }),
+  ]);
+  // budgetBefore/After minor unit'tir (agent-engine cent üretir); formatMoney cent bekler.
+  const currency = account?.currency || "EUR";
   const adIds = decisions.filter((d) => d.targetType === "AD").map((d) => d.targetId);
   const ads = await prisma.ad.findMany({
     where: { id: { in: adIds } },
@@ -107,8 +116,8 @@ async function Decisions() {
                       {d.budgetBefore == null
                         ? "—"
                         : d.budgetAfter == null
-                          ? formatMoney(d.budgetBefore)
-                          : `${formatMoney(d.budgetBefore)} → ${formatMoney(d.budgetAfter)}`}
+                          ? formatMoney(d.budgetBefore, currency)
+                          : `${formatMoney(d.budgetBefore, currency)} → ${formatMoney(d.budgetAfter, currency)}`}
                     </Td>
                     <Td align="right">{formatRoas(metrics.roas ?? null)}</Td>
                     <Td>
@@ -132,11 +141,20 @@ async function BudgetChanges() {
   const workspace = await getPrimaryWorkspace();
   if (!workspace) return null;
 
-  const changes = await prisma.budgetChange.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
+  const [changes, account] = await Promise.all([
+    prisma.budgetChange.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.adAccount.findFirst({
+      where: { workspaceId: workspace.id, status: "ACTIVE" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: { currency: true },
+    }),
+  ]);
+  // fromCents/toCents minor unit (şema adı zaten belirtir).
+  const currency = account?.currency || "EUR";
 
   return (
     <Card>
@@ -163,8 +181,8 @@ async function BudgetChanges() {
               {changes.map((c) => (
                 <tr key={c.id}>
                   <Td className="font-mono text-xs text-slate-600">{c.field}</Td>
-                  <Td align="right">{formatMoney(c.fromCents)}</Td>
-                  <Td align="right">{formatMoney(c.toCents)}</Td>
+                  <Td align="right">{formatMoney(c.fromCents, currency)}</Td>
+                  <Td align="right">{formatMoney(c.toCents, currency)}</Td>
                   <Td>
                     <Badge tone={c.status === "APPLIED" ? "green" : "amber"}>{c.status}</Badge>
                   </Td>

@@ -32,12 +32,39 @@ import {
   changeDraft,
   getExperiment,
   updateExperiment,
+  enrichBriefWithProfile,
 } from "../app/_lib/studio-service";
 import { POST as login, DELETE as logout } from "../app/api/session/route";
 import { POST as generate } from "../app/api/studio/generate/route";
+import { PATCH as patchDraft } from "../app/api/studio/[id]/route";
 import { GET as listDrafts } from "../app/api/studio/route";
 import { BriefSchema, type DraftContent } from "@admedic/llm";
 import type { Metrics } from "../app/_lib/experiment";
+
+const policyResponse = (risk: string, reason: string) =>
+  Response.json({
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: JSON.stringify({ risk, reason, correctedCopy: "Düzeltilmiş metin." }) }],
+    usage: { input_tokens: 3, output_tokens: 4 },
+  });
+const creativeResponse = () =>
+  Response.json({
+    stop_reason: "end_turn",
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          variants: [
+            { headline: "Meet the team", text: "Contact our team for service information.", cta: "Learn more" },
+            { headline: "Discover services", text: "Contact our team for service information.", cta: "Learn more" },
+          ],
+          instantForm: { questions: ["Which service?", "Your country?"] },
+          whatsapp: { welcome: "Merhaba! Ben otomatik asistanım; hangi hizmetle ilgileniyorsunuz?" },
+        }),
+      },
+    ],
+    usage: { input_tokens: 20, output_tokens: 30 },
+  });
 
 // Explicit opt-in: unique fixtures only; no reset, no existing rows modified.
 describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
@@ -292,7 +319,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       ).toBe(0);
       vi.unstubAllEnvs();
     });
-    it("validates AI role and logs successful/failed calls without raw content", async () => {
+    it("validates AI role and logs successful/failed calls with real tokens and prompt versions, without raw content", async () => {
       vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
       vi.stubEnv("LLM_MODEL", "test-model");
       const request = () =>
@@ -316,22 +343,23 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
           where: { orgId_userId: { orgId: owner.orgId, userId } },
           data: { role: "OWNER" },
         });
-        transport.mockResolvedValueOnce(
-          Response.json({
-            stop_reason: "end_turn",
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ variants: content.variants }),
-              },
-            ],
-            usage: { input_tokens: 20, output_tokens: 30 },
-          }),
-        );
-        expect((await generate(request())).status).toBe(200);
-        transport.mockResolvedValueOnce(
-          new Response("sensitive upstream details", { status: 401 }),
-        );
+        let failCreative = false;
+        transport.mockImplementation(async (_input, init) => {
+          const req = JSON.parse(String(init?.body));
+          if (String(req.system).includes("compliance reviewer")) return policyResponse("MEDIUM", "Üstünlük vurgusu.");
+          if (failCreative) return new Response("sensitive upstream details", { status: 401 });
+          return creativeResponse();
+        });
+        const ok = await generate(request());
+        expect(ok.status).toBe(200);
+        const generated = await ok.json();
+        // Çıktı: CTA Meta türü, instantForm/whatsapp zorunlu, sunucu profili yok (klinik eşleşmedi), risk = max(kural LOW, LLM MEDIUM).
+        expect(generated.content.variants[0].cta).toBe("LEARN_MORE");
+        expect(generated.content.instantForm.questions).toHaveLength(2);
+        expect(generated.content.whatsapp.welcome).toContain("otomatik");
+        expect(generated.content.profile).toBeUndefined();
+        expect(generated.policy).toMatchObject({ risk: "MEDIUM", ruleRisk: "LOW", llm: { risk: "MEDIUM", reason: "Üstünlük vurgusu." } });
+        failCreative = true;
         const failed = await generate(request());
         expect(failed.status).toBe(502);
         expect(await failed.text()).not.toContain("sensitive upstream details");
@@ -339,8 +367,15 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
           where: { workspaceId: owner.workspaceId },
           orderBy: { createdAt: "asc" },
         });
-        expect(logs.map((l) => l.status)).toEqual(["SUCCESS", "FAILED"]);
+        expect(logs.map((l) => `${l.agent}:${l.promptVersion}:${l.status}`)).toEqual([
+          "creative-writer:creative-v1:COMPLETED",
+          "policy-checker:policy-risk-v1:COMPLETED",
+          "creative-writer:creative-v1:FAILED",
+        ]);
         expect(logs[0].inputTokens).toBe(20);
+        expect(logs[0].outputTokens).toBe(30);
+        expect(logs[1].inputTokens).toBe(3);
+        expect(logs[0].model).toBe("test-model");
         expect(JSON.stringify(logs)).not.toContain(content.clinic);
       } finally {
         await prisma.membership.update({
@@ -348,6 +383,94 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
           data: { role: "OWNER" },
         });
         transport.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    });
+    it("merges rule and LLM policy layers: max risk, {error:true} on LLM failure, null without a key", async () => {
+      const policyAt = (id: string) => prisma.studioDraft.findUniqueOrThrow({ where: { id } }).then((d) => d.policy as { risk: string; ruleRisk: string; llm: unknown });
+      // Anahtar yok → llm:null, karar kural sonucu.
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("LLM_MODEL", "");
+      const plain = await createDraft(owner, content);
+      expect(await policyAt(plain.id)).toMatchObject({ risk: "LOW", ruleRisk: "LOW", llm: null });
+      vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
+      vi.stubEnv("LLM_MODEL", "test-model");
+      const transport = vi.spyOn(globalThis, "fetch");
+      try {
+        transport.mockResolvedValueOnce(policyResponse("HIGH", "Kesin sonuç vaadi."));
+        const high = await createDraft(owner, content);
+        expect(await policyAt(high.id)).toMatchObject({ risk: "HIGH", ruleRisk: "LOW", llm: { risk: "HIGH" } });
+        // LLM yüksek risk dediyse onaya gönderilemez.
+        transport.mockResolvedValueOnce(policyResponse("HIGH", "Kesin sonuç vaadi."));
+        await expect(changeDraft(owner, high.id, { action: "submit", version: 1 })).rejects.toMatchObject({ status: 422 });
+        // LLM hatası → llm:{error:true}, risk kural sonucu; FAILED günlüğü.
+        transport.mockResolvedValueOnce(new Response("boom", { status: 500 }));
+        const errored = await createDraft(owner, content);
+        expect(await policyAt(errored.id)).toMatchObject({ risk: "LOW", ruleRisk: "LOW", llm: { error: true } });
+        const failedLogs = await prisma.llmCallLog.count({ where: { workspaceId: owner.workspaceId, agent: "policy-checker", status: "FAILED" } });
+        expect(failedLogs).toBeGreaterThanOrEqual(1);
+        // Kural HIGH + LLM LOW → HIGH (max).
+        transport.mockResolvedValueOnce(policyResponse("LOW", "Nötr."));
+        const unsafe = { ...content, variants: [{ ...content.variants[0], text: "Guaranteed results" }, content.variants[1]] } as DraftContent;
+        const ruleHigh = await createDraft(owner, unsafe);
+        expect(await policyAt(ruleHigh.id)).toMatchObject({ risk: "HIGH", ruleRisk: "HIGH", llm: { risk: "LOW" } });
+        // Reject LLM çağırmaz: onaya gönderilmiş taslak reddedilirken fetch çağrılmaz.
+        transport.mockResolvedValueOnce(policyResponse("LOW", "Nötr."));
+        await changeDraft(owner, plain.id, { action: "submit", version: 1 });
+        const calls = transport.mock.calls.length;
+        await changeDraft(owner, plain.id, { action: "reject", version: 2 });
+        expect(transport.mock.calls.length).toBe(calls);
+        expect((await getDraft(owner, plain.id)).status).toBe("REJECTED");
+      } finally {
+        transport.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    });
+    it("requires an acknowledged warning to submit MEDIUM risk and records it in the audit log", async () => {
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+      vi.stubEnv("LLM_MODEL", "");
+      // Kural katmanı MEDIUM: klinik yasaklı ifadesi.
+      const clinic = await prisma.clinicProfile.create({
+        data: { workspaceId: owner.workspaceId, name: "Fixture clinic", slug: `fx-${suffix}`, brandBannedPhrases: ["en ucuz"], languages: ["EN"] },
+      });
+      try {
+        const medium = { ...content, whatsapp: { welcome: "Merhaba! Ben otomatik asistanım, en ucuz paketi anlatayım." } } as DraftContent;
+        const draft = await createDraft(owner, medium);
+        const stored = (await getDraft(owner, draft.id)).policy as { risk: string; findings: { rule: string }[] };
+        // WhatsApp karşılaması da kontrol edilen metne dahildir.
+        expect(stored.risk).toBe("MEDIUM");
+        expect(stored.findings.map((f) => f.rule)).toContain("clinic-restriction");
+        await expect(changeDraft(owner, draft.id, { action: "submit", version: 1 })).rejects.toMatchObject({ status: 422 });
+        // Route: 422 gövdesinde policyWarning döner.
+        const blocked = await patchDraft(
+          new Request(`http://localhost:3000/api/studio/${draft.id}`, {
+            method: "PATCH",
+            headers: { origin: "http://localhost:3000", "content-type": "application/json" },
+            body: JSON.stringify({ action: "submit", version: 1 }),
+          }),
+          { params: Promise.resolve({ id: draft.id }) },
+        );
+        expect(blocked.status).toBe(422);
+        const warning = await blocked.json();
+        expect(warning.policyWarning).toMatchObject({ risk: "MEDIUM", ruleRisk: "MEDIUM", llm: null });
+        expect((await getDraft(owner, draft.id)).status).toBe("DRAFT");
+        await changeDraft(owner, draft.id, { action: "submit", version: 1, acknowledgeWarning: true });
+        expect((await getDraft(owner, draft.id)).status).toBe("IN_REVIEW");
+        const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: draft.id, action: "DRAFT_SUBMIT" } });
+        expect(audit.after).toMatchObject({ policyWarningAcknowledged: true, risk: "MEDIUM" });
+        // Profil zenginleştirme: istemci profili atılır, DB profili kullanılır.
+        const enriched = await enrichBriefWithProfile(
+          { ...BriefSchema.parse(content), clinic: "Fixture clinic", profile: { bannedPhrases: ["istemci"] } },
+          owner.workspaceId,
+        );
+        expect(enriched.profile).toMatchObject({ bannedPhrases: ["en ucuz"], languages: ["EN"] });
+        const unmatched = await enrichBriefWithProfile(
+          { ...BriefSchema.parse(content), clinic: "Bilinmeyen", profile: { bannedPhrases: ["istemci"] } },
+          other.workspaceId,
+        );
+        expect(unmatched.profile).toBeUndefined();
+      } finally {
+        await prisma.clinicProfile.delete({ where: { id: clinic.id } });
         vi.unstubAllEnvs();
       }
     });

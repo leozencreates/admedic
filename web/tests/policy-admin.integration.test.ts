@@ -78,12 +78,21 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Platform Admin policy rule 
     await prisma.$disconnect();
   });
 
-  it("restricts global rule management to Platform Admin", async () => {
+  it("lets everyone read rules (canEdit=false) but restricts management to Platform Admin", async () => {
     cookieJar.set(SESSION_COOKIE, tokenOwner);
-    expect((await rulesGet()).status).toBe(403);
+    const ownerRead = await rulesGet();
+    expect(ownerRead.status).toBe(200);
+    const ownerBody = await ownerRead.json();
+    expect(ownerBody.canEdit).toBe(false);
+    expect(Array.isArray(ownerBody.rules)).toBe(true);
     expect((await rulesPost(req("/api/policy-rules", "POST", { key: "x", matcher: "PHRASES_V1", phrases: ["a"], risk: "MEDIUM", reason: "r", suggestion: "s" }))).status).toBe(403);
+    expect((await rulesPatch(req("/api/policy-rules/guarantee", "PATCH", { expectedPreviousVersion: 1, intendedVersion: 1, active: false }), { params: Promise.resolve({ key: "guarantee" }) })).status).toBe(403);
     cookieJar.set(SESSION_COOKIE, tokenAdmin);
-    expect((await rulesGet()).status).toBe(200);
+    const adminRead = await rulesGet();
+    expect(adminRead.status).toBe(200);
+    expect((await adminRead.json()).canEdit).toBe(true);
+    // PHRASES_V1 boş liste POST'ta reddedilir.
+    expect((await rulesPost(req("/api/policy-rules", "POST", { key: "empty-phrases", matcher: "PHRASES_V1", phrases: [], risk: "MEDIUM", reason: "r", suggestion: "s" }))).status).toBe(400);
   });
 
   it("creates a new phrase rule only when the key is inactive; active keys conflict", async () => {
@@ -114,12 +123,60 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Platform Admin policy rule 
       expectedPreviousVersion: newest, intendedVersion: newest, active: true,
     }), { params: Promise.resolve({ key: "vip-claim" }) });
     expect(stale.status).toBe(409);
+    // intendedVersion en güncel sürüm değilse 409 (eski sürümden dallanma yok).
+    const branch = await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
+      expectedPreviousVersion: newest + 1, intendedVersion: newest, active: true,
+    }), { params: Promise.resolve({ key: "vip-claim" }) });
+    expect(branch.status).toBe(409);
     const reopen = await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
       expectedPreviousVersion: newest + 1, intendedVersion: newest + 1, active: true,
     }), { params: Promise.resolve({ key: "vip-claim" }) });
     expect(reopen.status).toBe(200);
     const hist2 = (await (await historyGet(req(`/api/policy-rules/vip-claim`, "GET"), { params: Promise.resolve({ key: "vip-claim" }) })).json()).rules;
     expect(hist2).toHaveLength(3);
+  });
+
+  it("keeps active state and other fields when not sent; rejects empty phrase lists and no-op revisions; audits before/after diff", async () => {
+    cookieJar.set(SESSION_COOKIE, tokenAdmin);
+    const hist = (await (await historyGet(req(`/api/policy-rules/vip-claim`, "GET"), { params: Promise.resolve({ key: "vip-claim" }) })).json()).rules as { version: number; active: boolean }[];
+    const newest = Math.max(...hist.map((r) => r.version));
+    const current = hist.find((r) => r.version === newest)!;
+    expect(current.active).toBe(true);
+    // Yalnızca risk gönderilir → aktiflik ve ifadeler korunur.
+    const riskOnly = await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
+      expectedPreviousVersion: newest, intendedVersion: newest, risk: "MEDIUM",
+    }), { params: Promise.resolve({ key: "vip-claim" }) });
+    expect(riskOnly.status).toBe(200);
+    const riskBody = await riskOnly.json();
+    expect(riskBody.rule.active).toBe(true);
+    expect(riskBody.rule.risk).toBe("MEDIUM");
+    expect(riskBody.rule.phrases).toEqual(["%100 garanti", "kesin çözüm"]);
+    expect(riskBody.changed).toEqual(["risk"]);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { orgId, action: "POLICY_RULE_UPDATED", entityId: riskBody.rule.id },
+    });
+    expect(audit.before).toMatchObject({ key: "vip-claim", version: newest, risk: "HIGH" });
+    expect(audit.after).toMatchObject({ key: "vip-claim", version: newest + 1, risk: "MEDIUM" });
+    expect(audit.after).not.toHaveProperty("phrases");
+    // Boş ifade listesi (PHRASES_V1) reddedilir; değişiklik içermeyen istek de reddedilir.
+    expect((await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
+      expectedPreviousVersion: newest + 1, intendedVersion: newest + 1, phrases: [],
+    }), { params: Promise.resolve({ key: "vip-claim" }) })).status).toBe(400);
+    expect((await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
+      expectedPreviousVersion: newest + 1, intendedVersion: newest + 1, risk: "MEDIUM",
+    }), { params: Promise.resolve({ key: "vip-claim" }) })).status).toBe(400);
+    // İfade değişikliği before/after ile audit'lenir; riski HIGH'a geri al.
+    const phrases = await rulesPatch(req("/api/policy-rules/vip-claim", "PATCH", {
+      expectedPreviousVersion: newest + 1, intendedVersion: newest + 1, risk: "HIGH", phrases: ["%100 garanti", "kesin çözüm", "ağrısız garanti"],
+    }), { params: Promise.resolve({ key: "vip-claim" }) });
+    expect(phrases.status).toBe(200);
+    const phrasesBody = await phrases.json();
+    expect(phrasesBody.changed.sort()).toEqual(["phrases", "risk"]);
+    const phraseAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { orgId, action: "POLICY_RULE_UPDATED", entityId: phrasesBody.rule.id },
+    });
+    expect(phraseAudit.before).toMatchObject({ phrases: ["%100 garanti", "kesin çözüm"], risk: "MEDIUM" });
+    expect(phraseAudit.after).toMatchObject({ phrases: ["%100 garanti", "kesin çözüm", "ağrısız garanti"], risk: "HIGH" });
   });
 
   it("enforces a disabled revision and does not resurrect older active versions", async () => {

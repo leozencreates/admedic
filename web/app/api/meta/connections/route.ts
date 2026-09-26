@@ -12,6 +12,7 @@ export async function GET() {
         id: true, type: true, status: true, name: true,
         metaAccountId: true, metaUserId: true, scopes: true,
         missingPermissions: true, pageId: true, instaId: true,
+        pixelId: true, whatsappPhoneNumberId: true, whatsappBusinessId: true,
         appId: true, expiresAt: true, lastError: true,
         createdAt: true, updatedAt: true,
       },

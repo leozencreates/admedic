@@ -64,19 +64,21 @@ async function Campaigns() {
                 const revenue = sum?.conversionValue ?? 0;
                 const roas = spend > 0 ? revenue / spend : null;
                 const status = entityStatusStyle(c.status);
+                // Tüm tutarlar minor unit; para birimi reklam hesabından (ADR-0011).
+                const currency = c.adAccount.currency || "EUR";
                 return (
                   <tr key={c.id}>
                     <Td className="font-medium text-slate-900">{c.name}</Td>
                     <Td className="text-slate-500">
-                      {c.adAccount.name} · {c.adAccount.currency}
+                      {c.adAccount.name} · {currency}
                     </Td>
                     <Td>
                       <Badge tone={status.tone}>{status.label}</Badge>
                     </Td>
-                    <Td align="right">{formatMoney(c.dailyBudget)}</Td>
+                    <Td align="right">{formatMoney(c.dailyBudget, currency)}</Td>
                     <Td align="right">{formatNumber(c._count.adsets)}</Td>
-                    <Td align="right">{formatMoney(spend)}</Td>
-                    <Td align="right">{formatMoney(revenue)}</Td>
+                    <Td align="right">{formatMoney(spend, currency)}</Td>
+                    <Td align="right">{formatMoney(revenue, currency)}</Td>
                     <Td align="right">{formatNumber(sum?.purchases ?? 0)}</Td>
                     <Td align="right">
                       <span
@@ -108,7 +110,7 @@ async function AdSets() {
   const adsets = await prisma.adSet.findMany({
     where: { workspaceId: workspace.id },
     include: {
-      campaign: { select: { name: true } },
+      campaign: { select: { name: true, adAccount: { select: { currency: true } } } },
       _count: { select: { ads: true } },
     },
     orderBy: [{ campaignId: "asc" }, { name: "asc" }],
@@ -144,7 +146,9 @@ async function AdSets() {
                     <Td>
                       <Badge tone={status.tone}>{status.label}</Badge>
                     </Td>
-                    <Td align="right">{formatMoney(a.dailyBudget)}</Td>
+                    <Td align="right">
+                      {formatMoney(a.dailyBudget, a.campaign.adAccount.currency || "EUR")}
+                    </Td>
                     <Td align="right">{formatNumber(a._count.ads)}</Td>
                   </tr>
                 );

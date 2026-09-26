@@ -1,0 +1,25 @@
+:root { color-scheme: light dark; --line: #e2e5ea; --muted: #6b7280; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f5f6f8; color: #111827; }
+header { padding: 18px 24px; border-bottom: 1px solid var(--line); background: #fff; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h1 { font-size: 1.2rem; margin: 0; }
+.muted { color: var(--muted); font-size: .85rem; }
+main { padding: 20px 24px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.card .label { font-size: .8rem; color: var(--muted); }
+.card .value { font-size: 1.4rem; font-weight: 600; margin-top: 2px; }
+table { width: 100%; border-collapse: collapse; margin-top: 18px; background: #fff; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #eef0f3; font-size: .92rem; }
+th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+#status { font-size: .85rem; }
+#status.error { color: #b91c1c; }
+#token-form { margin-left: auto; display: none; gap: 8px; align-items: center; font-size: .85rem; }
+#token-form.visible { display: flex; }
+#token-form input { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; min-width: 220px; }
+#token-form button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+#alerts { margin-top: 18px; }
+#alerts ul { margin: 8px 0 0; padding-left: 18px; }
+#alerts li { font-size: .9rem; margin: 4px 0; }
+.sev-CRITICAL { color: #c0392b; }
+.sev-WARNING { color: #b7950b; }
+.sev-INFO { color: #2471a3; }

@@ -4,7 +4,6 @@ packages:
   - "workers/*"
   - "web"
   - "desktop"
-  - "desktop"
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true

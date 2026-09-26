@@ -1,109 +1,71 @@
 import { prisma } from "@admedic/database";
 import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
-import { postConversionEvents, healthAllowedEvents, hashUserData, eventIdFor } from "@admedic/meta-api";
-import { loadEnv } from "@admedic/config";
+import { healthAllowedEvents, LEAD_STATUS_EVENT, META_ACTION_SOURCES, type InternalConversionEvent } from "@admedic/meta-api";
 import { z } from "zod";
-import { logAudit } from "../../../_lib/audit";
-import { decrypt } from "../../../_lib/encrypt";
-import { checkPolicy } from "@admedic/policy";
-import { requireLiveMetaConnection } from "../../../_lib/meta-connection";
-import { createMetaClient, MOCK_AD_ACCOUNT_ID } from "@admedic/meta-api";
+import { sendLeadConversion } from "../../../_lib/capi-sync";
 
 export const maxDuration = 15;
 
-const LeadConversionSchema = z.object({
-  leadId: z.string().min(1),
-  eventName: z.enum(["PURCHASE", "ADD_TO_CART", "LEAD", "INITIATE_CHECKOUT", "CUSTOMIZE"]),
-  value: z.number().positive().optional(),
-  currency: z.string().default("TRY"),
-});
+/**
+ * Lead için CRM (offline) dönüşümü (spec 3.9). `eventName` verilmezse lead'in durumundan
+ * türetilir (CONTACTED→Contact, QUALIFIED→Lead, CONSULTATION_BOOKED→Schedule,
+ * TRAVEL_PLANNED→CompleteRegistration, TREATED→Purchase). Rıza kapısı, Pixel/Dataset hedefi ve
+ * idempotency `capi-sync.ts` içindedir.
+ */
+const LeadConversionSchema = z
+  .object({
+    leadId: z.string().min(1),
+    eventName: z.enum(["LEAD", "SCHEDULE", "COMPLETE_REGISTRATION", "CONTACT", "PURCHASE"]).optional(),
+    actionSource: z.enum(META_ACTION_SOURCES).optional(),
+    value: z.number().positive().optional(),
+    currency: z.string().length(3).optional(),
+  })
+  .strict();
 
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, ["OWNER", "ADMIN", "MEDIA_BUYER"]);
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, LeadConversionSchema);
-    const env = loadEnv();
 
-    const lead = await prisma.lead.findUnique({
-      where: { id: input.leadId, workspaceId: actor.workspaceId },
-    });
+    const lead = await prisma.lead.findFirst({ where: { id: input.leadId, workspaceId: actor.workspaceId } });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
     if (lead.status === "LOST") throw new HttpError(409, "Kayıp lead'e dönüşüm gönderilemez.");
-    if (!lead.consentGiven)
-      throw new HttpError(409, "Bu lead için pazarlama rızası verilmemiş; CAPI dönüşümü gönderilmedi.");
 
-    const policy = checkPolicy(lead.firstName);
-    if (policy.risk === "HIGH") throw new HttpError(422, "Bu lead için içerik kontrol riskli.");
+    const eventName: InternalConversionEvent | null = input.eventName ?? LEAD_STATUS_EVENT[lead.status] ?? null;
+    if (!eventName) throw new HttpError(422, `Bu lead durumu için gönderilecek dönüşüm olayı yok: ${lead.status}`);
+    if (!healthAllowedEvents().includes(eventName)) throw new HttpError(422, `Olay adı izin verilmiyor: ${eventName}`);
 
-    const allowed = healthAllowedEvents();
-    if (!allowed.includes(input.eventName)) throw new HttpError(400, `Olay adı izin verilmiyor: ${input.eventName}`);
-
-    const campaignId = lead.campaignId;
-    if (!campaignId) throw new HttpError(400, "Kampanya bağlantısı yapılandırılmadı.");
-    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { adAccountId: true } });
-    if (!campaign?.adAccountId) throw new HttpError(400, "Kampanya bağlantısı yapılandırılmadı.");
-    const adAccount = await prisma.adAccount.findUnique({ where: { id: campaign.adAccountId } });
-    if (!adAccount?.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
-    const live = await requireLiveMetaConnection(adAccount.connectionId, actor.orgId);
-    const token = live.token;
-    const metaAccountId = (adAccount.metaAccountId ?? MOCK_AD_ACCOUNT_ID).replace(/^act_/, "");
-    const meta = createMetaClient();
-
-    const externalId = eventIdFor({ prefix: "crm", leadId: lead.id, eventName: input.eventName });
-    const userData = hashUserData({
-      email: lead.email ? decrypt(lead.email) : null,
-      phone: lead.phone ? decrypt(lead.phone) : null,
-      firstName: lead.firstName,
-      lastName: lead.lastName,
-      country: lead.country,
-      externalId: lead.lookupHash,
-    });
-    const metaResult = await postConversionEvents(
-      metaAccountId,
-      [
-        {
-          eventName: input.eventName,
-          eventTime: new Date().toISOString(),
-          actionSource: "offline_conversion",
-          eventId: externalId,
-          userData,
-          customData: {
-            leadId: lead.id,
-            status: lead.status,
-            service: lead.interestedService ?? undefined,
-            value: input.value,
-            currency: input.currency,
-          },
-          eventSourceURL: env.AUTH_URL ?? "http://localhost:3000",
-        },
-      ],
-      token,
-    ).catch(() => null);
-
-    const conversionEvent = await prisma.conversionEvent.create({
-      data: {
-        workspaceId: actor.workspaceId,
-        campaignId: lead.campaignId ?? undefined,
-        adSetId: lead.adSetId ?? undefined,
-        adId: lead.adId ?? undefined,
-        type: input.eventName,
-        value: input.value ? Math.round(input.value) : undefined,
-        currency: input.currency,
-        source: "CRM",
-        externalId,
-        occurredAt: new Date(),
-      },
-    });
-    await logAudit({
+    const currency = input.value !== undefined ? (input.currency ?? (await defaultCurrency(actor.workspaceId))) : undefined;
+    const result = await sendLeadConversion({
+      lead,
+      eventName,
+      value: input.value,
+      currency,
+      actionSource: input.actionSource,
       actor,
-      action: "CRM_CONVERSION",
-      entityType: "CONVERSION_EVENT",
-      entityId: conversionEvent.id,
-      after: { eventName: input.eventName, leadId: lead.id, source: "CRM", metaResult: metaResult?.data?.[0]?.eventId },
     });
-    return { eventId: externalId, status: metaResult?.data?.[0]?.eventId ? "ACCEPTED" : "STORED", conversionEventId: conversionEvent.id };
+    switch (result.status) {
+      case "SENT":
+        return { eventId: result.eventId, status: "ACCEPTED" as const, duplicate: false, conversionEventId: result.conversionEventId, eventsReceived: result.eventsReceived, mock: result.mock };
+      case "DUPLICATE":
+        return { eventId: result.eventId, status: "DUPLICATE" as const, duplicate: true, conversionEventId: result.conversionEventId };
+      case "SKIPPED":
+        if (result.reason === "NO_CONSENT") throw new HttpError(409, result.message ?? "Rıza yok.");
+        if (result.reason === "NO_PIXEL") throw new HttpError(400, "Pixel/Dataset ID ayarlanmadı.");
+        if (result.reason === "LEAD_LOST") throw new HttpError(409, result.message ?? "Kayıp lead.");
+        throw new HttpError(422, result.message ?? "Dönüşüm gönderilmedi.");
+      default:
+        throw new HttpError(result.reason === "CONNECTION" ? 400 : 502, result.message ?? "Meta CAPI isteği başarısız.");
+    }
   });
+}
+
+async function defaultCurrency(workspaceId: string): Promise<string> {
+  const account = await prisma.adAccount.findFirst({ where: { workspaceId }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }], select: { currency: true } });
+  if (account?.currency) return account.currency;
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { currency: true } });
+  return ws?.currency ?? "EUR";
 }

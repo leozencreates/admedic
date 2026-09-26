@@ -13,8 +13,14 @@ type Item = {
     market: string;
     variants: { headline: string }[];
   };
-  policy: { risk: string };
+  policy: { risk: string } | null;
   experiment: { id: string } | null;
+};
+/** Sunucu politika sonucunun (kural + LLM birleşik risk) kütüphane etiketi (spec 3.5). */
+const POLICY_LABEL: Record<string, string> = {
+  HIGH: "İçerik düzeltmesi gerekli",
+  MEDIUM: "Orta risk (uyarıyla gönderilebilir)",
+  LOW: "Kural kontrolünde eşleşme yok",
 };
 export function Library() {
   const [items, setItems] = useState<Item[]>([]);
@@ -130,9 +136,7 @@ export function Library() {
                 {item.content.variants[0]?.headline}
               </p>
               <div className="border-t border-slate-100 pt-4 text-xs text-slate-500">
-                {item.policy.risk === "HIGH"
-                  ? "İçerik düzeltmesi gerekli"
-                  : "Kural kontrolünde eşleşme yok"}{" "}
+                {POLICY_LABEL[item.policy?.risk ?? ""] ?? "Kural kontrolünde eşleşme yok"}{" "}
                 · {new Date(item.updatedAt).toLocaleDateString("tr-TR")}
               </div>
               <div className="flex gap-3">

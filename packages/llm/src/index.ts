@@ -1,8 +1,29 @@
 import { z } from "zod";
-import { SYSTEM, LOCALIZATION, PROMPT_VERSION } from "../prompts/creative-v1";
-export { PROMPT_VERSION };
+import { creativeSystemPrompt, LOCALIZATION, PROMPT_VERSION } from "../prompts/creative-v1";
+import { POLICY_RISK_PROMPT_VERSION, POLICY_RISK_SYSTEM } from "../prompts/policy-risk-v1";
+import {
+  GREETING_PROMPT_VERSION,
+  GREETING_USER_MESSAGE,
+  greetingSystemPrompt,
+} from "../prompts/greeting-v1";
+import { anthropicMessages, extractJson, type LlmConfigLike, type LlmUsage } from "./anthropic";
+import { BriefLanguageEnum, type BriefLanguage } from "./languages";
+import { MetaCtaEnum, normalizeCta } from "./cta";
 
-export const BriefLanguageEnum = z.enum(["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"]);
+export * from "./languages";
+export * from "./cta";
+export * from "./anthropic";
+export * from "./logging";
+export * from "./assistant";
+export {
+  PROMPT_VERSION,
+  PROMPT_VERSION as CREATIVE_PROMPT_VERSION,
+  POLICY_RISK_PROMPT_VERSION,
+  GREETING_PROMPT_VERSION,
+  LOCALIZATION,
+  creativeSystemPrompt,
+};
+export { leadAssistantSystemPrompt } from "../prompts/lead-assistant-v1";
 
 /** Klinik profili (spec 3.2): üretim bağlamı — sunucu tarafında DB'den zenginleştirilir. */
 export const BriefProfileSchema = z
@@ -26,6 +47,7 @@ export const BriefSchema = z.object({
   duration: z.number().int().min(1).max(90),
   profile: BriefProfileSchema.optional(),
 });
+/** Kaydedilen taslak varyantı: CTA serbest metin kalır (eski taslaklarla uyum). */
 export const VariantSchema = z
   .object({
     headline: z.string().trim().min(1).max(150),
@@ -34,6 +56,11 @@ export const VariantSchema = z
     cta: z.string().trim().min(1).max(150),
   })
   .strict();
+/** LLM çıktısı varyantı: CTA Meta `call_to_action` türüne normalize edilir. */
+export const OutputVariantSchema = VariantSchema.extend({
+  cta: z.string().trim().min(1).max(150).transform(normalizeCta).pipe(MetaCtaEnum),
+});
+export type OutputVariant = z.infer<typeof OutputVariantSchema>;
 export const InstantFormSchema = z
   .object({
     questions: z.array(z.string().trim().min(1).max(200)).min(1).max(8),
@@ -42,21 +69,33 @@ export const InstantFormSchema = z
 export const WhatsAppSchema = z
   .object({ welcome: z.string().trim().min(1).max(2000) })
   .strict();
-export const OutputSchema = z
-  .object({
-    variants: z.tuple([VariantSchema, VariantSchema]),
-    instantForm: InstantFormSchema.optional(),
-    whatsapp: WhatsAppSchema.optional(),
-  })
-  .strict()
-  .refine(
-    ({ variants: [a, b] }) =>
-      a.headline !== b.headline &&
-      a.text === b.text &&
-      a.description === b.description &&
-      a.cta === b.cta,
-    "Başlıklar farklı, metin/description/CTA aynı olmalı.",
+
+const SINGLE_VARIABLE_MESSAGE = "Başlıklar farklı, metin/description/CTA aynı olmalı.";
+/** Tek değişkenli test (ADR-0004): yalnızca başlık değişir, başlıklar birbirinden farklıdır. */
+export function isSingleVariable(variants: ReadonlyArray<{ headline: string; text: string; description?: string; cta: string }>) {
+  const first = variants[0];
+  if (!first) return false;
+  const headlines = new Set(variants.map((v) => v.headline));
+  return (
+    headlines.size === variants.length &&
+    variants.every((v) => v.text === first.text && v.description === first.description && v.cta === first.cta)
   );
+}
+
+/** Spec 3.4 çıktıları: N başlık varyantı (2–4) + Instant Form soruları + WhatsApp karşılaması (ikisi de zorunlu). */
+export function outputSchemaFor(variations: number) {
+  return z
+    .object({
+      variants: z.array(OutputVariantSchema).length(variations),
+      instantForm: InstantFormSchema,
+      whatsapp: WhatsAppSchema,
+    })
+    .strict()
+    .refine(({ variants }) => isSingleVariable(variants), SINGLE_VARIABLE_MESSAGE);
+}
+export const OutputSchema = outputSchemaFor(2);
+export type CreativeOutput = z.infer<typeof OutputSchema>;
+
 export const DraftSchema = BriefSchema.extend({
   variants: z.tuple([VariantSchema, VariantSchema]),
   instantForm: InstantFormSchema.optional(),
@@ -77,60 +116,42 @@ export const PolicyRiskSchema = z
   })
   .strict();
 export type PolicyRiskAssessment = z.infer<typeof PolicyRiskSchema>;
-export const POLICY_RISK_PROMPT_VERSION = "policy-risk-v1";
-const POLICY_RISK_SYSTEM = `You are a Meta Advertising Standards compliance reviewer for health/wellness advertisers.
-Assess the ad copy (headline, text, description). Flag risks per Meta policies:
-- HIGH: guaranteed/absolute results ("guaranteed", "%100 başarı", "kesin çözüm"), before/after claims, personal or health-condition assumptions about the reader, explicit medical promise or diagnosis.
-- MEDIUM: strong wording, superlatives that suggest certainty but are not explicit promises, borderline appearance/outcome language.
-- LOW: neutral, factual, service-clarifying copy.
-Return ONLY JSON: {"risk":"LOW|MEDIUM|HIGH","reason":"<gerekçe (çıktının dili)","correctedCopy":"<aynı dilde düzeltilmiş kısa reklam metni>"}.`;
 
 export async function classifyRisk(
   adCopy: string,
-  key: string,
-  model: string,
+  config: LlmConfigLike,
   transport: typeof fetch = fetch,
-): Promise<PolicyRiskAssessment> {
-  const response = await transport("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    signal: AbortSignal.timeout(45_000),
-    body: JSON.stringify({
-      model,
-      max_tokens: 1000,
-      system: POLICY_RISK_SYSTEM,
-      messages: [{ role: "user", content: adCopy }],
-    }),
+): Promise<PolicyRiskAssessment & { usage: LlmUsage }> {
+  const { text, usage } = await anthropicMessages({
+    ...config,
+    system: POLICY_RISK_SYSTEM,
+    messages: [{ role: "user", content: adCopy }],
+    maxTokens: 1000,
+    transport,
+    errorMessage: "AI politika risk değerlendirmesi yanıt veremedi.",
   });
-  if (!response.ok)
-    throw new Error("AI politika risk değerlendirmesi yanıt veremedi.");
-  const data = z
-    .object({
-      content: z.array(
-        z.object({ type: z.string(), text: z.string().optional() }),
-      ),
-    })
-    .parse(await response.json());
-  const raw = data.content
-    .filter((c) => c.type === "text")
-    .map((c) => c.text ?? "")
-    .join("");
-  return PolicyRiskSchema.parse(JSON.parse(raw));
+  return { ...PolicyRiskSchema.parse(extractJson(text)), usage };
+}
+
+export interface GenerateOptions {
+  /** Başlık varyasyonu sayısı (2–4). */
+  variations?: number;
+}
+export interface GenerateResult {
+  variants: OutputVariant[];
+  instantForm: z.infer<typeof InstantFormSchema>;
+  whatsapp: z.infer<typeof WhatsAppSchema>;
+  usage: LlmUsage;
 }
 export interface CreativeProvider {
-  generate(
-    brief: Brief,
-  ): Promise<{
-    variants: DraftContent["variants"];
-    instantForm?: DraftContent["instantForm"];
-    whatsapp?: DraftContent["whatsapp"];
-    inputTokens: number;
-    outputTokens: number;
-  }>;
+  generate(brief: Brief, options?: GenerateOptions): Promise<GenerateResult>;
+}
+
+export const MIN_VARIATIONS = 2;
+export const MAX_VARIATIONS = 4;
+export function clampVariations(value: number | undefined): number {
+  const n = Math.round(value ?? MIN_VARIATIONS);
+  return Math.min(MAX_VARIATIONS, Math.max(MIN_VARIATIONS, Number.isFinite(n) ? n : MIN_VARIATIONS));
 }
 
 export class AnthropicProvider implements CreativeProvider {
@@ -139,108 +160,54 @@ export class AnthropicProvider implements CreativeProvider {
     private model: string,
     private transport: typeof fetch = fetch,
   ) {}
-  async generate(brief: Brief) {
-    const response = await this.transport(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": this.key,
-          "anthropic-version": "2023-06-01",
-        },
-        signal: AbortSignal.timeout(45_000),
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 2500,
-          system: `${SYSTEM}\n${LOCALIZATION[brief.language]}`,
-          messages: [{ role: "user", content: JSON.stringify(brief) }],
-        }),
-      },
-    );
-    if (!response.ok)
-      throw new Error(
-        "AI sağlayıcısı yanıt veremedi. Ayarları kontrol edip tekrar deneyin.",
-      );
-    const data = z
-      .object({
-        stop_reason: z.literal("end_turn"),
-        content: z.array(
-          z.object({ type: z.string(), text: z.string().optional() }),
-        ),
-        usage: z.object({
-          input_tokens: z.number().int().nonnegative(),
-          output_tokens: z.number().int().nonnegative(),
-        }),
-      })
-      .parse(await response.json());
-    const raw = data.content
-      .filter((c) => c.type === "text")
-      .map((c) => c.text ?? "")
-      .join("");
-    const result = OutputSchema.parse(JSON.parse(raw));
-    return {
-      variants: result.variants,
-      instantForm: result.instantForm,
-      whatsapp: result.whatsapp,
-      inputTokens: data.usage.input_tokens,
-      outputTokens: data.usage.output_tokens,
-    };
+  async generate(brief: Brief, options: GenerateOptions = {}): Promise<GenerateResult> {
+    const variations = clampVariations(options.variations);
+    const { text, usage, stopReason } = await anthropicMessages({
+      apiKey: this.key,
+      model: this.model,
+      system: `${creativeSystemPrompt(variations)}\n${LOCALIZATION[brief.language]}`,
+      messages: [{ role: "user", content: JSON.stringify(brief) }],
+      maxTokens: 2500 + (variations - 2) * 300,
+      transport: this.transport,
+    });
+    if (stopReason !== "end_turn")
+      throw new Error("AI çıktısı tamamlanmadı (kesildi). Tekrar deneyin.");
+    const result = outputSchemaFor(variations).parse(extractJson(text));
+    return { ...result, usage };
   }
 }
 
-export const GREETING_PROMPT_VERSION = "greeting-v1";
-export type GreetingLanguageCode =
-  | "TR"
-  | "EN"
-  | "DE"
-  | "RU"
-  | "AR"
-  | "FR"
-  | "NL"
-  | "PL";
-const GREETING_SYSTEM = (language: string) =>
-  `Bir sağlık turizmi kliniğinin WhatsApp karşılama asistanısın. Lead'in dilinde (${language}) kısa, sıcak ve profesyonel bir karşılama mesajı yaz. En fazla 300 karakter. İlk mesajda bir bot olduğunu belirt ve bir insan koordinatörün kısa süre içinde devreye gireceğini söyle. Tıbbi tavsiye, teşhis, uygunluk değerlendirmesi veya kesin fiyat verilmez. Yalnızca karşılama mesajını döndür; başlık, CTA veya ek açıklama ekleme.`;
+export type GreetingLanguageCode = BriefLanguage;
 
 /**
  * Spec 3.8: Yeni lead'e kendi dilinde otomatik karşılama. Ad-copy üreticisinden
  * (OutputSchema) ayrı, yalnızca karşılama metni döndüren özel üretim hattı.
  */
+export async function generateGreetingWithUsage(
+  config: LlmConfigLike,
+  language: string,
+  transport: typeof fetch = fetch,
+): Promise<{ text: string; usage: LlmUsage }> {
+  const { text, usage } = await anthropicMessages({
+    ...config,
+    system: greetingSystemPrompt(language),
+    messages: [{ role: "user", content: GREETING_USER_MESSAGE }],
+    maxTokens: 400,
+    timeoutMs: 30_000,
+    transport,
+    errorMessage: "AI karşılama mesajı üretemedi. Ayarları kontrol edin.",
+  });
+  const message = text.replace(/^[\s"']+|[\s"']+$/g, "");
+  if (!message) throw new Error("AI boş karşılama üretti.");
+  return { text: message.slice(0, 300), usage };
+}
+
+/** Geriye dönük imza (webhook karşılaması): yalnızca metni döndürür. */
 export async function generateGreeting(
   key: string,
   model: string,
   language: string,
   transport: typeof fetch = fetch,
 ): Promise<string> {
-  const response = await transport("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    signal: AbortSignal.timeout(30_000),
-    body: JSON.stringify({
-      model,
-      max_tokens: 400,
-      system: GREETING_SYSTEM(language),
-      messages: [{ role: "user", content: "Karşılama mesajını yaz." }],
-    }),
-  });
-  if (!response.ok)
-    throw new Error("AI karşılama mesajı üretemedi. Ayarları kontrol edin.");
-  const data = z
-    .object({
-      content: z.array(
-        z.object({ type: z.string(), text: z.string().optional() }),
-      ),
-    })
-    .parse(await response.json());
-  const raw = data.content
-    .filter((c) => c.type === "text")
-    .map((c) => c.text ?? "")
-    .join("");
-  const message = raw.replace(/^[\s"']+|[\s"']+$/g, "");
-  if (!message) throw new Error("AI boş karşılama üretti.");
-  return message.slice(0, 300);
+  return (await generateGreetingWithUsage({ apiKey: key, model }, language, transport)).text;
 }

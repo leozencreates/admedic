@@ -9,6 +9,7 @@ import {
   parseOAuthState,
 } from "../app/_lib/oauth-state";
 import { encrypt, decrypt } from "../app/_lib/encrypt";
+import { loadEnv } from "@admedic/config";
 
 const { cookieJar } = vi.hoisted(() => ({
   cookieJar: new Map<string, string>(),
@@ -206,22 +207,19 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
     });
 
     it("routes the same webhook to the other tenant when page belongs there", async () => {
+      // Gerçek Messenger biçimi: entry[].messaging[] (Messenger webhook'unda telefon yoktur; lead PSID ile eşleşir).
       const payload = {
         object: "page",
         entry: [
           {
             id: "page-1",
             time: Date.now(),
-            changes: [
+            messaging: [
               {
-                value: {
-                  messaging: [
-                    {
-                      sender: { id: "psid-foreign", phone_number: "491555666777" },
-                      message: { mid: "m-99", text: "Merhaba" },
-                    },
-                  ],
-                },
+                sender: { id: "psid-foreign" },
+                recipient: { id: "page-1" },
+                timestamp: Date.now(),
+                message: { mid: "m-99", text: "Merhaba" },
               },
             ],
           },
@@ -232,23 +230,32 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       expect(res.status).toBe(200);
       expect(data.processed).toBe(1);
       const lead = await prisma.lead.findFirstOrThrow({
-        where: { organizationId: orgIds[1], metadata: { path: ["mid"], equals: "m-99" } },
+        where: { organizationId: orgIds[1], metadata: { path: ["psid"], equals: "psid-foreign" } },
       });
-      expect(decrypt(lead.phone!)).toBe("491555666777");
+      expect(lead.phone).toBeNull();
+      expect(
+        await prisma.message.count({ where: { externalId: "m-99", conversation: { leadId: lead.id } } }),
+      ).toBe(1);
       expect(
         await prisma.lead.count({ where: { organizationId: orgIds[0] } }),
       ).toBe(1);
       expect(
         await prisma.conversation.count({ where: { leadId: lead.id } }),
       ).toBe(1);
+      // Gelen mesaj + otomatik karşılama (mock Messenger gönderimi) = 2 mesaj
       expect(
-        await prisma.message.count({ where: { conversation: { leadId: lead.id } } }),
+        await prisma.message.count({ where: { conversation: { leadId: lead.id }, direction: "INCOMING" } }),
+      ).toBe(1);
+      expect(
+        await prisma.message.count({ where: { conversation: { leadId: lead.id }, direction: "OUTGOING" } }),
       ).toBe(1);
     });
 
     it("sends exactly one WhatsApp message and records one DB message", async () => {
       vi.stubEnv("WHATSAPP_API_URL", "https://graph.whatsapp.test");
       vi.stubEnv("WHATSAPP_TOKEN", "test-token");
+      // Gerçek gönderim doğrulanıyor: mock modu yalnızca bu test için kapatılır.
+      loadEnv({ fresh: true, overrides: { META_MOCK_MODE: "false" } });
       const lead = await prisma.lead.create({
         data: {
           workspaceId: workspaceIds[0],
@@ -317,6 +324,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       } finally {
         spy.mockRestore();
         vi.unstubAllEnvs();
+        loadEnv({ fresh: true });
       }
     });
 

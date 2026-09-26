@@ -1,10 +1,10 @@
 import { prisma } from "@admedic/database";
 import { requireActor } from "../../../../_lib/auth";
-import { respond, sameOrigin } from "../../../../_lib/http";
+import { respond, HttpError } from "../../../../_lib/http";
 export const maxDuration = 15;
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+/** Salt okunur GET: tarayıcı aynı kaynaklı GET'te Origin göndermez → sameOrigin kullanılmaz. */
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
-    sameOrigin(request);
     const actor = await requireActor();
     const { id } = await params;
     const account = await prisma.adAccount.findFirst({
@@ -15,4 +15,3 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return { campaigns: account.campaigns };
   });
 }
-import { HttpError } from "../../../../_lib/http";

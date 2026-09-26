@@ -8,6 +8,7 @@
   "dependencies": {
     "@admedic/config": "workspace:*",
     "@admedic/database": "workspace:*",
+    "@admedic/llm": "workspace:*",
     "@admedic/meta-api": "workspace:*",
     "@admedic/reporting": "workspace:*",
     "@admedic/shared": "workspace:*",

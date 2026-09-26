@@ -67,14 +67,30 @@ describe("MockMetaClient", () => {
     }
   });
 
-  it("listCampaigns/listAdSets/listAds mock hesaba bağlı", async () => {
+  it("listCampaigns/listAdSets/listAds mock hesaba bağlı; bütçeler minor unit (…Cents)", async () => {
     const campaigns = await client.listCampaigns("act_mock_001", TOKEN);
     expect(campaigns).toHaveLength(5);
+    expect(campaigns[0]!.dailyBudgetCents).toBe(50_000);
+    expect(campaigns[0]).not.toHaveProperty("dailyBudgetMajor");
     const adsets = await client.listAdSets("act_mock_001", TOKEN);
     expect(adsets).toHaveLength(10);
+    expect(adsets[0]!.dailyBudgetCents).toBe(15_000);
     const ads = await client.listAds("act_mock_001", TOKEN);
     expect(ads).toHaveLength(50);
     expect(await client.listAds("act_other", TOKEN)).toHaveLength(0);
+  });
+
+  it("günlük satırlarda CPM = spend / impressions * 1000", async () => {
+    const rows = await client.getInsights(
+      { type: "ad", id: "ad_mock_1_1_2" },
+      TOKEN,
+      { timeRange: { since: "2026-09-10", until: "2026-09-12" }, timeIncrement: 1 },
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.cpm).toBeCloseTo((row.spendMajor / row.impressions) * 1000, 1);
+      expect(row.cpm).toBeGreaterThan(0);
+    }
   });
 
   it("updateBudget/setStatus başarılı sonuç döner", async () => {
@@ -101,5 +117,23 @@ describe("MockMetaClient", () => {
     expect(first.success).toBe(true);
     expect(first.campaignId).toMatch(/^cmp_mock_pub_\d+$/);
     expect(first.campaignId).toBe(second.campaignId);
+    expect(first.metaResponse).toMatchObject({ status: "PAUSED", objective: "OUTCOME_LEADS", special_ad_categories: [] });
+  });
+
+  it("createCampaign objective eşlemesi ve CBO/ABO bütçe kuralı gerçek istemciyle aynı", async () => {
+    const cbo = await client.createCampaign(
+      { accountId: "act_mock_001", name: "CBO", objective: "MAX_ROAS", dailyBudgetCents: 20_000, budgetStrategy: "CBO" },
+      TOKEN,
+    );
+    expect(cbo.metaResponse).toMatchObject({ objective: "OUTCOME_SALES", daily_budget: 20_000 });
+    const abo = await client.createCampaign(
+      { accountId: "act_mock_001", name: "ABO", objective: "MAX_CONVERSIONS", dailyBudgetCents: 20_000, budgetStrategy: "ABO" },
+      TOKEN,
+    );
+    expect(abo.metaResponse).toMatchObject({ objective: "OUTCOME_LEADS" });
+    expect(abo.metaResponse).not.toHaveProperty("daily_budget");
+    await expect(
+      client.createCampaign({ accountId: "act_mock_001", name: "X", objective: "CONVERSIONS" }, TOKEN),
+    ).rejects.toThrow(/objective/);
   });
 });

@@ -3,22 +3,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/client-api";
-import { LeadTable, toLead } from "../_components/lead-table";
+import { LeadTable, toLead, type ApiLead } from "../_components/lead-table";
 import { LanguageSwitcher } from "../_components/language-switcher";
-
-interface ApiLead {
-  id: string;
-  firstName?: string;
-  lastName?: string;
-  name?: string;
-  phone?: string;
-  email?: string;
-  status?: string;
-  channel?: string;
-  country?: string;
-  createdAt?: string;
-  created?: string;
-}
 
 export default function LeadsPage() {
   const router = useRouter();

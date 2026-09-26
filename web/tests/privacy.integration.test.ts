@@ -59,7 +59,10 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead privacy isolation", ()
     expect((await DELETE(request("DELETE"), context)).status).toBe(200);
     const lead = await prisma.lead.findUniqueOrThrow({ where: { id: ids[0] }, include: { conversations: { include: { messages: true } } } });
     expect(lead.firstName).toBe("[anonymized]");
-    expect(lead.metadata).toEqual({});
+    expect(lead.metadata).toEqual({ anonymized: true });
+    expect(lead.lookupHash).toBeNull();
+    expect(lead.interestedService).toBeNull();
+    expect(lead.consentGiven).toBe(false);
     expect(lead.conversations[0].status).toBe("CLOSED");
     expect(lead.conversations[0].messages[0].metadata).toEqual({});
     expect((await prisma.lead.findUniqueOrThrow({ where: { id: ids[1] } })).firstName).toBe("Fixture");

@@ -1,4 +1,6 @@
 import { mulberry32, seedFromString } from "@admedic/shared";
+import { toMetaObjective } from "./client";
+import { getGraphVersion } from "./http";
 
 import type {
   CreateCampaignInput,
@@ -121,7 +123,8 @@ function dailyAdMetrics(
     linkClicks,
     ctr,
     cpc: clicks > 0 ? Math.round(spendMajor / clicks) : 0,
-    cpm: Math.round(spendMajor / 1000),
+    // CPM = 1000 gösterim başına maliyet (major): spend / impressions * 1000.
+    cpm: impressions > 0 ? Number(((spendMajor / impressions) * 1000).toFixed(2)) : 0,
     leads,
     addsToCart,
     initiatesCheckout,
@@ -166,7 +169,7 @@ export class MockMetaClient {
   private readonly adAccountId: string;
 
   constructor(options: { version?: string; adAccountId?: string } = {}) {
-    this.version = options.version ?? "v26.0";
+    this.version = options.version ?? getGraphVersion();
     this.adAccountId = options.adAccountId ?? MOCK_AD_ACCOUNT_ID;
   }
 
@@ -197,7 +200,8 @@ export class MockMetaClient {
       objective: "OUTCOME_LEADS",
       status: "ACTIVE",
       effectiveStatus: "ACTIVE",
-      dailyBudgetMajor: 500,
+      // Meta `daily_budget` minor unit döner: 500 EUR = 50_000 cent.
+      dailyBudgetCents: 50_000,
     }));
   }
 
@@ -215,7 +219,8 @@ export class MockMetaClient {
           bidStrategy: "LOWEST_COST_WITHOUT_CAP",
           optimizationGoal: "LEAD_GENERATION",
           billingEvent: "IMPRESSIONS",
-          dailyBudgetMajor: 150,
+          // 150 EUR = 15_000 cent (minor unit).
+          dailyBudgetCents: 15_000,
           targeting: { countries: [], minAge: 25, maxAge: 65 },
         });
       }
@@ -325,12 +330,25 @@ export class MockMetaClient {
     input: CreateCampaignInput,
     _token: string,
   ): Promise<MetaCreateCampaignResult> {
+    // Gerçek istemciyle aynı doğrulama: bilinmeyen objective fail-closed.
+    const objective = toMetaObjective(input.objective);
     const id = `cmp_mock_pub_${(seedFromString(input.name) % 9000) + 1000}`;
     const isRejected = input.name.toLowerCase().includes("rejected");
+    const sendBudget =
+      input.dailyBudgetCents !== undefined &&
+      input.dailyBudgetCents > 0 &&
+      input.budgetStrategy !== "ABO";
     return {
       success: true,
       campaignId: id,
-      metaResponse: { id, success: true, status: input.status ?? "PAUSED" },
+      metaResponse: {
+        id,
+        success: true,
+        status: "PAUSED",
+        objective,
+        special_ad_categories: [],
+        ...(sendBudget ? { daily_budget: Math.round(input.dailyBudgetCents!) } : {}),
+      },
       reviewFeedbackGlobal: isRejected ? { personal_health: "İçerik sağlık iddiaları içeriyor." } : {},
       reviewFeedbackPlacements: {},
     };

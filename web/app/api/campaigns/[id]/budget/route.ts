@@ -8,8 +8,9 @@ import { logAudit } from "../../../../_lib/audit";
 import { decrypt } from "../../../../_lib/encrypt";
 
 export const maxDuration = 30;
+/** `dailyBudget` major (insan) birimdir; sunucu cent'e çevirir ve cent ile karşılaştırır (ADR-0011). */
 const BudgetSchema = z.object({
-  dailyBudget: z.number().int().min(1).max(1_000_000),
+  dailyBudget: z.number().min(0.01).max(1_000_000),
   reason: z.string().trim().min(1).max(500).optional(),
 }).strict();
 
@@ -20,6 +21,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     requireRole(actor, EDIT_ROLES);
     const { id } = await params;
     const input = await body(request, BudgetSchema);
+    const dailyBudgetCents = Math.round(input.dailyBudget * 100);
+    if (dailyBudgetCents < 1) throw new HttpError(400, "Günlük bütçe en az 0,01 olmalıdır.");
     return prisma.$transaction(async (tx) => {
       // Serialize budget edits before deciding whether this is an increase.
       await tx.$queryRaw`SELECT "id" FROM "Campaign"
@@ -33,13 +36,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         throw new HttpError(409, "Arşivlenmiş veya silinmiş kampanyanın bütçesi değiştirilemez.");
       if (campaign.budgetType === "LIFETIME" || campaign.lifetimeBudget != null)
         throw new HttpError(409, "Bu uç yalnızca günlük bütçeli kampanyalar içindir.");
-      if (input.dailyBudget > (campaign.dailyBudget ?? 0))
+      const currentCents = campaign.dailyBudget ?? 0;
+      // Bütçe artışı yalnızca OWNER/ADMIN (spec 3.6).
+      if (dailyBudgetCents > currentCents)
         requireRole(actor, ["OWNER", "ADMIN"]);
       const org = await tx.organization.findUniqueOrThrow({ where: { id: actor.orgId } });
-      if (org.monthlyAdBudgetCap != null && input.dailyBudget * 30 > org.monthlyAdBudgetCap)
+      if (org.monthlyAdBudgetCap != null && dailyBudgetCents * 30 > org.monthlyAdBudgetCap)
         throw new HttpError(422, "Yeni bütçe kuruluşun aylık üst sınırını aşıyor.");
-      if (input.dailyBudget === campaign.dailyBudget)
-        return { campaign: { id, dailyBudget: campaign.dailyBudget } };
+      if (dailyBudgetCents === campaign.dailyBudget)
+        return { campaign: { id, dailyBudgetCents: currentCents, dailyBudget: currentCents / 100 } };
 
       const published = ["ACTIVE", "PUBLISHED_PAUSED"].includes(campaign.workflowStatus);
       if (published !== Boolean(campaign.metaCampaignId))
@@ -56,8 +61,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           const result = await createMetaClient().updateBudget({
             entityType: "campaign",
             entityId: campaign.metaCampaignId!,
-            // Match the existing campaign create/publish API's major-unit input.
-            dailyBudgetCents: input.dailyBudget * 100,
+            // Minor unit doğrudan gider; ×100 yok (ADR-0011).
+            dailyBudgetCents,
           }, mock ? "mock-token" : decrypt(conn.tokenCiphertext!));
           if (!result.success) throw new Error("Meta update failed");
         } catch {
@@ -66,14 +71,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       const updated = await tx.campaign.update({
         where: { id },
-        data: { dailyBudget: input.dailyBudget, budgetType: "DAILY", ...(published ? { syncedAt: new Date() } : {}) },
+        data: { dailyBudget: dailyBudgetCents, budgetType: "DAILY", ...(published ? { syncedAt: new Date() } : {}) },
       });
       await logAudit({
         actor, action: "CAMPAIGN_BUDGET_CHANGED", entityType: "CAMPAIGN", entityId: id,
-        before: { dailyBudget: campaign.dailyBudget, budgetType: campaign.budgetType },
-        after: { dailyBudget: updated.dailyBudget, budgetType: updated.budgetType, reason: input.reason ?? null },
+        before: { dailyBudgetCents: campaign.dailyBudget, budgetType: campaign.budgetType },
+        after: { dailyBudgetCents: updated.dailyBudget, budgetType: updated.budgetType, reason: input.reason ?? null },
       }, tx);
-      return { campaign: { id, dailyBudget: updated.dailyBudget } };
+      return { campaign: { id, dailyBudgetCents: updated.dailyBudget, dailyBudget: (updated.dailyBudget ?? 0) / 100 } };
     }, { timeout: 20_000 });
   });
 }

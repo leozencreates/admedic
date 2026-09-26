@@ -1,5 +1,5 @@
 import { AdmedicError, isAdmedicError } from "@admedic/shared";
-import { loadEnv } from "@admedic/config";
+import { requireGraphVersion } from "@admedic/config";
 
 import type { MetaApiErrorShape, MetaPagedResponse } from "./types";
 
@@ -170,11 +170,7 @@ export async function graphPost(
   return res.body;
 }
 
+/** Graph API sürümü ortamdan çözülür (META_GRAPH_API_VERSION ?? META_API_VERSION); koda sabit yazılmaz. */
 export function getGraphVersion(override?: string): string {
-  const env = loadEnv();
-  const version = override ?? env.META_API_VERSION;
-  if (!/^v\d+\.\d+$/.test(version ?? "")) {
-    throw new Error(`Geçersiz META_API_VERSION: '${version}' (örn. v26.0)`);
-  }
-  return version as string;
+  return requireGraphVersion(override);
 }

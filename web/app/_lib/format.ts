@@ -1,12 +1,19 @@
 const CURRENCY_LOCALE = "tr-TR";
 
+/** `cents` minor unit (ADR-0011); `currency` ISO 4217 (reklam hesabından, yoksa EUR). */
 export function formatMoney(cents: number | null | undefined, currency = "EUR"): string {
   if (cents == null) return "—";
-  return new Intl.NumberFormat(CURRENCY_LOCALE, {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
+  const code = /^[A-Za-z]{3}$/.test(currency ?? "") ? currency.toUpperCase() : "EUR";
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 0,
+    }).format(cents / 100);
+  } catch {
+    // Bilinmeyen para birimi kodu: biçimlendirme çökmesin, kod metin olarak eklensin.
+    return `${new Intl.NumberFormat(CURRENCY_LOCALE, { maximumFractionDigits: 0 }).format(cents / 100)} ${code}`;
+  }
 }
 
 export function formatNumber(value: number | null | undefined): string {

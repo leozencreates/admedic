@@ -1,14 +1,11 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
     "paths": {
-      "@admedic/*": ["../../packages/*/src"]
+      "@admedic/config": ["../config/dist/index.d.ts"]
     }
   },
   "include": ["src"]

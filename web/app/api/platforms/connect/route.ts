@@ -6,6 +6,7 @@ import { loadEnv } from "@admedic/config";
 import { createMetaClient } from "@admedic/meta-api";
 import { encrypt } from "../../../_lib/encrypt";
 import { logAudit } from "../../../_lib/audit";
+import { syncDiscoveredAdAccounts } from "../../../_lib/meta-connection";
 export const maxDuration = 30;
 const ConnectSchema = z.object({ platform: z.enum(["GOOGLE_ADS", "TIKTOK", "META"]), accessToken: z.string() }).strict();
 export async function POST(request: Request) {
@@ -78,34 +79,10 @@ export async function POST(request: Request) {
     if (input.platform === "META" && connectionId && !loadEnv().META_MOCK_MODE) {
       try {
         const discovered = await createMetaClient({ mock: false }).getAdAccounts(input.accessToken);
-        const hasDefault = await prisma.adAccount.findFirst({
-          where: { workspaceId: actor.workspaceId, isDefault: true },
-          select: { id: true },
-        });
-        for (const acc of discovered) {
-          await prisma.adAccount.upsert({
-            where: { orgId_metaAccountId: { orgId: actor.orgId, metaAccountId: acc.id } },
-            create: {
-              orgId: actor.orgId,
-              workspaceId: actor.workspaceId,
-              connectionId,
-              metaAccountId: acc.id,
-              name: acc.name !== "" ? acc.name : "Meta Reklam Hesabı",
-              currency: acc.currency ?? "EUR",
-              timezone: acc.timezone ?? "Europe/Istanbul",
-              status: "ACTIVE",
-              isDefault: !hasDefault,
-              syncedAt: new Date(),
-            },
-            update: {
-              connectionId,
-              status: "ACTIVE",
-              syncedAt: new Date(),
-            },
-          });
-        }
+        // Varsayılan hesap bayrağı döngü içinde güncellenir (yalnızca ilk hesap varsayılan olur).
+        await syncDiscoveredAdAccounts(actor, connectionId, discovered);
       } catch (err) {
-        console.warn("[platforms/connect] reklam hesabı keşfi başarısız:", err);
+        console.warn(`[platforms/connect] reklam hesabı keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
       }
     }
     return { name: input.platform, status: "ACTIVE", accounts: 1 };

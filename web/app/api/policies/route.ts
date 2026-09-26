@@ -1,15 +1,28 @@
 import { prisma } from "@admedic/database";
 import { requireActor } from "../../_lib/auth";
-import { respond, sameOrigin } from "../../_lib/http";
-import { loadEnv } from "@admedic/config";
+import { respond } from "../../_lib/http";
 export const maxDuration = 15;
+/**
+ * OPTİMİZASYON politikaları (bütçe guardrail'leri, ajan modu) ve optimizasyon
+ * kuralları — içerik politikası (policy_rules) DEĞİLDİR; içerik kuralları
+ * `GET /api/policy-rules` üzerinden okunur. Yanıt anahtarları bu ayrımı taşır.
+ */
 export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
-    loadEnv();
-    const policies = await prisma.optimizationPolicy.findMany({ where: { workspaceId: actor.workspaceId }, orderBy: { createdAt: "desc" } });
-    const rules = await prisma.optimizationRule.findMany({ where: { workspaceId: actor.workspaceId }, orderBy: { createdAt: "desc" } });
-    return { policies, rules };
+    const policy = await prisma.optimizationPolicy.findUnique({ where: { workspaceId: actor.workspaceId } });
+    const optimizationRules = await prisma.optimizationRule.findMany({
+      where: { OR: [{ workspaceId: actor.workspaceId }, { workspaceId: null }] },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, version: true, active: true, description: true, workspaceId: true, createdAt: true },
+    });
+    return {
+      kind: "OPTIMIZATION",
+      optimizationPolicy: policy,
+      optimizationRules,
+      // Geriye dönük uyumluluk: eski istemciler `policies`/`rules` anahtarlarını okuyordu.
+      policies: policy ? [policy] : [],
+      rules: optimizationRules,
+    };
   });
 }
-import { HttpError } from "../../_lib/http";

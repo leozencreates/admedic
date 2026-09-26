@@ -44,7 +44,7 @@ async function Kpis() {
   }
 
   const since = daysAgoUTC(6);
-  const [counts, insightAgg, budgetAgg, pending, openAlerts, policy] =
+  const [counts, insightAgg, budgetAgg, pending, openAlerts, policy, account] =
     await Promise.all([
       Promise.all([
         prisma.campaign.count({
@@ -75,6 +75,11 @@ async function Kpis() {
       prisma.optimizationPolicy.findUnique({
         where: { workspaceId: workspace.id },
       }),
+      prisma.adAccount.findFirst({
+        where: { workspaceId: workspace.id, status: "ACTIVE" },
+        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        select: { currency: true },
+      }),
     ]);
 
   const spend = insightAgg._sum.spend ?? 0;
@@ -83,22 +88,24 @@ async function Kpis() {
   const clicks = insightAgg._sum.clicks ?? 0;
   const roas = spend > 0 ? revenue / spend : null;
   const targetRoas = policy?.targetRoas ?? null;
+  // Tüm tutarlar minor unit; para birimi varsayılan reklam hesabından (ADR-0011).
+  const currency = account?.currency || "EUR";
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
       <StatCard
         label="Aktif kampanya / ad set / ad"
         value={`${formatNumber(counts[0])} / ${formatNumber(counts[1])} / ${formatNumber(counts[2])}`}
-        hint={`Günlük planlanan bütçe: ${formatMoney(budgetAgg._sum.dailyBudget)}`}
+        hint={`Günlük planlanan bütçe: ${formatMoney(budgetAgg._sum.dailyBudget, currency)}`}
       />
       <StatCard
         label="Son 7 gün harcama"
-        value={formatMoney(spend)}
+        value={formatMoney(spend, currency)}
         hint={`${formatNumber(clicks)} tıklama`}
       />
       <StatCard
         label="Son 7 gün ciro"
-        value={formatMoney(revenue)}
+        value={formatMoney(revenue, currency)}
         hint={`${formatNumber(purchases)} satın alma`}
       />
       <StatCard

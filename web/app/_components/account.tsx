@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/client-api";
-export function Account() {
+import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
+
+export function Account({ lang = DEFAULT_LANGUAGE }: { lang?: Language }) {
   const pathname = usePathname();
   const router = useRouter();
   const [actor, setActor] = useState<{
@@ -31,7 +33,7 @@ export function Account() {
       router.push("/login");
       router.refresh();
     } catch {
-      setError("Çıkış yapılamadı. Tekrar deneyin.");
+      setError(t("account.logoutError", lang));
     }
   }
   return (
@@ -41,12 +43,12 @@ export function Account() {
           <p className="text-sm text-white">{actor.workspaceName}</p>
           <p className="my-2">{actor.role}</p>
           <button onClick={logout} className="text-violet-300">
-            Oturumu kapat →
+            {t("account.logout", lang)}
           </button>
         </>
       ) : (
         <Link href="/login" className="text-violet-300">
-          Oturum aç →
+          {t("account.login", lang)}
         </Link>
       )}
       <p role="alert">{error}</p>

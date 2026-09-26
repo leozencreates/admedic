@@ -31,22 +31,37 @@ export interface Lead {
   status: string;
   channel: string;
   country: string;
+  language: string;
+  interestedService: string;
+  campaignId: string;
+  adSetId: string;
+  adId: string;
+  consentGiven: boolean;
   created: string;
 }
 
-export function toLead(apiLead: {
+/** API'den gelen lead (GET /api/leads, GET /api/leads/:id); iletişim alanları role göre maskeli olabilir. */
+export interface ApiLead {
   id: string;
   firstName?: string;
   lastName?: string;
   name?: string;
-  phone?: string;
-  email?: string;
+  phone?: string | null;
+  email?: string | null;
   status?: string;
-  channel?: string;
-  country?: string;
+  channel?: string | null;
+  country?: string | null;
+  language?: string | null;
+  interestedService?: string | null;
+  campaignId?: string | null;
+  adSetId?: string | null;
+  adId?: string | null;
+  consentGiven?: boolean;
   createdAt?: string;
   created?: string;
-}): Lead {
+}
+
+export function toLead(apiLead: ApiLead): Lead {
   return {
     id: apiLead.id,
     name: apiLead.name ?? (`${apiLead.firstName ?? ""} ${apiLead.lastName ?? ""}`.trim() || "—"),
@@ -55,6 +70,12 @@ export function toLead(apiLead: {
     status: apiLead.status ?? "",
     channel: apiLead.channel ?? "",
     country: apiLead.country ?? "",
+    language: apiLead.language ?? "",
+    interestedService: apiLead.interestedService ?? "",
+    campaignId: apiLead.campaignId ?? "",
+    adSetId: apiLead.adSetId ?? "",
+    adId: apiLead.adId ?? "",
+    consentGiven: apiLead.consentGiven ?? false,
     created: apiLead.created ?? apiLead.createdAt ?? "",
   };
 }
@@ -115,6 +136,12 @@ export function LeadTable({
               Ülke
             </th>
             <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
+              Dil
+            </th>
+            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
+              Hizmet
+            </th>
+            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
               Oluşturulma
             </th>
           </tr>
@@ -138,6 +165,8 @@ export function LeadTable({
               </td>
               <td className="px-3 py-3 text-sm text-slate-700">{lead.channel}</td>
               <td className="px-3 py-3 text-sm text-slate-700">{lead.country}</td>
+              <td className="px-3 py-3 text-sm text-slate-700">{lead.language}</td>
+              <td className="px-3 py-3 text-sm text-slate-700">{lead.interestedService || "—"}</td>
               <td className="px-3 py-3 text-sm text-slate-500">
                 {formatDate(lead.created)}
               </td>

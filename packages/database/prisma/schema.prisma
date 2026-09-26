@@ -197,6 +197,7 @@ enum AlertType {
   CREATIVE_FATIGUE
   BUDGET_MODIFIED_EXTERNAL
   TOKEN_EXPIRING
+  CONVERSATION_ESCALATED
 }
 
 enum InsightGranularity {
@@ -213,6 +214,7 @@ model Organization {
   monthlyAdBudgetCap Int? // minor; kampanya taslak toplam bütçesi bu sınırı aşarsa bloklanır
   retentionDays Int   @default(365) // lead saklama süresi; süresi dolan lead'ler anonimleştirilir
   consentText String? // tenant'a özel rıza/aydınlatma metni (varsayılan yerine)
+  reportRecipient String? // haftalık rapor alıcısı (tenant bazlı; boşsa WEEKLY_REPORT_RECIPIENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -341,6 +343,11 @@ model MetaConnection {
   appId            String?
   pageId           String?
   instaId          String?
+  /** WhatsApp Cloud API: gelen webhook'lar phone_number_id ile tenant'a yönlendirilir. */
+  whatsappPhoneNumberId String?
+  whatsappBusinessId    String?
+  /** Conversions API hedefi (pixel / dataset id). */
+  pixelId          String?
   expiresAt        DateTime?
   lastError        String?
   createdAt        DateTime            @default(now())
@@ -351,6 +358,8 @@ model MetaConnection {
 
   @@index([orgId])
   @@index([type])
+  @@index([pageId])
+  @@index([whatsappPhoneNumberId])
 }
 
 // ------------------------------------------------ Reklam varlıkları ------------------------------------------------
@@ -955,6 +964,7 @@ enum RecommendationType {
   BUDGET_DECREASE
   EXPERIMENT_END
   WINNER_PROMOTION
+  CONTINUE
 }
 
 model Recommendation {
@@ -1054,6 +1064,8 @@ model Lead {
   duplicateOf  String?
   consentGiven Boolean @default(false)
   lookupHash   String?
+  /** Meta Lead Ads leadgen_id — tekrar teslim edilen webhook'lar için idempotent anahtar. */
+  leadgenId    String?
   metadata     Json             @default("{}")
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -1065,6 +1077,7 @@ model Lead {
 
   @@unique([organizationId, phone, email])
   @@unique([organizationId, lookupHash])
+  @@unique([organizationId, leadgenId])
   @@index([workspaceId, status])
   @@index([organizationId, createdAt])
 }
@@ -1098,6 +1111,8 @@ model Message {
   channel       MessageChannel
   content       String
   sender        String?
+  /** Meta mesaj kimliği (mid / wamid) — idempotent webhook işleme için benzersiz. */
+  externalId    String?          @unique
   metadata      Json             @default("{}")
   createdAt     DateTime         @default(now())
 
@@ -1179,6 +1194,7 @@ model ClinicProfile {
   name        String
   slug        String
   category    ServiceCategory   @default(MEDICAL)
+  city        String? // şehir (spec 3.2); adres ayrı
   address     String?
   phone       String?
   email       String?

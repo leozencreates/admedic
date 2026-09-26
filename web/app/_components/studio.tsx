@@ -5,19 +5,48 @@ import { useState } from "react";
 import {
   BriefSchema,
   DraftSchema,
+  BRIEF_LANGUAGES,
+  LANGUAGE_LABELS,
+  META_CTA_TYPES,
+  CTA_LABELS,
+  DEFAULT_CTA,
   type DraftContent,
   type Brief,
 } from "@admedic/llm";
 import { checkPolicy } from "@admedic/policy";
 import { api, labels } from "../_lib/client-api";
 import { rtlFor } from "../_lib/creative-lang";
+import type { StudioPolicy } from "../_lib/studio-service";
 
 type Saved = {
   id: string;
   version: number;
   status: string;
   content: DraftContent;
+  policy: StudioPolicy | null;
   experimentId: string | null;
+};
+type PatchResult = {
+  ok: boolean;
+  status: number;
+  data: { error?: string; experimentId?: string; policyWarning?: StudioPolicy };
+};
+/** PATCH yanıtının gövdesi (422 `policyWarning` dahil) okunabilsin diye `api()` yerine doğrudan fetch. */
+async function patchDraft(id: string, payload: unknown): Promise<PatchResult> {
+  const response = await fetch(`/api/studio/${id}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json().catch(() => ({}))) as PatchResult["data"];
+  return { ok: response.ok, status: response.status, data };
+}
+const RISK_HEADING: Record<string, string> = {
+  HIGH: "Düzeltilmesi gereken ifadeler var",
+  MEDIUM: "Orta risk: uyarıyla onaya gönderilebilir",
+  LOW: "Kural kontrolünde eşleşme yok",
 };
 export function Studio({
   initial,
@@ -41,19 +70,28 @@ export function Studio({
     },
   );
   const [saved, setSaved] = useState(initial);
+  /** Sunucu politika sonucu (kural + LLM); istemci yeniden hesaplamaz. */
+  const [policy, setPolicy] = useState<StudioPolicy | null>(initial?.policy ?? null);
+  const [ackWarning, setAckWarning] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const canEdit = ["OWNER", "ADMIN", "MEDIA_BUYER"].includes(role);
   const canApprove = ["OWNER", "ADMIN"].includes(role);
-  const policy = draft
-    ? checkPolicy(
-        draft.variants
-          .map((v) => `${v.headline}\n${v.text}\n${v.cta}\n${v.description ?? ""}`)
-          .join("\n"),
-      )
-    : null;
+  // Kaydedilmemiş metin için yalnızca anlık ön tarama (varsayılan kurallar); karar sunucu sonucudur.
+  const preview =
+    dirty && draft
+      ? checkPolicy(
+          [
+            ...draft.variants.flatMap((v) => [v.headline, v.text, v.cta, v.description ?? ""]),
+            ...(draft.instantForm?.questions ?? []),
+            draft.whatsapp?.welcome ?? "",
+          ].join("\n"),
+        )
+      : null;
+  const llm = policy?.llm ?? null;
+  const llmAssessment = llm && !("error" in llm) ? llm : null;
 
   async function work(action: () => Promise<void>) {
     setBusy(true);
@@ -67,52 +105,52 @@ export function Studio({
       setBusy(false);
     }
   }
+  function briefFrom(form: FormData) {
+    const parsed = BriefSchema.safeParse({
+      clinic: form.get("clinic"),
+      service: form.get("service"),
+      market: form.get("market"),
+      language: form.get("language"),
+      budget: Number(form.get("budget")),
+      duration: Number(form.get("duration")),
+    });
+    if (!parsed.success) throw new Error("Lütfen brif alanlarını kontrol edin.");
+    return parsed.data;
+  }
   async function generate(form: FormData) {
     await work(async () => {
-      const brief = BriefSchema.safeParse({
-        clinic: form.get("clinic"),
-        service: form.get("service"),
-        market: form.get("market"),
-        language: form.get("language"),
-        budget: Number(form.get("budget")),
-        duration: Number(form.get("duration")),
-      });
-      if (!brief.success)
-        throw new Error("Lütfen brif alanlarını kontrol edin.");
-      const result = await api<{ content: DraftContent }>(
+      const result = await api<{ content: DraftContent; policy: StudioPolicy }>(
         "/api/studio/generate",
         "POST",
-        brief.data,
+        briefFrom(form),
       );
       setDraft(result.content);
+      setPolicy(result.policy);
+      setAckWarning(false);
       setDirty(true);
       setNotice("AI varyantları hazır. İçeriği inceleyip kaydedin.");
     });
   }
   async function startManual(form: FormData) {
     await work(async () => {
-      const brief = BriefSchema.safeParse({
-        clinic: form.get("clinic"),
-        service: form.get("service"),
-        market: form.get("market"),
-        language: form.get("language"),
-        budget: Number(form.get("budget")),
-        duration: Number(form.get("duration")),
-      });
-      if (!brief.success)
-        throw new Error("Lütfen brif alanlarını kontrol edin.");
       setDraft({
-        ...brief.data,
+        ...briefFrom(form),
         variants: [
-          { headline: "", text: "", cta: "" },
-          { headline: "", text: "", cta: "" },
+          { headline: "", text: "", cta: DEFAULT_CTA },
+          { headline: "", text: "", cta: DEFAULT_CTA },
         ],
       });
+      setPolicy(null);
       setDirty(true);
       setNotice(
         "Manuel taslak açıldı. Her varyantın başlığını, metnini ve CTA alanını doldurun.",
       );
     });
+  }
+  async function refresh(id: string, experimentId: string | null) {
+    const { draft: updated } = await api<{ draft: Saved }>(`/api/studio/${id}`);
+    setSaved({ ...updated, experimentId });
+    setPolicy(updated.policy ?? null);
   }
   async function save() {
     if (!draft) return;
@@ -123,24 +161,24 @@ export function Studio({
           "Başlık, metin ve CTA alanlarını doldurun; uzunluk sınırlarını kontrol edin.",
         );
       if (saved) {
-        await api(`/api/studio/${saved.id}`, "PATCH", {
+        const result = await patchDraft(saved.id, {
           action: "edit",
           version: saved.version,
           content: parsed.data,
         });
-        const { draft: updated } = await api<{ draft: Saved }>(
-          `/api/studio/${saved.id}`,
-        );
-        setSaved({ ...updated, experimentId: saved.experimentId });
+        if (!result.ok) throw new Error(result.data.error ?? "İşlem başarısız.");
+        await refresh(saved.id, saved.experimentId);
       } else {
         const result = await api<{ draft: Saved }>("/api/studio", "POST", {
           content: parsed.data,
         });
         setSaved({ ...result.draft, experimentId: null });
+        setPolicy(result.draft.policy ?? null);
         router.replace(`/studio?id=${result.draft.id}`);
       }
+      setAckWarning(false);
       setDirty(false);
-      setNotice("Taslak klinik kütüphanesine kaydedildi.");
+      setNotice("Taslak klinik kütüphanesine kaydedildi; içerik kontrolü sunucuda yenilendi.");
     });
   }
   async function transition(
@@ -148,19 +186,21 @@ export function Studio({
   ) {
     if (!saved || dirty) return;
     await work(async () => {
-      const result = await api<{ experimentId?: string }>(
-        `/api/studio/${saved.id}`,
-        "PATCH",
-        { action, version: saved.version },
-      );
-      if (result.experimentId) {
-        router.push(`/tests/${result.experimentId}`);
+      const result = await patchDraft(saved.id, {
+        action,
+        version: saved.version,
+        ...(action === "submit" && ackWarning ? { acknowledgeWarning: true } : {}),
+      });
+      if (!result.ok) {
+        if (result.data.policyWarning) setPolicy(result.data.policyWarning);
+        throw new Error(result.data.error ?? "İşlem başarısız.");
+      }
+      if (result.data.experimentId) {
+        router.push(`/tests/${result.data.experimentId}`);
         return;
       }
-      const { draft: updated } = await api<{ draft: Saved }>(
-        `/api/studio/${saved.id}`,
-      );
-      setSaved({ ...updated, experimentId: saved.experimentId });
+      await refresh(saved.id, saved.experimentId);
+      setAckWarning(false);
       setNotice("Taslak durumu güncellendi.");
     });
   }
@@ -181,6 +221,7 @@ export function Studio({
       );
       setDraft(data);
       setBrief(data);
+      setPolicy(null);
       setDirty(true);
       setNotice(
         "Eski yerel taslak açıldı. Klinik kütüphanesine kaydetmek için Kaydet'e basın.",
@@ -189,6 +230,7 @@ export function Studio({
       setError("Bu tarayıcıda geçerli eski taslak bulunamadı.");
     }
   }
+  const submitBlocked = busy || policy?.risk === "HIGH" || (policy?.risk === "MEDIUM" && !ackWarning);
   return (
     <div className="space-y-7">
       <header className="studio-hero">
@@ -199,7 +241,7 @@ export function Studio({
           ve test planına dönüştürün.
         </p>
         <div className="hero-tags">
-          <span>TR · EN · DE · RU · AR · FR · NL · PL</span>
+          <span>{BRIEF_LANGUAGES.join(" · ")}</span>
           <span>Claude ile üretim</span>
           <span>{saved ? labels[saved.status] : "Yeni taslak"}</span>
         </div>
@@ -262,14 +304,11 @@ export function Studio({
                       })
                     }
                   >
-                    <option value="TR">Türkçe</option>
-                    <option value="EN">English</option>
-                    <option value="DE">Deutsch</option>
-                    <option value="RU">Русский</option>
-                    <option value="AR">العربية</option>
-                    <option value="FR">Français</option>
-                    <option value="NL">Nederlands</option>
-                    <option value="PL">Polski</option>
+                    {BRIEF_LANGUAGES.map((code) => (
+                      <option key={code} value={code}>
+                        {LANGUAGE_LABELS[code]}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -397,19 +436,17 @@ export function Studio({
                       <small>Görsel yer tutucu</small>
                     </div>
                     <div className="space-y-4 p-5">
-                      {(["headline", "text", "description", "cta"] as const).map((key) => (
+                      {(["headline", "text", "description"] as const).map((key) => (
                         <label className="field" key={key}>
                           {key === "headline"
                             ? "Başlık"
                             : key === "text"
                               ? "Reklam metni"
-                              : key === "description"
-                                ? "Link açıklaması"
-                                : "CTA"}
+                              : "Link açıklaması"}
                           <textarea
                             disabled={busy || !canEdit}
                             dir={rtlFor(draft.language)}
-                            rows={key === "text" ? 4 : key === "description" ? 2 : 2}
+                            rows={key === "text" ? 4 : 2}
                             maxLength={key === "text" ? 2000 : key === "description" ? 500 : 150}
                             value={v[key] ?? ""}
                             onChange={(e) => {
@@ -426,6 +463,33 @@ export function Studio({
                           />
                         </label>
                       ))}
+                      <label className="field">
+                        CTA (Meta düğmesi)
+                        <select
+                          disabled={busy || !canEdit}
+                          value={v.cta}
+                          onChange={(e) => {
+                            setDraft({
+                              ...draft,
+                              variants: draft.variants.map((item, index) =>
+                                index === i ? { ...item, cta: e.target.value } : item,
+                              ) as DraftContent["variants"],
+                            });
+                            setDirty(true);
+                          }}
+                        >
+                          {!(META_CTA_TYPES as readonly string[]).includes(v.cta) && (
+                            <option value={v.cta}>
+                              {v.cta ? `${v.cta} (serbest metin)` : "Seçin…"}
+                            </option>
+                          )}
+                          {META_CTA_TYPES.map((cta) => (
+                            <option key={cta} value={cta}>
+                              {CTA_LABELS[cta]} · {cta}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                   </article>
                 ))}
@@ -453,22 +517,72 @@ export function Studio({
               )}
               <div className="studio-card">
                 <div className="section-kicker">
-                  İÇERİK KONTROLÜ · {policy?.version}
+                  İÇERİK KONTROLÜ{policy ? ` · ${policy.version}` : ""}
                 </div>
                 <h2>
-                  {policy?.risk === "HIGH"
-                    ? "Düzeltilmesi gereken ifadeler var"
-                    : "Kural kontrolünde eşleşme yok"}
+                  {policy
+                    ? RISK_HEADING[policy.risk] ?? policy.risk
+                    : "Sunucu kontrolü için taslağı kaydedin"}
                 </h2>
                 {policy?.findings.map((f) => (
                   <div
                     key={f.rule}
-                    className="mt-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-800"
+                    className={`mt-3 rounded-xl p-3 text-sm ${
+                      f.risk === "MEDIUM" ? "bg-amber-50 text-amber-800" : "bg-rose-50 text-rose-800"
+                    }`}
                   >
                     <strong>{f.reason}</strong>
                     <p className="mt-1">{f.suggestion}</p>
                   </div>
                 ))}
+                {policy && (
+                  <div className="mt-3 rounded-xl border border-slate-200 p-3 text-sm">
+                    {llmAssessment ? (
+                      <>
+                        <p>
+                          <strong>AI değerlendirmesi:</strong> risk {llmAssessment.risk} — {llmAssessment.reason}
+                        </p>
+                        {llmAssessment.correctedCopy && (
+                          <p className="mt-2 text-slate-700" dir={rtlFor(draft.language)}>
+                            <span className="font-medium">Düzeltilmiş öneri:</span> {llmAssessment.correctedCopy}
+                          </p>
+                        )}
+                      </>
+                    ) : llm && "error" in llm ? (
+                      <p className="text-amber-700">
+                        AI değerlendirmesi bu sefer yapılamadı; karar kural kontrolüne göre verildi
+                        {policy.ruleRisk ? ` (kural riski: ${policy.ruleRisk})` : ""}.
+                      </p>
+                    ) : (
+                      <p className="text-slate-500">
+                        AI değerlendirmesi yapılandırılmamış; karar kural kontrolüne göre verildi.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {policy?.risk === "MEDIUM" && saved && !dirty && canEdit && ["DRAFT", "REJECTED"].includes(saved.status) && (
+                  <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p>
+                      Orta riskli ifadeler Meta incelemesinde reddedilebilir. Yine de onaya göndermek
+                      için uyarıyı onaylayın; bu onay denetim kaydına yazılır.
+                    </p>
+                    <label className="mt-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={ackWarning}
+                        onChange={(e) => setAckWarning(e.target.checked)}
+                        disabled={busy}
+                      />
+                      Uyarıyı okudum, yine de onaya gönder
+                    </label>
+                  </div>
+                )}
+                {preview && preview.risk !== "LOW" && (
+                  <div className="mt-3 rounded-xl border border-dashed border-amber-300 p-3 text-xs text-amber-800">
+                    Ön tarama (kaydedilmemiş metin): {preview.findings.map((f) => f.reason).join(" · ")} —
+                    kaydettiğinizde sunucu kontrolü esas alınır.
+                  </div>
+                )}
                 <p className="mt-3 text-xs leading-5 text-slate-500">
                   Otomatik kontrol sınırlı bir ifade taramasıdır; Meta onayını
                   garanti etmez. İçerik değişiklikleri önceki onayı sıfırlar.
@@ -505,7 +619,7 @@ export function Studio({
                     ["DRAFT", "REJECTED"].includes(saved.status) && (
                       <button
                         className="secondary-button"
-                        disabled={busy || policy?.risk === "HIGH"}
+                        disabled={submitBlocked}
                         onClick={() => transition("submit")}
                       >
                         Onaya gönder

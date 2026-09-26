@@ -19,4 +19,4 @@
 - Alıcı per-workspace değil, ortam düzeyindedir (tenant bazlı alıcı, Organization'da e-posta alanı eklenirse gelecekte yapılabilir).
 - `ReportDelivery` migration'ı `prisma migrate deploy` ile uygulanır.
 - Testler: `packages/reporting` (dönem hesabı, PDF başlık/boş olmama). E-posta ağı çağrısı testlerde yapılmaz.
-- Gönderim günü UTC yerel saat dilimine göre hesap edilir: `new Date().getDay()`.
+- Gönderim günü UTC'ye göre hesaplanır: `new Date().getUTCDay()` (`packages/reporting` `isReportDay`; `WEEKLY_REPORT_DAY` 0–6 UTC). Sunucunun yerel saat dilimi sonucu etkilemez.

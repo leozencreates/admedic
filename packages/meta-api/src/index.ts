@@ -9,7 +9,10 @@ export * from "./http";
 export * from "./parse";
 export * from "./token";
 export * from "./capi";
+export * from "./leadgen";
 export * from "./types";
+export * from "./whatsapp";
+export * from "./messenger";
 
 export interface MetaClientFactoryOptions {
   /** META_MOCK_MODE override'si (test için). */

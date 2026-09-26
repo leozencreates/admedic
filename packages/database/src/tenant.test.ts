@@ -19,6 +19,7 @@ let ownerId = "";
 let viewerId = "";
 let outsiderId = "";
 
+describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("database tenant isolation", () => {
 beforeAll(async () => {
   const org = await prisma.organization.create({
     data: { name: `Test Org ${RUN}`, slug: `test-${RUN}` },
@@ -96,4 +97,5 @@ describe("tenant helpers", () => {
     const outsiderWs = await defaultWorkspaceFor(outsiderId);
     expect(outsiderWs).toBeUndefined();
   });
+});
 });

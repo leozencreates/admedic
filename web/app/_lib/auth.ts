@@ -51,6 +51,8 @@ export function requireRole(actor: Actor, roles: Role[]) {
 export const EDIT_ROLES: Role[] = ["OWNER", "ADMIN", "MEDIA_BUYER"];
 /** Hasta koordinatörü dahil bakım kanalı rolleri (spec 3.8). */
 export const CARE_ROLES: Role[] = [...EDIT_ROLES, "PATIENT_COORDINATOR"];
+/** Devralınmış (ESCALATED) konuşmada yazabilecek roller; MEDIA_BUYER hariçtir (spec 3.8). */
+export const ESCALATION_ROLES: Role[] = ["OWNER", "ADMIN", "PATIENT_COORDINATOR"];
 /** Platform-global kuralları yönetme yetkisi tenant rolünden ayrıdır (spec 3.5). */
 export async function requirePlatformAdmin() {
   const actor = await requireActor();

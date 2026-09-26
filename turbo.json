@@ -1,6 +1,8 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
+  "globalDependencies": [".env"],
+  "globalEnv": ["APP_NAME", "DATABASE_URL", "META_MOCK_MODE", "META_API_VERSION", "AUTH_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -14,10 +16,17 @@
       "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": ["STUDIO_DB_TEST", "STUDIO_E2E", "NODE_ENV", "ENCRYPTION_KEY", "API_TOKEN"]
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["STUDIO_E2E", "STUDIO_DB_TEST", "NODE_ENV"]
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": ["STUDIO_DB_TEST", "NODE_ENV"]
     }
   }
 }

@@ -2,7 +2,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
-export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEmail?: string; initialWorkspace?: string }) {
+import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
+
+export function Login({
+  lang = DEFAULT_LANGUAGE,
+  initialEmail = "",
+  initialWorkspace = "",
+}: {
+  lang?: Language;
+  initialEmail?: string;
+  initialWorkspace?: string;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -14,7 +24,7 @@ export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEma
       router.push("/library");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Giriş başarısız.");
+      setError(e instanceof Error ? e.message : t("login.failed", lang));
     } finally {
       setBusy(false);
     }
@@ -22,18 +32,15 @@ export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEma
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <header className="studio-hero">
-        <span className="eyebrow">ÇALIŞMA ALANINIZA HOŞ GELDİNİZ</span>
-        <h1>İyi fikirler, aynı yerde.</h1>
-        <p>
-          Reklamlarınızı, ekibinizin onaylarını ve deney sonuçlarını tek yerde
-          yönetin.
-        </p>
+        <span className="eyebrow">{t("login.eyebrow", lang)}</span>
+        <h1>{t("login.title", lang)}</h1>
+        <p>{t("login.lead", lang)}</p>
       </header>
       <section className="studio-card">
-        <h2>Oturum açın</h2>
+        <h2>{t("login.heading", lang)}</h2>
         <form action={login} className="mt-6 space-y-4">
           <label className="field">
-            E-posta
+            {t("login.email", lang)}
             <input
               name="email"
               defaultValue={initialEmail}
@@ -44,7 +51,7 @@ export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEma
             />
           </label>
           <label className="field">
-            Parola
+            {t("login.password", lang)}
             <input
               name="password"
               type="password"
@@ -54,7 +61,7 @@ export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEma
             />
           </label>
           <label className="field">
-            Çalışma alanı ID
+            {t("login.workspace", lang)}
             <input
               name="workspace"
               defaultValue={initialWorkspace}
@@ -64,22 +71,18 @@ export function Login({ initialEmail = "", initialWorkspace = "" }: { initialEma
             />
           </label>
           <button disabled={busy} className="primary-button w-full">
-            {busy ? "Giriş yapılıyor…" : "Çalışma alanına gir →"}
+            {busy ? t("login.submitting", lang) : t("login.submit", lang)}
           </button>
           <p role="alert" className="text-sm text-rose-600">
             {error}
           </p>
         </form>
         <details className="mt-6 text-xs leading-6 text-slate-500">
-          <summary className="cursor-pointer">
-            İlk kurulumu mu yapıyorsunuz?
-          </summary>
+          <summary className="cursor-pointer">{t("login.firstSetupSummary", lang)}</summary>
           <p>
-            Sunucuda BOOTSTRAP_EMAIL, BOOTSTRAP_PASSWORD ve BOOTSTRAP_CLINIC
-            ortam değişkenlerini ayarlayıp{" "}
-            <code>pnpm --filter @admedic/web user:create</code> çalıştırın.
-            Komut çalışma alanı ID'sini verir. Kurulum adımları:
-            docs/ad-studio.md.
+            {t("login.firstSetupBefore", lang)}{" "}
+            <code>pnpm --filter @admedic/web user:create</code>{" "}
+            {t("login.firstSetupAfter", lang)}
           </p>
         </details>
       </section>

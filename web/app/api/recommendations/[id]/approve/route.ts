@@ -1,7 +1,10 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "@/app/_lib/auth";
-import { respond, sameOrigin } from "@/app/_lib/http";
+import { requireActor, requireRole } from "../../../../_lib/auth";
+import { HttpError, respond, sameOrigin } from "../../../../_lib/http";
+import { logAudit } from "../../../../_lib/audit";
 export const maxDuration = 15;
+
+/** Öneri onayı: PENDING → APPROVED (yalnızca OWNER/ADMIN; spec 3.6). Uygulama ayrı adımdır. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     sameOrigin(request);
@@ -10,11 +13,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const rec = await prisma.recommendation.findFirst({ where: { id, workspaceId: actor.workspaceId } });
     if (!rec) throw new HttpError(404, "Öneri bulunamadı.");
-    if (rec.status !== "PENDING") throw new HttpError(409, "Bu öneri zaten onaylanmış.");
-    await prisma.recommendation.update({ where: { id }, data: { status: "APPROVED", approvedBy: actor.userId, approvedAt: new Date() } });
-    await prisma.auditLog.create({ data: { orgId: actor.orgId, workspaceId: actor.workspaceId, userId: actor.userId, action: "RECOMMENDATION_APPROVED", entityType: "RECOMMENDATION", entityId: id, after: { status: "APPROVED" } } });
+    if (rec.status === "APPROVED") throw new HttpError(409, "Bu öneri zaten onaylanmış.");
+    if (rec.status !== "PENDING") throw new HttpError(409, "Yalnızca onay bekleyen öneri onaylanabilir.");
+    const now = new Date();
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.recommendation.updateMany({
+        where: { id, workspaceId: actor.workspaceId, status: "PENDING" },
+        data: { status: "APPROVED", approvedBy: actor.userId, approvedAt: now },
+      });
+      if (!result.count) throw new HttpError(409, "Öneri bu sırada değişti; sayfayı yenileyin.");
+      await logAudit(
+        {
+          actor,
+          action: "RECOMMENDATION_APPROVED",
+          entityType: "RECOMMENDATION",
+          entityId: id,
+          before: { status: rec.status },
+          after: { status: "APPROVED", approvedAt: now.toISOString() },
+        },
+        tx,
+      );
+    });
     return { ok: true, status: "APPROVED" };
   });
 }
-import { HttpError } from "@/app/_lib/http";
-import { requireRole } from "@/app/_lib/auth";

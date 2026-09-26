@@ -23,8 +23,8 @@ Anahtar yoksa AI düğmesi açık hata gösterir. "Metinleri kendim yazacağım"
 - `/library`: kliniğin reklam kütüphanesi, arama ve durum filtresi. Son güncellenen 100 taslak gösterilir.
 - Taslak → Onaya gönder → İçeriği onayla veya Düzeltme iste. Owner/admin onaylar; media buyer taslak oluşturabilir/düzenleyebilir. Viewer/analyst yalnızca okur. Yüksek riskli içerik sunucu tarafında engellenir. Kaydedilen her düzenleme önceki onayı sıfırlar. İşlemler sürüm kontrolü ve audit kaydıyla transaction içinde tamamlanır.
 - Onaylı taslaktan A/B deneyi oluşturun. Deney reklam metinlerinin değişmez kopyasını tutar; taslağın sonraki düzenlemeleri deneyi değiştirmez. Her taslak için bir deney oluşturulur.
-- `/tests`: kayıtlı deneyler. Detay ekranında Meta metriklerini senkronize etme butonu, manuel toplam harcama/tıklama/lead verileri kaydedilir; gün sayısı geriye alınamaz, tamamlanan deney değiştirilemez. Tamamlanan deney için optimizasyon önerileri gösterilir. Deneyi tamamlamak kazanan bulunduğu anlamına gelmez.
-- `/recommendations`: tamamlanan deneylere göre üretilen bütçe ve yayın önerileri. Owner/admin onaylayabilir; onaylanan öneriler "Uygula" ile işaretlenir.
+- `/tests`: kayıtlı deneyler. Stüdyo deneyleri **manuel ölçümle** çalışır: toplam harcama/tıklama/lead verileri elle kaydedilir; gün sayısı geriye alınamaz, tamamlanan deney değiştirilemez. Varyantların Meta reklam seti/reklam eşleşmesi olmadığı için `POST /api/experiments/:id/sync` Meta'dan metrik çekmez (deney bulunursa 409 döner); otomatik Insight çekimi kampanya düzeyinde `workers/meta-sync` ile yapılır. Tamamlanan deney için optimizasyon önerileri üretilebilir. Deneyi tamamlamak kazanan bulunduğu anlamına gelmez.
+- `/recommendations`: tamamlanan deneylere göre üretilen bütçe ve yayın önerileri (`POST /api/recommendations`, OWNER/ADMIN). Onay (`/approve`, OWNER/ADMIN) ve uygulama (`/apply`) ayrı adımlardır; uygulama hedef kampanyanın günlük bütçesini minor unit olarak günceller (ADR-0011), yayınlı kampanyalarda Meta `updateBudget` çağrısı yapar ve kuruluşun aylık bütçe üst sınırını kontrol eder. Bütçe artışı yalnızca OWNER/ADMIN (spec 3.6). Kampanya bütçesi ayrıca `PATCH /api/campaigns/:id/budget` ile değiştirilir (ADR-0007).
 - `/experiments`: kayıtsız hızlı hesaplayıcı ve açıkça etiketlenmiş örnek veriler.
 
 Oturum 8 saat geçerlidir. Her erişimde üyeliğin aktifliği ve rolü tekrar doğrulanır. Çıkış sunucudaki oturumu iptal eder. Yazma isteklerinde `AUTH_URL` ile origin eşleşmesi zorunludur. Production cookie HTTPS gerektirir.
@@ -37,14 +37,19 @@ Oturum 8 saat geçerlidir. Her erişimde üyeliğin aktifliği ve rolü tekrar d
 | `/api/studio` | GET / POST | Klinik taslakları / yeni taslak |
 | `/api/studio/:id` | GET / PATCH | Taslak / sürümlü düzenleme ve onay işlemleri |
 | `/api/studio/generate` | POST | Yetkilendirilmiş AI üretimi |
-| `/api/experiments` | GET / PATCH | Kliniğin kayıtlı deneyleri / metrik ve durum kaydı |
-| `/api/experiments/:id/sync` | POST | Meta'dan metrik senkronizasyonu; tamamlandıysa öneri üret |
+| `/api/experiments` | GET | Kliniğin kayıtlı deneyleri |
+| `/api/experiments/:id` | GET / PATCH | Deney detayı / metrik ve durum kaydı |
+| `/api/experiments/:id/sync` | POST | Stüdyo deneyinde otomatik Meta senkronu yok (deney bulunursa 409); metrikler `PATCH /api/experiments/:id` ile elle girilir |
 | `/api/recommendations` | GET / POST | Öneri listesi / yeni öneri oluştur |
-| `/api/recommendations/:id` | PATCH | Öneri onay / reddet / uygula |
+| `/api/recommendations/:id` | GET / PATCH | Öneri detayı / reddet, durum güncelle |
+| `/api/recommendations/:id/approve` | POST | Öneri onayı (OWNER/ADMIN) |
+| `/api/recommendations/:id/apply` | POST | Onaylı öneriyi kampanyaya uygula (bütçe minor unit; Meta push) |
+| `/api/campaigns/:id/budget` | PATCH | Kampanya günlük bütçesi (ADR-0007; artış OWNER/ADMIN) |
+| `/api/billing/*` | GET / POST / PATCH | Abonelik, Stripe Checkout, webhook ve faturalar (spec 3.12) |
 
 ## Sınırlar
 
-İçerik onayı Meta yayını değildir. Canlı Meta deney oluşturma, otomatik metrik çekimi, görsel üretimi/yükleme ve bütçe değişikliği bu ekranlarda etkin değildir. Kural denetimi sınırlı, sürümlü bir ifade taramasıdır; Meta onayı garanti etmez. LLM politika değerlendirmesi ve veritabanından kural yönetimi henüz yoktur. Bu faz mevcut Fastify salt okunur demo API'sine oturum entegrasyonu eklemez.
+İçerik onayı Meta yayını değildir. Canlı Meta deney oluşturma ve görsel üretimi/yükleme bu ekranlarda etkin değildir; stüdyo deneyleri için otomatik metrik çekimi yoktur (kampanya insight'ları worker ile çekilir). Bütçe değişikliği stüdyo ekranlarında değil, kampanya bütçe ucu ve öneri uygulaması üzerinden yapılır (ADR-0007/0011). Kural denetimi sürümlü bir ifade taramasıdır (kurallar `policy_rules` tablosundan, ADR-0008) ve LLM risk katmanıyla birleştirilir (`docs/meta-constraints.md`, 2026-09-25); Meta onayı garanti etmez. Fastify salt okunur API (`apps/api`) oturum çerezi değil `API_TOKEN` Bearer belirteci kullanır ve yalnızca masaüstü kabuğuna veri taşır.
 
 LLM çağrı kayıtları metni değil çalışma alanı, model, prompt sürümü, token sayısı, süre ve durumu tutar. Başarısız/yarım veya doğrulamadan geçmeyen yanıtlarda ham sağlayıcı çıktısı kaydedilmez; bu çağrıların token sayısı sıfır kalabilir. Süresi dolan `WebSession` ve `RequestQuota` kayıtları işlevsel olarak geçersizdir; periyodik veritabanı bakımında temizlenebilir.
 

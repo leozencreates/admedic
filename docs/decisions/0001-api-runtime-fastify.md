@@ -22,3 +22,15 @@ Webhook imzaları (X-Hub-Signature-256) Fastify katmanında doğrulanır.
 
 ## Sonuçlar
 - `apps/api` şu an boş; bu ADR ilerideki faz 1 çalışmasında uygulanacak (bu oturumda kod yazılmadı).
+
+## Durum notu (2026-09-26)
+
+- Panel API'si fiilen **Next.js route handler'ları** (`web/app/api/**`) ile yazıldı: Zod doğrulama, oturum çerezi,
+  RBAC, audit log ve tenant izolasyonu bu katmandadır; Meta webhook imzası (`X-Hub-Signature-256`) da
+  `web/app/api/webhooks/meta` içinde doğrulanır.
+- `apps/api` (Fastify v5) **salt okunur masaüstü API'sidir** (`/v1/overview`, `/v1/campaigns`, `/v1/decisions`,
+  `/v1/alerts`): Tauri kabuğunun veri kaynağı (ADR-0003 rev. 2). `API_TOKEN` Bearer belirteci ister
+  (belirteç yoksa yalnızca `META_MOCK_MODE=true` iken açık, aksi halde 503), CORS yalnızca `AUTH_URL` ve
+  Tauri kaynaklarına açıktır, pino logları belirteç/çerez/e-posta/telefon alanlarını redakte eder.
+- Bu ADR'nin "web yalnızca UI sunar, API çağrılarını Fastify'a yapar" cümlesi geçerli değildir; karar
+  "iş mantığı paketlerde, HTTP katmanı ince" ilkesi bakımından korunmuştur.

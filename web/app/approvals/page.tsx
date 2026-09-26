@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { Badge, Card, EmptyState, SectionHeading, StatCard } from "../_components/ui";
-import { LanguageSwitcher } from "../_components/language-switcher";
 type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
 const APPROVAL_TONE: Record<string, Tone> = { PENDING: "amber", APPROVED: "green", REJECTED: "red", NOT_REQUIRED: "blue", DRAFT: "gray" };
 interface DecisionData { id: string; targetType: string; targetId: string; action: string; approval: string; changePct: number | null; reasoning: string; createdAt: string; }
@@ -33,6 +32,18 @@ export default function ApprovalsPage() {
       </div>
       <Card>
         <SectionHeading title="Kararlar" description="Ajan yalnızca öneri üretir; harcamayı değiştiren aksiyonlar onay bekler." />
+        <div className="mb-3 flex flex-wrap gap-2 text-xs">
+          {(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`rounded-full border px-3 py-1 ${filter === key ? "border-violet-400 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            >
+              {key === "ALL" ? "Tümü" : key === "PENDING" ? "Onay bekleyen" : key === "APPROVED" ? "Onaylanan" : "Reddedilen"}
+            </button>
+          ))}
+        </div>
         {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : filtered.length === 0 ? <EmptyState message="Henüz karar yok." /> : (
           <div className="space-y-3">
             {filtered.map((d) => (

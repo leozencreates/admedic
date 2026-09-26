@@ -3,7 +3,12 @@ import { requireActor, requireRole, EDIT_ROLES } from "../../../../_lib/auth";
 import { respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { checkPolicyWithRules } from "../../../../_lib/policy-loader";
 import { logAudit } from "../../../../_lib/audit";
-import { ownedCampaign } from "../../../../_lib/campaign-workflow";
+import {
+  campaignPolicyText,
+  clinicPolicyContext,
+  lockCampaignRow,
+  ownedCampaign,
+} from "../../../../_lib/campaign-workflow";
 
 export const maxDuration = 15;
 
@@ -13,30 +18,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const actor = await requireActor();
     requireRole(actor, EDIT_ROLES);
     const { id } = await params;
-    const campaign = await ownedCampaign(actor, id);
-    if (!["DRAFT", "REJECTED"].includes(campaign.workflowStatus))
-      throw new HttpError(409, "Kampanya zaten incelemede veya daha ileri bir aşamada.");
-    const policy = await checkPolicyWithRules(campaign.name);
-    if (policy.risk === "HIGH")
-      throw new HttpError(422, "İçerik kontrolündeki yüksek riskli ifadeleri düzeltin.");
-    const updated = await prisma.campaign.update({
-      where: { id },
-      data: {
-        workflowStatus: "IN_REVIEW",
-        policyRisk: policy.risk,
-        policyReport: policy,
-        rejectionReason: null,
-        rejectionBy: null,
-      },
+    return prisma.$transaction(async (tx) => {
+      // Yarış koruması: aynı kampanyaya eşzamanlı submit/approve/reject sıraya girer.
+      await lockCampaignRow(tx, actor, id);
+      const campaign = await ownedCampaign(actor, id, tx);
+      if (!["DRAFT", "REJECTED"].includes(campaign.workflowStatus))
+        throw new HttpError(409, "Kampanya zaten incelemede veya daha ileri bir aşamada.");
+      // Kural setinin taze anlık görüntüsü + klinik yasaklı ifadeleri (spec 3.5).
+      const clinic = await clinicPolicyContext(actor.workspaceId, tx);
+      const policy = await checkPolicyWithRules(campaignPolicyText(campaign), clinic.bannedPhrases, tx);
+      if (policy.risk === "HIGH")
+        throw new HttpError(422, "İçerik kontrolündeki yüksek riskli ifadeleri düzeltin.");
+      const policyWarning =
+        policy.risk === "MEDIUM" ? policy.findings.map((f) => f.reason).join("; ") : null;
+      const moved = await tx.campaign.updateMany({
+        where: { id, workspaceId: actor.workspaceId, workflowStatus: campaign.workflowStatus },
+        data: {
+          workflowStatus: "IN_REVIEW",
+          policyRisk: policy.risk,
+          policyReport: policy,
+          rejectionReason: null,
+          rejectionBy: null,
+        },
+      });
+      if (moved.count !== 1)
+        throw new HttpError(409, "Kampanya durumu eşzamanlı olarak değişti; yenileyip tekrar deneyin.");
+      await logAudit({
+        actor,
+        action: "CAMPAIGN_SUBMITTED",
+        entityType: "CAMPAIGN",
+        entityId: campaign.id,
+        before: { workflowStatus: campaign.workflowStatus, policyRisk: campaign.policyRisk },
+        after: { workflowStatus: "IN_REVIEW", policyRisk: policy.risk, policyWarning },
+      }, tx);
+      return { campaign: { id: campaign.id, workflowStatus: "IN_REVIEW", policyRisk: policy.risk, policyWarning } };
     });
-    await logAudit({
-      actor,
-      action: "CAMPAIGN_SUBMITTED",
-      entityType: "CAMPAIGN",
-      entityId: campaign.id,
-      before: { workflowStatus: campaign.workflowStatus, policyRisk: campaign.policyRisk },
-      after: { workflowStatus: updated.workflowStatus, policyRisk: updated.policyRisk },
-    });
-    return { campaign: { id: campaign.id, workflowStatus: updated.workflowStatus } };
   });
 }

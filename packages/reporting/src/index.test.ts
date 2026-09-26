@@ -2,17 +2,18 @@ import { describe, it, expect } from "vitest";
 import { isReportDay, renderReportPdf, reportPeriod } from "./index";
 
 describe("reportPeriod", () => {
-  it("returns the week boundaries containing the given date for reportDay=0 (Sunday)", () => {
+  it("returns the last completed UTC week for reportDay=0 (Sunday)", () => {
     const now = new Date("2026-09-22T12:00:00Z"); // Tuesday
     const { start, end } = reportPeriod(now, 0);
     expect(start.getUTCDay()).toBeLessThanOrEqual(7);
     expect(end.getTime() - start.getTime()).toBe(6 * 24 * 3600 * 1000 + (23 * 3600 + 59 * 60 + 59) * 1000 + 999);
-    expect(start <= now && now <= end).toBe(true);
+    expect(start.toISOString()).toBe("2026-09-13T00:00:00.000Z");
+    expect(end.toISOString()).toBe("2026-09-19T23:59:59.999Z");
   });
   it("shifts the week start to the configured report day", () => {
     const now = new Date("2026-09-22T12:00:00Z"); // Tuesday (getDay=2)
     const { start } = reportPeriod(now, 6); // Saturday
-    expect(start.getDay()).toBe(6);
+    expect(start.getUTCDay()).toBe(6);
   });
 });
 

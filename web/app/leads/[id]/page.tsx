@@ -1,30 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "../../_lib/client-api";
 import { LeadChat } from "../../_components/lead-chat";
 import { Badge } from "../../_components/ui";
-import { toLead } from "../../_components/lead-table";
+import { toLead, type ApiLead } from "../../_components/lead-table";
 import { formatDate } from "../../_lib/format";
 import { LanguageSwitcher } from "../../_components/language-switcher";
 import type { Tone } from "../../_components/ui";
-
-interface ApiLead {
-  id: string;
-  firstName?: string;
-  lastName?: string;
-  name?: string;
-  phone?: string;
-  email?: string;
-  status?: string;
-  channel?: string;
-  country?: string;
-  createdAt?: string;
-  created?: string;
-  consentGiven?: boolean;
-  consentStatus?: string;
-}
 
 const STATUS_TONE: Record<string, Tone> = {
   NEW: "blue",
@@ -47,30 +31,34 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const FLOW: Record<string, string[]> = {
-  NEW: ["CONTACTED"],
-  CONTACTED: ["QUALIFIED"],
-  QUALIFIED: ["CONSULTATION_BOOKED"],
-  CONSULTATION_BOOKED: ["TRAVEL_PLANNED"],
+  NEW: ["CONTACTED", "LOST"],
+  CONTACTED: ["QUALIFIED", "LOST"],
+  QUALIFIED: ["CONSULTATION_BOOKED", "LOST"],
+  CONSULTATION_BOOKED: ["TRAVEL_PLANNED", "LOST"],
   TRAVEL_PLANNED: ["TREATED", "LOST"],
 };
 
 export default function LeadDetailPage() {
-  const router = useRouter();
   const { id } = useParams();
-  const [lead, setLead] = useState<ReturnType<typeof toLead> | null>(null);
+  const [lead, setLead] = useState<(ReturnType<typeof toLead> & { lostReason?: string | null }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
+  const [showLostDialog, setShowLostDialog] = useState(false);
+  const [lostReasonInput, setLostReasonInput] = useState("");
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const data = await api<{ lead: ApiLead }>(`/api/leads/${id}`);
-      setLead(toLead(data.lead));
+      const data = await api<{ lead: ApiLead & { lostReason?: string | null } }>(`/api/leads/${id}`);
+      setLead({
+        ...toLead(data.lead),
+        lostReason: data.lead.lostReason ?? null,
+      });
       setConsentGiven(data.lead.consentGiven ?? false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Lead yüklenemedi.");
@@ -83,19 +71,37 @@ export default function LeadDetailPage() {
     void load();
   }, [id]);
 
-  async function transitionStatus(nextStatus: string) {
+  async function transitionStatus(nextStatus: string, reason?: string) {
+    if (nextStatus === "LOST" && !reason) {
+      setShowLostDialog(true);
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      await api(`/api/leads/${id}`, "PATCH", { status: nextStatus });
-      setLead((prev: ReturnType<typeof toLead> | null) => (prev ? { ...prev, status: nextStatus } : prev));
+      const payload: { status: string; lostReason?: string } = { status: nextStatus };
+      if (nextStatus === "LOST") {
+        payload.lostReason = reason?.trim();
+      }
+      await api(`/api/leads/${id}`, "PATCH", payload);
+      setLead((prev) => (prev ? { ...prev, status: nextStatus, lostReason: reason?.trim() ?? prev.lostReason } : prev));
+      setShowLostDialog(false);
+      setLostReasonInput("");
       setNotice(`Durum güncellendi: ${STATUS_LABEL[nextStatus] ?? nextStatus}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Durum güncellenemedi.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function confirmLost() {
+    if (!lostReasonInput.trim()) {
+      setError("Lütfen kayıp nedenini belirtin.");
+      return;
+    }
+    await transitionStatus("LOST", lostReasonInput);
   }
 
   async function grantConsent() {
@@ -106,6 +112,20 @@ export default function LeadDetailPage() {
       setNotice("Rıza kaydı oluşturuldu.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Rıza kaydedilemedi.");
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  async function withdrawConsent() {
+    if (!window.confirm("Rıza geri çekilsin mi? Lead pazarlama iletişimine kapatılır ve rıza kayıtları geri çekildi olarak işaretlenir.")) return;
+    setConsentBusy(true);
+    try {
+      await api(`/api/leads/${id}`, "PATCH", { consentGiven: false });
+      setConsentGiven(false);
+      setNotice("Rıza geri çekildi.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rıza geri çekilemedi.");
     } finally {
       setConsentBusy(false);
     }
@@ -175,11 +195,35 @@ export default function LeadDetailPage() {
             </div>
             <div className="flex justify-between">
               <dt className="text-slate-500">Kanal</dt>
-              <dd className="font-medium text-slate-900">{lead.channel}</dd>
+              <dd className="font-medium text-slate-900">{lead.channel || "—"}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-slate-500">Ülke</dt>
-              <dd className="font-medium text-slate-900">{lead.country}</dd>
+              <dd className="font-medium text-slate-900">{lead.country || "—"}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Dil</dt>
+              <dd className="font-medium text-slate-900">{lead.language || "—"}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">İlgilenilen hizmet</dt>
+              <dd className="font-medium text-slate-900">{lead.interestedService || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Kaynak kampanya</dt>
+              <dd className="font-mono text-xs text-slate-900 text-right">
+                {lead.campaignId || lead.adSetId || lead.adId ? (
+                  <>
+                    <span>Kampanya: {lead.campaignId || "—"}</span>
+                    <br />
+                    <span>Reklam seti: {lead.adSetId || "—"}</span>
+                    <br />
+                    <span>Reklam: {lead.adId || "—"}</span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-slate-500">Durum</dt>
@@ -189,6 +233,12 @@ export default function LeadDetailPage() {
                 </Badge>
               </dd>
             </div>
+            {lead.status === "LOST" && lead.lostReason && (
+              <div className="flex justify-between rounded-lg bg-rose-50 p-2 text-rose-800">
+                <dt className="text-rose-600 font-medium">Kayıp Nedeni</dt>
+                <dd className="font-semibold text-right">{lead.lostReason}</dd>
+              </div>
+            )}
           </dl>
         </section>
 
@@ -204,7 +254,7 @@ export default function LeadDetailPage() {
               {nextStatuses.map((next) => (
                 <button
                   key={next}
-                  className="primary-button"
+                  className={next === "LOST" ? "rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100" : "primary-button"}
                   disabled={busy}
                   onClick={() => transitionStatus(next)}
                 >
@@ -220,6 +270,44 @@ export default function LeadDetailPage() {
         </section>
       </div>
 
+      {showLostDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold text-slate-900">Lead Kaybı Nedeni</h3>
+            <p className="text-sm text-slate-600">
+              Bu lead'i <strong>Kaybedildi (LOST)</strong> olarak işaretlemek için lütfen bir neden belirtin (fiyat yüksek, başka klinik seçti, iletişim koptu, vb.).
+            </p>
+            <textarea
+              className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-violet-500 focus:outline-none"
+              rows={3}
+              placeholder="Örn: Bütçe yetersiz, yerel tedaviyi seçti…"
+              value={lostReasonInput}
+              onChange={(e) => setLostReasonInput(e.target.value)}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setShowLostDialog(false);
+                  setLostReasonInput("");
+                }}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                disabled={busy}
+                onClick={confirmLost}
+              >
+                {busy ? "Kaydediliyor…" : "Kaybı Onayla"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {notice && (
         <p role="status" className="text-sm text-violet-700">
           {notice}
@@ -230,9 +318,18 @@ export default function LeadDetailPage() {
         <div className="section-kicker">RIZA KAYDI</div>
         <h2>Veri İşleme Onayı</h2>
         {consentGiven ? (
-          <div className="mt-3 flex items-center gap-2 text-sm text-green-700">
-            <span className="inline-block w-2 rounded-full bg-green-500" />
-            Pazarlama iletişimi onaylandı ({new Date().toLocaleDateString("tr-TR")}).
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-2 text-sm text-green-700">
+              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+              Pazarlama iletişimi onaylandı.
+            </div>
+            <button
+              className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+              disabled={consentBusy}
+              onClick={() => void withdrawConsent()}
+            >
+              {consentBusy ? "Kaydediliyor…" : "Rızayı Geri Çek"}
+            </button>
           </div>
         ) : (
           <div className="mt-3 space-y-3">
@@ -250,7 +347,7 @@ export default function LeadDetailPage() {
         )}
       </section>
 
-      <LeadChat leadId={lead.id} />
+      <LeadChat leadId={lead.id} leadChannel={lead.channel} />
     </div>
   );
 }
