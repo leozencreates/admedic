@@ -10,7 +10,14 @@ vi.mock("@admedic/reporting", async (importOriginal) => ({
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
 import { MetaGraphError, type MetaClientLike, type MetaInsightRow } from "@admedic/meta-api";
-import { deliverWeeklyReport, isMetaThrottleError, runAnomalyAlerts, syncInsights } from "./scheduler";
+import {
+  deliverWeeklyReport,
+  isMetaThrottleError,
+  REVIEW_INTERVAL_ACTIVE_MS,
+  runAnomalyAlerts,
+  syncAdReviews,
+  syncInsights,
+} from "./scheduler";
 
 function insightRow(date: string, overrides: Partial<MetaInsightRow> = {}): MetaInsightRow {
   return {
@@ -165,6 +172,64 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync
     expect(listAdSets).toHaveBeenCalledTimes(1);
     await prisma.campaign.deleteMany({ where: { adAccountId: budgetAccountId } });
     await prisma.adAccount.delete({ where: { id: budgetAccountId } });
+  });
+
+  it("reklam incelemesi: vadesi gelen kampanyayı okur, yeni redde uyarı üretir, aralık dolmadan tekrar okumaz; Meta hatası turu durdurmaz", async () => {
+    const reviewAccountId = (await prisma.adAccount.create({
+      data: { orgId, workspaceId, connectionId, name: "İnceleme", currency: "EUR", metaAccountId: `act_review${suffix}` },
+    })).id;
+    const mkCampaign = async (name: string, workflowStatus: "ACTIVE" | "PUBLISHED_PAUSED", adIds: string[], checkedAt: Date | null) => {
+      const campaign = await prisma.campaign.create({ data: {
+        adAccountId: reviewAccountId, workspaceId, name, metaCampaignId: `cmp_${name}_${suffix}`, workflowStatus,
+        status: workflowStatus === "ACTIVE" ? "ACTIVE" : "PAUSED", metaReviewCheckedAt: checkedAt,
+      } });
+      const adSet = await prisma.adSet.create({ data: { campaignId: campaign.id, workspaceId, name: "AS", metaAdSetId: `as_${name}_${suffix}` } });
+      for (const metaAdId of adIds)
+        await prisma.ad.create({ data: { adSetId: adSet.id, workspaceId, name: `Reklam ${metaAdId}`, metaAdId } });
+      return campaign.id;
+    };
+    const now = new Date();
+    const active = await mkCampaign("aktif", "ACTIVE", [`rej_${suffix}`, `ok_${suffix}`], null);
+    // PAUSED yayınlanmış kampanya 1 saat önce kontrol edildi → 6 saatlik aralık dolmadı.
+    const paused = await mkCampaign("durdurulmus", "PUBLISHED_PAUSED", [`p_${suffix}`], new Date(now.getTime() - 3_600_000));
+    const broken = await mkCampaign("hatali", "ACTIVE", [`boom_${suffix}`], null);
+    const calls: string[][] = [];
+    const meta = {
+      ...stubClient({}),
+      async getAdReviews(ids: string[]) {
+        calls.push(ids);
+        if (ids.some((id) => id.startsWith("boom_"))) throw new MetaGraphError({ code: 17, message: "User request limit reached" });
+        return ids.map((id) => ({
+          id,
+          effectiveStatus: id.startsWith("rej_") ? "DISAPPROVED" : "PENDING_REVIEW",
+          reviewFeedbackGlobal: id.startsWith("rej_") ? { PERSONAL_HEALTH: "Sağlık iddiası" } : {},
+          reviewFeedbackPlacements: {},
+        }));
+      },
+    } as unknown as MetaClientLike;
+
+    expect(await syncAdReviews(meta, { id: workspaceId, orgId }, now)).toBe(1);
+    expect(calls.map((c) => c.length).sort()).toEqual([1, 2]); // aktif + hatalı; PAUSED kampanyanın vadesi gelmedi
+    const stored = await prisma.campaign.findUniqueOrThrow({ where: { id: active } });
+    expect(stored).toMatchObject({ metaReviewStatus: "DISAPPROVED", metaReviewCheckedAt: now });
+    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: broken } })).metaReviewCheckedAt).toBeNull();
+    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: paused } })).metaReviewStatus).toBeNull();
+    const alert = await prisma.alert.findFirstOrThrow({ where: { workspaceId, type: "AD_DISAPPROVED" } });
+    expect(alert).toMatchObject({ severity: "CRITICAL", status: "OPEN", entityType: "AD" });
+    expect(alert.message).toContain("Sağlık iddiası");
+
+    // Aralık dolmadan aktif kampanya tekrar okunmaz (yalnızca hatalı olan yeniden denenir).
+    calls.length = 0;
+    expect(await syncAdReviews(meta, { id: workspaceId, orgId }, new Date(now.getTime() + 60_000))).toBe(0);
+    expect(calls).toHaveLength(1);
+    calls.length = 0;
+    expect(await syncAdReviews(meta, { id: workspaceId, orgId }, new Date(now.getTime() + REVIEW_INTERVAL_ACTIVE_MS + 60_000))).toBe(0);
+    expect(calls).toHaveLength(2);
+    expect(await prisma.alert.count({ where: { workspaceId, type: "AD_DISAPPROVED" } })).toBe(1);
+
+    await prisma.alert.deleteMany({ where: { workspaceId, type: "AD_DISAPPROVED" } });
+    await prisma.campaign.deleteMany({ where: { adAccountId: reviewAccountId } });
+    await prisma.adAccount.delete({ where: { id: reviewAccountId } });
   });
 
   it("anomali uyarılarını OPEN dedup ile oluşturur", async () => {

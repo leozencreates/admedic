@@ -51,6 +51,8 @@ Oturum 8 saat geçerlidir. Her erişimde üyeliğin aktifliği ve rolü tekrar d
 | `/api/campaigns/:id/submit` · `/approve` · `/reject` | POST | Onay akışı (planlı kampanyada yayına hazırlık zorunlu; onay/red OWNER/ADMIN) |
 | `/api/campaigns/:id/publish` | POST | `PUBLISH` (eksiksiz PAUSED yayın, kaldığı yerden), `ACTIVATE` (harcama yetkisi + toplam üst sınır), `PAUSE`, `ARCHIVE` |
 | `/api/campaigns/:id/budget` | PATCH | Kampanya günlük bütçesi (ADR-0007; artış harcama yetkisi + toplam üst sınır, ABO'da ad set payları) |
+| `/api/meta/review-sync` | POST | Reklam düzeyinde Meta inceleme durumu ve red gerekçeleri (`{ campaignId? }`; EDIT rolleri; yeni red → AD_DISAPPROVED uyarısı) |
+| `/api/leads/refetch` | GET / POST | Alanları Meta'dan çekilemeyen Instant Form lead sayısı / şimdi yeniden çek (`{ leadId? }`) |
 | `/api/org/settings` | GET / PATCH | Aylık üst sınır (yükseltme/kaldırma yalnızca Owner), aktif kampanya toplamı, gizlilik politikası bağlantısı, rıza metni, saklama süresi |
 | `/api/org/members` | GET | Üyeler ve etkin harcama yetkisi (OWNER/ADMIN) |
 | `/api/org/members/:userId/spend-authority` | PUT | Harcama yetkisi ver/geri al (yalnızca OWNER; ADMIN/MEDIA_BUYER üyeye; audit) |

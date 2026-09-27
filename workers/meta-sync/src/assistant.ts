@@ -1,6 +1,12 @@
 import { prisma, AlertSeverity, AlertType, Prisma } from "@admedic/database";
 import { getLlmConfig, tryDecryptField, type LlmConfig } from "@admedic/config";
-import { getGraphVersion, sendMessengerText, sendWhatsAppMessage, type WhatsAppTransport } from "@admedic/meta-api";
+import {
+  appSecretProof,
+  getGraphVersion,
+  sendMessengerText,
+  sendWhatsAppMessage,
+  type WhatsAppTransport,
+} from "@admedic/meta-api";
 import {
   ASSISTANT_HISTORY_LIMIT,
   LEAD_ASSISTANT_PROMPT_VERSION,
@@ -395,7 +401,12 @@ async function resolveWhatsAppTransport(orgId: string): Promise<WhatsAppTranspor
   const token = tryDecryptField(connection.tokenCiphertext);
   if (!token) return null;
   try {
-    return { apiUrl: `https://graph.facebook.com/${getGraphVersion()}/${connection.whatsappPhoneNumberId}`, token };
+    return {
+      apiUrl: `https://graph.facebook.com/${getGraphVersion()}/${connection.whatsappPhoneNumberId}`,
+      token,
+      // Bağlantı token'ı bu uygulamanın OAuth akışından gelir → `appsecret_proof` geçerlidir.
+      appsecretProof: appSecretProof(token) ?? null,
+    };
   } catch {
     return null;
   }

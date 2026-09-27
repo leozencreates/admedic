@@ -1,7 +1,9 @@
-import { createHmac } from "node:crypto";
 import { loadEnv } from "@admedic/config";
 import { AdmedicError } from "@admedic/shared";
-import { getGraphVersion, rawGraph } from "./http";
+import { getGraphVersion, nextPageUrl, rawGraph } from "./http";
+import { appSecretProof } from "./secret-proof";
+
+export { appSecretProof };
 
 function graphUrl(version: string, path: string, params: Record<string, string>) {
   const url = new URL(`https://graph.facebook.com/${version}/${path}`);
@@ -9,19 +11,6 @@ function graphUrl(version: string, path: string, params: Record<string, string>)
     if (v !== undefined && v !== "") url.searchParams.set(k, v);
   }
   return url.toString();
-}
-
-/**
- * `appsecret_proof` = HMAC-SHA256(access_token, app_secret) (hex). "Require App
- * Secret" açık uygulamalarda sunucu tarafı Graph çağrılarında zorunludur; secret
- * yoksa `undefined` döner ve parametre gönderilmez.
- * Kaynak: developers.facebook.com/docs/graph-api/guides/secure-requests
- * (2026-09-26 kontrol edildi; bkz. docs/meta-constraints.md).
- */
-export function appSecretProof(accessToken: string, appSecret?: string): string | undefined {
-  const secret = appSecret ?? loadEnv().META_APP_SECRET;
-  if (!secret) return undefined;
-  return createHmac("sha256", secret).update(accessToken).digest("hex");
 }
 
 export interface GraphAuth {
@@ -223,7 +212,7 @@ export async function getGrantedPermissions(
       else if (status === "expired") result.expired.push(row.permission);
     }
     const paging = isRecord(body.paging) ? body.paging : {};
-    url = typeof paging.next === "string" ? paging.next : undefined;
+    url = nextPageUrl(paging.next, auth.params) ?? undefined;
   }
   return result;
 }

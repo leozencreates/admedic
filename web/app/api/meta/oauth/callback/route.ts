@@ -21,6 +21,8 @@ import {
   syncPageConnections,
 } from "../../../../_lib/meta-connection";
 import { logAudit } from "../../../../_lib/audit";
+import { runAfterResponse } from "../../../../_lib/after-response";
+import { refetchPendingLeads } from "../../../../_lib/lead-refetch";
 import {
   createMetaClient,
   exchangeUserToken,
@@ -28,7 +30,8 @@ import {
   getGrantedPermissions,
   rawGraph,
 } from "@admedic/meta-api";
-export const maxDuration = 15;
+// Yanıttan sonra bekleyen lead çekimleri de bu süre içinde çalışır (after).
+export const maxDuration = 30;
 
 type Env = ReturnType<typeof loadEnv>;
 
@@ -219,6 +222,11 @@ async function handleCallback(request: Request, env: Env): Promise<CallbackResul
         expiresAt: longLived ? null : data.expiresAt,
       });
       pages = synced.created + synced.updated;
+      // Sayfa token'ları yenilendi: alanları daha önce çekilemeyen lead'ler yanıttan sonra yeniden denenir.
+      if (pages > 0)
+        await runAfterResponse("lead-refetch", () =>
+          refetchPendingLeads({ orgId: actor.orgId, limit: 25, budgetMs: 12_000, force: true }),
+        );
     } catch (err) {
       console.warn(`[oauth] sayfa keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
     }

@@ -23,3 +23,10 @@ export { isAdmedicError };
 
 export * from "@prisma/client";
 export { anonymizeLead, anonymizeExpiredLeads } from "./privacy";
+export {
+  applyAdReviewSync,
+  type AdReviewStateValue,
+  type AdReviewSyncInput,
+  type AdReviewSyncItemInput,
+  type AdReviewSyncResult,
+} from "./ad-review";

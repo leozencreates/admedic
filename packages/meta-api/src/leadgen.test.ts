@@ -4,9 +4,12 @@ import { loadEnv } from "@admedic/config";
 import {
   getLeadgenData,
   getLeadgenDataMock,
+  LEADGEN_FIELDS,
   normalizeLeadgenFields,
+  parseDisclaimerResponses,
   parseLeadgenResponse,
 } from "./leadgen";
+import { LEAD_FORM_CONSENT_KEY } from "./publish";
 import { MetaGraphError } from "./http";
 
 function fakeResponse(bodyObj: unknown, ok: boolean, status: number): Response {
@@ -133,6 +136,35 @@ describe("leadgen yardımcısı", () => {
     } finally {
       loadEnv({ fresh: true });
     }
+  });
+
+  it("onay kutusu yanıtları custom_disclaimer_responses'tan okunur (is_checked \"1\" → işaretli)", () => {
+    expect(LEADGEN_FIELDS.split(",")).toContain("custom_disclaimer_responses");
+    const parsed = parseLeadgenResponse(
+      {
+        id: "lg_9",
+        field_data: [],
+        custom_disclaimer_responses: [
+          { checkbox_key: "kvkk_consent", is_checked: "1" },
+          { checkbox_key: "optional_2", is_checked: "" },
+          { checkbox_key: "", is_checked: "1" },
+          { is_checked: "1" },
+        ],
+      },
+      "lg_9",
+    );
+    expect(parsed.disclaimerResponses).toEqual([
+      { key: "kvkk_consent", checked: true },
+      { key: "optional_2", checked: false },
+    ]);
+    // Alan yoksa (formda kutu yok) boş dizi; bozuk değer güvenle yok sayılır.
+    expect(parseLeadgenResponse({ id: "x" }, "x").disclaimerResponses).toEqual([]);
+    expect(parseDisclaimerResponses("bozuk")).toEqual([]);
+    expect(parseDisclaimerResponses([{ checkbox_key: "a", is_checked: true }, { checkbox_key: "b", is_checked: "true" }])).toEqual([
+      { key: "a", checked: true },
+      { key: "b", checked: true },
+    ]);
+    expect(getLeadgenDataMock("lg_mock_consent").disclaimerResponses).toEqual([{ key: LEAD_FORM_CONSENT_KEY, checked: true }]);
   });
 
   it("getLeadgenDataMock deterministiktir ve normalize alanları doldurur", () => {

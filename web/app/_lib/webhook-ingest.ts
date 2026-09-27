@@ -16,6 +16,7 @@ import { leadLookupHash, normalizePhone } from "./lead-hash";
 import { sendWhatsAppMessage, normalizeTemplateName } from "./whatsapp";
 import { resolveWhatsAppTransport } from "./whatsapp-tenant";
 import { sendMessengerMessage } from "./messenger";
+import { recordInstantFormConsent } from "./lead-consent";
 
 /**
  * Meta webhook alımı (Lead Ads, Messenger, Instagram DM, WhatsApp Cloud API).
@@ -34,7 +35,7 @@ import { sendMessengerMessage } from "./messenger";
 export const WEBHOOK_LLM_TIMEOUT_MS = 20_000;
 /** Toplu teslimatlarda LLM çağrılarının webhook'u 60 sn üzerine taşımaması için istek bütçesi. */
 const REQUEST_LLM_BUDGET_MS = 40_000;
-const GUEST_NAME = "Konuk";
+export const GUEST_NAME = "Konuk";
 
 // ------------------------------------------------ Env yardımcıları ------------------------------------------------
 
@@ -375,7 +376,7 @@ async function generateAIGreeting(language: string, ctx: IngestContext): Promise
 
 type Platform = "messenger" | "instagram" | "whatsapp" | "lead_ads";
 
-interface TenantContext {
+export interface TenantContext {
   connectionId: string;
   orgId: string;
   workspaceId: string;
@@ -388,6 +389,8 @@ interface IngestContext {
   llmDeadline: number;
   tenants: Map<string, TenantContext | null>;
   languages: Map<string, string>;
+  /** Bu teslimatta lead alanları Graph'tan sorunsuz çekilen kuruluşlar (bekleyen çekimler yeniden denenir). */
+  healthyLeadOrgs: Set<string>;
 }
 
 const ROUTABLE_STATUSES: Prisma.MetaConnectionWhereInput["status"] = { in: ["CONNECTED", "DEGRADED"] };
@@ -488,11 +491,11 @@ function isUniqueViolation(error: unknown, column?: string): boolean {
 }
 
 /** Transaction ömürlü danışma kilidi: `$queryRaw` void döndüremediği için `$executeRaw` kullanılır. */
-async function lockLeadIdentity(tx: Prisma.TransactionClient, orgId: string, hash: string): Promise<void> {
+export async function lockLeadIdentity(tx: Prisma.TransactionClient, orgId: string, hash: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${hash}))`;
 }
 
-function safeEncrypt(value: string | null | undefined): string | null {
+export function safeEncrypt(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     return encrypt(value);
@@ -631,7 +634,7 @@ async function finalizeOutgoing(
 
 // ------------------------------------------------ Karşılama gönderimi ------------------------------------------------
 
-interface GreetingTarget {
+export interface GreetingTarget {
   tenant: TenantContext;
   leadId: string;
   conversationId: string;
@@ -683,7 +686,7 @@ async function sendConversationGreeting(ctx: IngestContext, target: GreetingTarg
 }
 
 /** Lead Ads: pencere dışı olduğumuz için yalnızca onaylı şablonla karşılama; şablon yoksa bekletilir. */
-async function sendLeadAdGreeting(target: GreetingTarget): Promise<void> {
+export async function sendLeadAdGreeting(target: GreetingTarget): Promise<void> {
   const template = resolveGreetingTemplate();
   if (!template || !target.phone) return; // pendingGreeting lead metadata'sında zaten true
   const messageId = await claimGreeting(target.conversationId, "WHATSAPP");
@@ -719,11 +722,47 @@ type LeadgenValue = z.infer<typeof LeadgenValueSchema>;
 
 const PERMANENT_GRAPH_ERRORS = new Set([100, 102, 104, 190, 200, 10]);
 
+export interface LeadgenFetchResult {
+  data: MetaLeadgenData | null;
+  dataSource: "webhook" | "mock" | "graph";
+  fetchError: string | null;
+}
+
+/**
+ * Lead alanlarını sayfa token'ıyla Graph'tan çeker (mock modda sahte veri). Token yoksa veya kalıcı Graph hatası
+ * (token/izin/erişim) varsa `data: null` + `fetchError` döner; geçici hata (ağ, rate limit, 5xx) fırlatılır.
+ * Webhook alımı ve bekleyen çekimlerin yeniden denemesi (`lead-refetch.ts`) aynı kuralı kullanır.
+ */
+export async function fetchLeadgenForToken(
+  tokenCiphertext: string | null,
+  leadgenId: string,
+  webhook: { formId?: string | null } = {},
+): Promise<LeadgenFetchResult> {
+  if (loadEnv().META_MOCK_MODE) {
+    const mock = getLeadgenDataMock(leadgenId);
+    // Webhook'un taşıdığı form kimliği korunur (mock modda rıza eşlemesi gerçek akıştaki gibi çalışır).
+    return { data: { ...mock, formId: webhook.formId ?? mock.formId }, dataSource: "mock", fetchError: null };
+  }
+  const token = tryDecryptField(tokenCiphertext);
+  if (!token)
+    return {
+      data: null,
+      dataSource: "graph",
+      fetchError: "Sayfa erişim token'ı yok ya da çözülemedi; lead alanları Graph'tan çekilemedi.",
+    };
+  try {
+    return { data: await getLeadgenData(leadgenId, token), dataSource: "graph", fetchError: null };
+  } catch (error) {
+    if (error instanceof MetaGraphError && error.detail.code !== undefined && PERMANENT_GRAPH_ERRORS.has(error.detail.code)) {
+      return { data: null, dataSource: "graph", fetchError: error.message.slice(0, 300) };
+    }
+    // Geçici hata (ağ, rate limit, 5xx): çağıran yeniden dener (webhook'ta 5xx → Meta yeniden gönderir).
+    throw error;
+  }
+}
+
 /** Lead verisini çözer: webhook içi field_data > mock > Graph. Kalıcı token hatası → null (stub lead). */
-async function resolveLeadgenData(
-  tenant: TenantContext,
-  value: LeadgenValue,
-): Promise<{ data: MetaLeadgenData | null; dataSource: "webhook" | "mock" | "graph"; fetchError: string | null }> {
+async function resolveLeadgenData(tenant: TenantContext, value: LeadgenValue): Promise<LeadgenFetchResult> {
   if (value.field_data && value.field_data.length > 0) {
     const fieldData = value.field_data.map((f) => ({ name: f.name, values: f.values }));
     return {
@@ -740,28 +779,61 @@ async function resolveLeadgenData(
         platform: null,
         fieldData,
         normalized: normalizeLeadgenFields(fieldData),
+        // Webhook içi veri onay kutusu yanıtlarını taşımaz.
+        disclaimerResponses: null,
       },
     };
   }
-  if (loadEnv().META_MOCK_MODE) {
-    return { data: getLeadgenDataMock(value.leadgen_id), dataSource: "mock", fetchError: null };
-  }
-  const token = tryDecryptField(tenant.tokenCiphertext);
-  if (!token)
-    return {
-      data: null,
-      dataSource: "graph",
-      fetchError: "Sayfa erişim token'ı yok ya da çözülemedi; lead alanları Graph'tan çekilemedi.",
-    };
-  try {
-    return { data: await getLeadgenData(value.leadgen_id, token), dataSource: "graph", fetchError: null };
-  } catch (error) {
-    if (error instanceof MetaGraphError && error.detail.code !== undefined && PERMANENT_GRAPH_ERRORS.has(error.detail.code)) {
-      return { data: null, dataSource: "graph", fetchError: error.message.slice(0, 300) };
-    }
-    // Geçici hata (ağ, rate limit, 5xx): 5xx dönülür, Meta yeniden dener.
-    throw error;
-  }
+  return fetchLeadgenForToken(tenant.tokenCiphertext, value.leadgen_id, { formId: value.form_id ?? null });
+}
+
+const EMPTY_NORMALIZED: NormalizedLeadFields = {
+  email: null,
+  phone: null,
+  fullName: null,
+  firstName: null,
+  lastName: null,
+  country: null,
+  city: null,
+  answers: {},
+};
+
+export interface LeadProfile {
+  first: string;
+  last: string;
+  phone: string | null;
+  email: string | null;
+  country: string | null;
+  /** Yanıttan/telefondan/ülkeden çıkarılamazsa `fallbackLanguage`. */
+  language: string;
+  city: string | null;
+  answers: Record<string, string>;
+  interestedService: string | null;
+}
+
+/** Meta form yanıtından lead profili: ad, iletişim, ülke, dil (yanıt > telefon öneki > ülke > yedek), hizmet. */
+export function leadProfileFromLeadgen(normalized: NormalizedLeadFields | null | undefined, fallbackLanguage: string): LeadProfile {
+  const n = normalized ?? EMPTY_NORMALIZED;
+  const fromPhone = inferFromPhone(n.phone);
+  const country = normalizeCountry(n.country) ?? fromPhone?.country ?? null;
+  const language =
+    asGreetingLang(n.answers.language) ?? fromPhone?.language ?? languageForCountry(country) ?? fallbackLanguage;
+  const answers = { ...n.answers };
+  delete answers.language;
+  const name = n.firstName
+    ? { first: n.firstName.slice(0, 80), last: (n.lastName ?? "").slice(0, 120) }
+    : splitName(n.fullName);
+  return {
+    first: name.first || GUEST_NAME,
+    last: name.last,
+    phone: n.phone,
+    email: n.email,
+    country,
+    language,
+    city: n.city,
+    answers,
+    interestedService: inferInterestedService(answers),
+  };
 }
 
 async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: LeadgenValue): Promise<Outcome> {
@@ -773,34 +845,16 @@ async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: L
   if (already) return "duplicate";
 
   const resolved = await resolveLeadgenData(tenant, value);
-  const normalized: NormalizedLeadFields = resolved.data?.normalized ?? {
-    email: null,
-    phone: null,
-    fullName: null,
-    firstName: null,
-    lastName: null,
-    country: null,
-    city: null,
-    answers: {},
-  };
-  const phone = normalized.phone;
-  const email = normalized.email;
+  if (resolved.data && resolved.dataSource !== "webhook") ctx.healthyLeadOrgs.add(tenant.orgId);
+  const profile = leadProfileFromLeadgen(resolved.data?.normalized, await tenantDefaultLanguage(ctx, tenant.workspaceId));
+  const { phone, email, country, language, answers } = profile;
   const hash = leadLookupHash({ orgId: tenant.orgId, phone, email });
-  const fromPhone = inferFromPhone(phone);
-  const country = normalizeCountry(normalized.country) ?? fromPhone?.country ?? null;
-  const language =
-    asGreetingLang(normalized.answers.language) ??
-    fromPhone?.language ??
-    languageForCountry(country) ??
-    (await tenantDefaultLanguage(ctx, tenant.workspaceId));
-  const answers = { ...normalized.answers };
-  delete answers.language;
-  const name = normalized.firstName
-    ? { first: normalized.firstName.slice(0, 80), last: (normalized.lastName ?? "").slice(0, 120) }
-    : splitName(normalized.fullName);
   const adId = resolved.data?.adId ?? value.ad_id ?? value.adgroup_id ?? null;
   const adSetId = resolved.data?.adsetId ?? value.adset_id ?? null;
   const campaignId = resolved.data?.campaignId ?? value.campaign_id ?? null;
+  const formId = resolved.data?.formId ?? value.form_id ?? null;
+  const createdTime =
+    resolved.data?.createdTime ?? (value.created_time !== undefined ? String(value.created_time) : null);
 
   const created = await prisma
     .$transaction(async (tx) => {
@@ -819,14 +873,14 @@ async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: L
           data: {
             workspaceId: tenant.workspaceId,
             organizationId: tenant.orgId,
-            firstName: name.first || GUEST_NAME,
-            lastName: name.last,
+            firstName: profile.first,
+            lastName: profile.last,
             email: safeEncrypt(email),
             phone: safeEncrypt(phone),
             country,
             language,
             channel: "LEAD_AD",
-            interestedService: inferInterestedService(answers),
+            interestedService: profile.interestedService,
             campaignId,
             adSetId,
             adId,
@@ -838,19 +892,22 @@ async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: L
               source: "lead_ads",
               leadgen_id: leadgenId,
               page_id: value.page_id ?? tenant.sourceId,
-              form_id: resolved.data?.formId ?? value.form_id ?? null,
+              form_id: formId,
               form_name: value.form_name ?? null,
               ad_id: adId,
               adgroup_id: value.adgroup_id ?? null,
               adset_id: adSetId,
               campaign_id: campaignId,
-              created_time: resolved.data?.createdTime ?? (value.created_time !== undefined ? String(value.created_time) : null),
+              created_time: createdTime,
               platform: resolved.data?.platform ?? null,
               is_organic: resolved.data?.isOrganic ?? null,
-              city: normalized.city,
+              city: profile.city,
               answers,
+              disclaimer_responses: resolved.data?.disclaimerResponses ?? null,
               data_source: resolved.dataSource,
-              ...(resolved.fetchError ? { pendingFetch: true, fetchError: resolved.fetchError } : {}),
+              ...(resolved.fetchError
+                ? { pendingFetch: true, fetchError: resolved.fetchError, fetchAttempts: 1, lastFetchAttemptAt: new Date().toISOString() }
+                : {}),
               pendingGreeting: true,
             }),
           },
@@ -860,6 +917,16 @@ async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: L
         if (isUniqueViolation(error, "leadgenId")) throw new DuplicateEventError();
         throw error;
       }
+      // Instant Form rıza kutusu → ConsentRecord (Admedic'in kurduğu formlarda; ADR-0015).
+      const consent = await recordInstantFormConsent(tx, {
+        orgId: tenant.orgId,
+        workspaceId: tenant.workspaceId,
+        leadId: lead.id,
+        leadgenId,
+        formId,
+        responses: resolved.data?.disclaimerResponses ?? null,
+        submittedAt: createdTime,
+      });
       await tx.auditLog.create({
         data: {
           orgId: tenant.orgId,
@@ -868,7 +935,12 @@ async function ingestLeadgen(ctx: IngestContext, tenant: TenantContext, value: L
           action: "LEAD_INGESTED",
           entityType: "LEAD",
           entityId: lead.id,
-          after: json({ source: "lead_ads", leadgen_id: leadgenId, data_source: resolved.dataSource }),
+          after: json({
+            source: "lead_ads",
+            leadgen_id: leadgenId,
+            data_source: resolved.dataSource,
+            consent: { status: consent.status, reason: consent.reason, basis: consent.basis ?? null },
+          }),
         },
       });
       if (primary) {
@@ -1264,7 +1336,18 @@ async function processWhatsAppEntry(
  * Doğrulanmış (imzası geçerli) ham gövdeyi işler. Bilinmeyen biçim ve geçersiz
  * JSON 200 `{ ignored: true }` ile karşılanır ki Meta gereksiz yeniden deneme yapmasın.
  */
-export async function ingestMetaWebhook(rawBody: string): Promise<WebhookIngestSummary | WebhookIgnoredSummary> {
+export interface IngestOptions {
+  /**
+   * Doldurulursa: lead alanları bu teslimatta Graph'tan (veya mock) sorunsuz çekilen kuruluşlar. Webhook ucu
+   * bunları yanıttan sonra bekleyen (`pendingFetch`) lead'lerin yeniden denemesi için kullanır.
+   */
+  healthyLeadOrgs?: Set<string>;
+}
+
+export async function ingestMetaWebhook(
+  rawBody: string,
+  options: IngestOptions = {},
+): Promise<WebhookIngestSummary | WebhookIgnoredSummary> {
   let input: unknown;
   try {
     input = JSON.parse(rawBody);
@@ -1275,6 +1358,7 @@ export async function ingestMetaWebhook(rawBody: string): Promise<WebhookIngestS
     llmDeadline: Date.now() + REQUEST_LLM_BUDGET_MS,
     tenants: new Map(),
     languages: new Map(),
+    healthyLeadOrgs: options.healthyLeadOrgs ?? new Set(),
   };
   const summary: WebhookIngestSummary = { received: true, processed: 0, duplicates: 0, ignored: 0, ignoredPages: 0 };
 

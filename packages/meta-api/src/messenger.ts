@@ -1,10 +1,12 @@
 import { loadEnv } from "@admedic/config";
 import { getGraphVersion } from "./http";
+import { appSecretProof } from "./secret-proof";
 
 /**
  * Messenger / Instagram DM giden metin mesajı (Meta Send API) — worker gibi Prisma'sız
  * ortamlar için saf taşıyıcı: sayfa token'ı ve hedef kimliği çağıran çözer.
  * `POST https://graph.facebook.com/{version}/{targetId}/messages`
+ * Token yalnızca Authorization başlığında, `appsecret_proof` (secret varsa) sorgu parametresinde taşınır.
  * `META_MOCK_MODE=true` iken hiçbir dış istek yapılmaz.
  */
 
@@ -22,6 +24,8 @@ export interface MessengerTextInput {
   /** 24 saat penceresi dışında `MESSAGE_TAG` + `HUMAN_AGENT`. */
   humanAgent?: boolean;
   fetchFn?: typeof fetch;
+  /** `appsecret_proof` için secret (varsayılan: META_APP_SECRET; boş dize kanıtı kapatır). */
+  appSecret?: string;
 }
 
 export interface MessengerTextResult {
@@ -74,9 +78,13 @@ export async function sendMessengerText(input: MessengerTextInput): Promise<Mess
     message: { text: input.text },
   };
   const fetchFn = input.fetchFn ?? fetch;
+  const url = new URL(`https://graph.facebook.com/${version}/${encodeURIComponent(input.targetId ?? "me")}/messages`);
+  // Sayfa token'ı bu uygulamanın OAuth bağlantısından türer; kanıt "Require App Secret" için gerekir.
+  const proof = appSecretProof(input.token, input.appSecret);
+  if (proof) url.searchParams.set("appsecret_proof", proof);
   try {
     const response = await fetchFn(
-      `https://graph.facebook.com/${version}/${encodeURIComponent(input.targetId ?? "me")}/messages`,
+      url.toString(),
       {
         method: "POST",
         headers: { Authorization: `Bearer ${input.token}`, "Content-Type": "application/json" },

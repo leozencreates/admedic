@@ -58,19 +58,32 @@ export interface MetaAd {
   creative?: unknown;
 }
 
+/** Reklamın teslimat sorunu (`issues_info[]`). */
+export interface MetaAdIssue {
+  code: number | null;
+  summary: string | null;
+  message: string | null;
+  level: string | null;
+}
+
 /**
- * Ad inceleme durumu (spec 3.5: Meta red gerekçeleri).
- * Kaynak: developers.facebook.com/docs/marketing-api/reference/adgroup-review-feedback
- * ve effective_status / field guidance (2026-09-24 kontrol edildi).
+ * Ad inceleme durumu (spec 3.5: Meta red gerekçeleri). Reklam alanı `ad_review_feedback`
+ * (AdgroupReviewFeedback: `global`, `placement_specific`); kampanya nesnesinde inceleme geri bildirimi yoktur.
+ * Kaynak: developers.facebook.com/docs/marketing-api/reference/adgroup (effective_status enum'u) ve
+ * /reference/adgroup-review-feedback (2026-09-27 kontrol edildi; bkz. docs/meta-constraints.md).
  */
 export interface MetaAdReview {
   id: string;
+  name?: string;
+  adsetId?: string;
   effectiveStatus?: string;
   configuredStatus?: string;
-  /** review_feedback.global: { "key": "description" } — platformlar arası red nedenleri. */
+  /** ad_review_feedback.global: { "key": "description" } — platformlar arası red nedenleri. */
   reviewFeedbackGlobal?: Record<string, string>;
-  /** review_feedback.placement_specific: { placement: { "key": "description" } }. */
+  /** ad_review_feedback.placement_specific: { placement: { "key": "description" } }. */
   reviewFeedbackPlacements?: Record<string, Record<string, string>>;
+  /** issues_info: teslimatı etkileyen sorunlar (WITH_ISSUES). */
+  issues?: MetaAdIssue[];
 }
 
 export interface MetaAdReviewResult {
@@ -230,8 +243,6 @@ export interface MetaCreateCampaignResult {
   success: boolean;
   campaignId: string;
   metaResponse?: unknown;
-  reviewFeedbackGlobal?: Record<string, string>;
-  reviewFeedbackPlacements?: Record<string, Record<string, string>>;
 }
 
 export interface UpdateOrigin {
@@ -277,4 +288,9 @@ export interface MetaClientOptions {
   version?: string;
   /** Gerçek isteklerde kullanılacak HTTP taşıyıcı (test için enjekte edilebilir). */
   fetchFn?: typeof fetch;
+  /**
+   * Uygulama gizli anahtarı: verilirse her çağrıya `appsecret_proof` eklenir ("Require App Secret").
+   * `createMetaClient` bunu `META_APP_SECRET`'tan geçirir; doğrudan kurulumda verilmezse kanıt gönderilmez.
+   */
+  appSecret?: string;
 }

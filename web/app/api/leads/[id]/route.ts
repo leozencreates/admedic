@@ -57,11 +57,40 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
     if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    const consents = await prisma.consentRecord.findMany({
+      where: { leadId: lead.id, workspaceId: actor.workspaceId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true, type: true, status: true, source: true, consentText: true,
+        acceptedAt: true, withdrawnAt: true, createdAt: true, evidence: true,
+      },
+    });
+    const meta = asRecord(lead.metadata);
     return { lead: {
       ...lead,
       ...presentContact(actor.role, { email: lead.email, phone: lead.phone }),
       metadata: sanitizeMetadata(lead.metadata),
       lookupHash: undefined,
+      // Alanları Meta'dan çekilemeyen Lead Ads lead'i (ADR-0015): panel "yeniden çek" gösterir.
+      pendingFetch: meta.pendingFetch === true
+        ? { error: typeof meta.fetchError === "string" ? meta.fetchError : null, attempts: typeof meta.fetchAttempts === "number" ? meta.fetchAttempts : 1 }
+        : null,
+      consents: consents.map((c) => {
+        const evidence = asRecord(c.evidence);
+        return {
+          id: c.id,
+          type: c.type,
+          status: c.status,
+          source: c.source,
+          consentText: c.consentText,
+          acceptedAt: c.acceptedAt,
+          withdrawnAt: c.withdrawnAt,
+          createdAt: c.createdAt,
+          basis: typeof evidence.basis === "string" ? evidence.basis : null,
+          formLanguage: typeof evidence.language === "string" ? evidence.language : null,
+        };
+      }),
     } };
   });
 }
@@ -152,6 +181,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
               acceptedAt: new Date(),
               ip: null,
               userAgent: null,
+              // Panelden kaydedilen rıza: kişinin rızasını beyan eden kullanıcı kanıtta tutulur.
+              source: "PANEL",
+              evidence: { recordedBy: actor.userId },
             },
           });
         }

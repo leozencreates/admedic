@@ -13,6 +13,9 @@ export default function LeadsPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [pendingFetch, setPendingFetch] = useState(0);
+  const [refetching, setRefetching] = useState(false);
+  const [notice, setNotice] = useState("");
 
   async function load() {
     setLoading(true);
@@ -24,6 +27,32 @@ export default function LeadsPage() {
       setError(e instanceof Error ? e.message : "Leadler yüklenemedi.");
     } finally {
       setLoading(false);
+    }
+    try {
+      const pending = await api<{ pending: number }>("/api/leads/refetch");
+      setPendingFetch(pending.pending);
+    } catch {
+      setPendingFetch(0);
+    }
+  }
+
+  async function refetchAll() {
+    setRefetching(true);
+    setNotice("");
+    setError("");
+    try {
+      const result = await api<{ recovered: number; failed: number; remaining: number }>("/api/leads/refetch", "POST", {});
+      setNotice(
+        `Meta'dan yeniden çekildi: ${result.recovered} lead tamamlandı` +
+          (result.failed ? `, ${result.failed} lead hâlâ çekilemiyor (Meta bağlantısı / lead izni)` : "") +
+          (result.remaining ? ` · bekleyen: ${result.remaining}` : "") +
+          ".",
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Yeniden çekme başarısız.");
+    } finally {
+      setRefetching(false);
     }
   }
 
@@ -78,6 +107,22 @@ export default function LeadsPage() {
         </label>
         <LanguageSwitcher />
       </div>
+
+      {pendingFetch > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="status">
+          <span>
+            {pendingFetch} Instant Form lead'inin yanıtları Meta'dan çekilemedi (ad, iletişim ve form yanıtları eksik).
+          </span>
+          <button className="secondary-button" disabled={refetching} onClick={() => void refetchAll()}>
+            {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
+          </button>
+        </div>
+      )}
+      {notice && (
+        <p role="status" className="text-sm text-violet-700">
+          {notice}
+        </p>
+      )}
 
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">

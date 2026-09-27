@@ -20,6 +20,7 @@ import type {
   MetaInsightOptions,
   MetaInsightRow,
   MetaUpdateResult,
+  MetaAdReview,
   MetaAdReviewResult,
   SetStatusInput,
   UpdateBudgetInput,
@@ -38,7 +39,8 @@ export type MockMetaOperation =
   | "createLeadForm"
   | "uploadAdImage"
   | "setStatus"
-  | "updateBudget";
+  | "updateBudget"
+  | "getAdReviews";
 
 const pendingFailures = new Map<MockMetaOperation, number>();
 
@@ -81,6 +83,24 @@ function parseJsonField(body: GraphBody, field: string): Record<string, unknown>
 
 function mockId(prefix: string, seed: string): string {
   return `${prefix}_${(seedFromString(seed) % 900_000) + 100_000}`;
+}
+
+/**
+ * Mock reklam incelemesi (durumsuz, kimliğe göre): kimliğinde "rejected" geçen reklam DISAPPROVED,
+ * "pending" geçen PENDING_REVIEW, diğerleri ACTIVE.
+ */
+function mockAdReview(adId: string): MetaAdReview {
+  if (/rejected/i.test(adId))
+    return {
+      id: adId,
+      effectiveStatus: "DISAPPROVED",
+      configuredStatus: "ACTIVE",
+      reviewFeedbackGlobal: { personal_health: "İçerik sağlık iddiaları içeriyor." },
+      reviewFeedbackPlacements: {},
+    };
+  if (/pending/i.test(adId))
+    return { id: adId, effectiveStatus: "PENDING_REVIEW", configuredStatus: "ACTIVE", reviewFeedbackGlobal: {}, reviewFeedbackPlacements: {} };
+  return { id: adId, effectiveStatus: "ACTIVE", configuredStatus: "ACTIVE", reviewFeedbackGlobal: {}, reviewFeedbackPlacements: {} };
 }
 
 /** Mock locale kataloğu (gerçek anahtarlar yerine sabit, belirleyici değerler; "(All)" yalnızca İngilizce/Fransızca'da). */
@@ -327,28 +347,12 @@ export class MockMetaClient {
     adId: string,
     _token: string,
   ): Promise<MetaAdReviewResult> {
-    if (adId === "ad_mock_rejected") {
-      return {
-        review: {
-          id: adId,
-          effectiveStatus: "DISAPPROVED",
-          configuredStatus: "ACTIVE",
-          reviewFeedbackGlobal: {
-            personal_health: "İçerik sağlık iddiaları içeriyor.",
-          },
-        },
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-    return {
-      review: {
-        id: adId,
-        effectiveStatus: "ACTIVE",
-        configuredStatus: "ACTIVE",
-        reviewFeedbackGlobal: {},
-      },
-      fetchedAt: new Date().toISOString(),
-    };
+    return { review: mockAdReview(adId), fetchedAt: new Date().toISOString() };
+  }
+
+  async getAdReviews(adIds: string[], _token: string): Promise<MetaAdReview[]> {
+    consumeMockFailure("getAdReviews");
+    return Array.from(new Set(adIds)).map(mockAdReview);
   }
 
   async getInsights(
@@ -419,7 +423,6 @@ export class MockMetaClient {
     const objective = toMetaObjective(input.objective);
     consumeMockFailure("createCampaign");
     const id = `cmp_mock_pub_${(seedFromString(input.name) % 9000) + 1000}`;
-    const isRejected = input.name.toLowerCase().includes("rejected");
     const sendBudget =
       input.dailyBudgetCents !== undefined &&
       input.dailyBudgetCents > 0 &&
@@ -437,8 +440,6 @@ export class MockMetaClient {
           ? { daily_budget: Math.round(input.dailyBudgetCents!), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }
           : { is_adset_budget_sharing_enabled: false }),
       },
-      reviewFeedbackGlobal: isRejected ? { personal_health: "İçerik sağlık iddiaları içeriyor." } : {},
-      reviewFeedbackPlacements: {},
     };
   }
 
@@ -474,7 +475,9 @@ export class MockMetaClient {
     if (!body.adset_id) invalidParam("adset_id gerekli");
     if (!parseJsonField(body, "creative").creative_id) invalidParam("creative.creative_id gerekli");
     consumeMockFailure("createAd");
-    const id = mockId("ad_mock_pub", `${accountId}:${String(body.adset_id)}:${String(body.name)}`);
+    // Adında "rejected"/"pending" geçen reklam, mock incelemede reddedilmiş/incelemede görünür (testler için).
+    const tag = /rejected/i.test(String(body.name)) ? "_rejected" : /pending/i.test(String(body.name)) ? "_pending" : "";
+    const id = mockId(`ad_mock_pub${tag}`, `${accountId}:${String(body.adset_id)}:${String(body.name)}`);
     return { id, metaResponse: { id, success: true } };
   }
 

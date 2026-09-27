@@ -1,6 +1,7 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-27 (tam PAUSED yayın + harcama yetkisi turu, ADR-0014). Bu dosya `docs/spec.md` ile kod
+Son güncelleme: 2026-09-27 (tam PAUSED yayın + harcama yetkisi, ADR-0014; Instant Form rızası, bekleyen lead
+çekimi, reklam düzeyi inceleme ve appsecret_proof, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
 ADR'ler yeterli). Her maddede öncelik (P0/P1/P2), ilgili spec bölümü ve önerilen yaklaşım vardır.
 
@@ -30,7 +31,13 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
      üyelere Owner yetki verir (ADMIN rolü artık tek başına yetkili değil).
    - Meta bağlantısını yeniden yetkilendirin: OAuth kapsamına `pages_manage_ads` eklendi (Instant Form).
    - Birden fazla Facebook Sayfası bağlıysa reklam hesabı bağlantısına yayın sayfasının kimliği (Sayfa ID) girilmeli.
-5. **Güvenlik:** web testlerindeki sabit `ENCRYPTION_KEY` fixture'ı yerel `.env` anahtarıyla aynıydı ve git
+5. **2026-09-27 ikinci tur:** yeni migration `20260927150000_lead_consent_and_ad_review` (toplam 23) —
+   `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy` (veya `scripts\dev-up.cmd`).
+   Meta uygulama panelinde **Require App Secret** açılabilir (tüm sunucu çağrıları artık `appsecret_proof` gönderir);
+   açtıktan sonra bağlantı yenileme, insights senkronu, yayın ve lead çekimi canlı denenmeli. Bu turdan önce
+   yayınlanmış Instant Form'lar için `LeadForm` kaydı yoktur: o formlardan gelen lead'lere rıza kaydı yazılmaz
+   (formu yeniden yayınlamak gerekir).
+6. **Güvenlik:** web testlerindeki sabit `ENCRYPTION_KEY` fixture'ı yerel `.env` anahtarıyla aynıydı ve git
    geçmişinde herkese açık. Testler artık rastgele anahtar üretiyor; yerel `ENCRYPTION_KEY` yenilenmeli
    (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) — şifreli token/iletişim alanları
    eski anahtarla okunamayacağı için `pnpm db:seed` ile yeniden tohumlayın ve Meta bağlantısını yeniden kurun.
@@ -88,13 +95,16 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
   kuruldu ve mock'ta uçtan uca test edildi; gerçek hesapta ODAX (`OUTCOME_LEADS` + ON_AD, WhatsApp + CONVERSATIONS,
   Sales + WEBSITE + LINK_CLICKS / piksel gereksinimi), lead formu locale değerleri, adlocale adları ve Meta'nın
   ad set başına asgari günlük bütçesi doğrulanmalı (`docs/meta-constraints.md`, 2026-09-27). `appsecret_proof`
-  Marketing istemcisinde yok (P0, canlıya geçmeden).
+  artık tüm sunucu çağrılarında (ortam düzeyi WhatsApp token'ı hariç); "Require App Secret" açıkken canlı
+  doğrulanmalı (ADR-0015).
 - Yalnızca tek görselli reklam: video, carousel ve format uyarlama (1:1/4:5/9:16) yok; görsel başına tek kreatif.
 - Sayfa seçimi arayüzü yok: birden fazla sayfada reklam hesabı bağlantısına Sayfa ID elle girilir. WhatsApp
   reklamında sayfanın WhatsApp numarasına bağlı olduğu denetlenmiyor (Meta hatası yayın adımında görünür).
 - Yayınlanan içerik değiştirilemez: yeni metin/görsel için kampanya arşivlenip yeniden oluşturulur (Meta'da
-  kreatif güncelleme akışı yok). Meta ad set/reklam red durumları (`effective_status`, `ad_review_feedback`)
-  reklam düzeyinde senkronlanmıyor (yalnızca kampanya `review-sync`).
+  kreatif güncelleme akışı yok); reddedilen reklam için "düzelt ve yeniden gönder" akışı da yok.
+- Reklam incelemesi yalnızca Admedic'in yayınladığı (yerelde `Ad.metaAdId` olan) reklamlarda senkronlanır; Ads
+  Manager'da kurulup senkronlanan kampanyaların reklamları yerele alınmadığı için incelenmez. WITH_ISSUES için
+  uyarı üretilmez (panelde görünür); ad set düzeyi sorunlar (`issues_info`) okunmuyor.
 - Aylık üst sınır kur çevrimi yapmaz (yalnızca aynı para birimli hesaplar toplanır); Meta'dan senkronlanan
   ABO kampanyanın bütçesi yalnızca ilk içe aktarmada ad set toplamından yazılır (sonraki değişiklikler için
   ad set senkronu gerekir).
@@ -111,23 +121,26 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 - Veri modeli: `CreativeVariant`, `PolicyCheck`, `Approval` tabloları yok (JSON sütunlarında). Onaylı
   stüdyo taslakları artık kampanyaya değişmez kopya olarak bağlanıyor (`Campaign.content`, `Ad.creative.key`
   = taslak:varyant); `/api/creative` ile üretilen `Creative` kayıtları ise kampanyaya bağlanamıyor (`Ad.creativeId` boş).
-- Meta red gerekçeleri tek `Campaign.metaRejectionReason` alanında; append-only tablo + kural
-  iyileştirme raporu ve worker'da zamanlanmış `review-sync` (ad bazlı) yok.
+- Meta red gerekçeleri reklam düzeyinde (`Ad.metaReviewFeedback`) ve append-only `META_AD_DISAPPROVED` denetim
+  kayıtlarında tutuluyor (ADR-0015); bunlardan kural iyileştirme raporu (hangi politika anahtarı hangi ifadeyle
+  reddedildi → `policy_rules` önerisi) üretilmiyor.
 - Politika motoru matcher kimlikleri V1 (şema enum'u); Unicode kelime sınırı değişikliği motor sürümüyle
   (`studio-policy-4`) izleniyor — ADR-0008'e not düşülmeli.
 
 ## 6. Lead CRM ve asistan (spec 3.7, 3.8) — P0/P1
 
-- **Rıza lead'den alınmıyor:** Admedic'in kurduğu Instant Form'larda zorunlu rıza kutusu var (anahtar
-  `kvkk_consent`), ancak lead çekimi `custom_disclaimer_responses` alanını istemiyor ve ConsentRecord yazmıyor;
-  bot akışında da açık rıza kaydı yok (yalnızca panelden "Rıza Ver/Geri Çek"). Öneri: leadgen alanlarına
-  `custom_disclaimer_responses` ekleyip `kvkk_consent` yanıtını ConsentRecord'a yazmak. Rıza metni Türkçe dışı
-  formlarda genel yerel metindir; dil başına kuruluş rıza metni ayarı yok.
+- **Pazarlama/ölçüm rızası formda yok:** Instant Form kutusu yalnızca "talebe yanıt ve iletişim için veri işleme"
+  onayıdır ve `DATA_PROCESSING` olarak kaydedilir (ADR-0015); CAPI için gereken pazarlama rızası hâlâ yalnızca
+  panelden ("Rıza Ver"). Öneri: formda ayrı, isteğe bağlı ikinci kutu (metni hukuki onaydan geçmeli) → `MARKETING`.
+  Bot akışında açık rıza kaydı yok. Rıza metni Türkçe dışı formlarda genel yerel metindir; dil başına kuruluş rıza
+  metni ayarı yok. Zorunlu kutunun Meta yanıtında dönüp dönmediği canlı doğrulanmalı (`docs/meta-constraints.md`).
 - WhatsApp şablon kaydı (registry) ve pencere dışı gönderimde opt-in kontrolü yok; şablon adı elle girilir.
 - `Lead.channel` serbest metin (enum değil).
 - Messenger `HUMAN_AGENT` etiketi ve Instagram mesajlaşma izinleri App Review gerektirir; canlı doğrulanmadı.
-- Lead Ads `GET /{leadgen_id}` çekimi `leads_retrieval` izni ister; token yoksa lead `pendingFetch` ile
-  saklanır ve alanlar boş kalır (yeniden deneme işi yok).
+- Lead Ads `GET /{leadgen_id}` çekimi `leads_retrieval` izni ister; çekilemeyen lead `pendingFetch` ile saklanır ve
+  OAuth dönüşünde, aynı kuruluşa sorunsuz yeni lead geldiğinde ve panelden yeniden denenir (ADR-0015). Zamanlanmış
+  (worker) yeniden deneme yok: hiç yeni lead gelmeyen ve bağlantısı yenilenmeyen kuruluşta lead panelden çekilmeli
+  (çekim mantığı web'de; worker'a taşımak için normalizasyon paylaşılan pakete alınmalı).
 - Asistan worker'ı ilk mesaj senaryosunu kapsamaz (karşılama webhook'ta); WhatsApp dışı kanallarda
   gönderim `messenger.ts` ile; SMS yok.
 - Asistan gönderimi başarısız olursa (kanal hatası) OUTGOING kayıt son mesaj olduğu için yeniden deneme

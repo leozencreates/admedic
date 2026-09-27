@@ -1,19 +1,23 @@
 import { mulberry32, seedFromString } from "@admedic/shared";
 import { getGraphVersion, rawGraph } from "./http";
+import { LEAD_FORM_CONSENT_KEY } from "./publish";
+import { appSecretProof } from "./secret-proof";
 
 /**
  * Meta Lead Ads — lead verisini çekme.
  *
  * Gerçek `leadgen` webhook'u yalnızca kimlik taşır (leadgen_id, page_id, form_id,
  * ad_id, adgroup_id, created_time); form yanıtları
- * `GET /{leadgen_id}?fields=id,created_time,field_data,ad_id,adset_id,campaign_id,form_id`
+ * `GET /{leadgen_id}?fields=id,created_time,field_data,custom_disclaimer_responses,…`
  * ile sayfa/kullanıcı token'ı üzerinden okunur (`leads_retrieval` izni gerekir).
+ * Onay kutusu yanıtları `field_data`'da DEĞİL, açıkça istenmesi gereken `custom_disclaimer_responses`
+ * alanındadır (`[{ checkbox_key, is_checked: "1" | "" }]`).
  * Kaynak: developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving
- * (2026-09-26 kontrol edildi; bkz. docs/meta-constraints.md).
+ * (2026-09-26 / 2026-09-27 kontrol edildi; bkz. docs/meta-constraints.md).
  */
 
 export const LEADGEN_FIELDS =
-  "id,created_time,field_data,ad_id,adset_id,campaign_id,form_id,is_organic,platform";
+  "id,created_time,field_data,custom_disclaimer_responses,ad_id,adset_id,campaign_id,form_id,is_organic,platform";
 
 export interface MetaLeadgenFieldData {
   name: string;
@@ -37,6 +41,14 @@ export interface NormalizedLeadFields {
   answers: Record<string, string>;
 }
 
+/** Instant Form özel onay kutusu yanıtı (`custom_disclaimer_responses[]`). */
+export interface LeadDisclaimerResponse {
+  /** Formdaki kutu anahtarı (`checkbox_key`; Admedic formlarında `LEAD_FORM_CONSENT_KEY`). */
+  key: string;
+  /** `is_checked` "1" → true; boş dize → false. */
+  checked: boolean;
+}
+
 export interface MetaLeadgenData {
   id: string;
   createdTime: string | null;
@@ -48,6 +60,11 @@ export interface MetaLeadgenData {
   platform: string | null;
   fieldData: MetaLeadgenFieldData[];
   normalized: NormalizedLeadFields;
+  /**
+   * Onay kutusu yanıtları. `null`: kaynak bu bilgiyi taşımıyor (webhook içi `field_data`);
+   * boş dizi: Graph yanıtında kutu yok.
+   */
+  disclaimerResponses: LeadDisclaimerResponse[] | null;
 }
 
 /** Standart alan adları → normalize anahtar. Kaynak: Instant Form "prefill questions". */
@@ -142,6 +159,22 @@ function optionalId(v: unknown): string | null {
   return null;
 }
 
+function isChecked(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  return typeof value === "string" && ["1", "true"].includes(value.trim().toLowerCase());
+}
+
+/** `custom_disclaimer_responses` → `{ key, checked }[]` (anahtarsız satırlar atlanır). */
+export function parseDisclaimerResponses(value: unknown): LeadDisclaimerResponse[] {
+  if (!Array.isArray(value)) return [];
+  const out: LeadDisclaimerResponse[] = [];
+  for (const row of value) {
+    if (!isRecord(row) || typeof row.checkbox_key !== "string" || !row.checkbox_key.trim()) continue;
+    out.push({ key: row.checkbox_key.trim().slice(0, 100), checked: isChecked(row.is_checked) });
+  }
+  return out.slice(0, 20);
+}
+
 /** Graph yanıtını (`GET /{leadgen_id}`) normalize eder. */
 export function parseLeadgenResponse(body: unknown, leadgenId: string): MetaLeadgenData {
   const data = isRecord(body) ? body : {};
@@ -163,17 +196,21 @@ export function parseLeadgenResponse(body: unknown, leadgenId: string): MetaLead
     platform: typeof data.platform === "string" ? data.platform : null,
     fieldData,
     normalized: normalizeLeadgenFields(fieldData),
+    disclaimerResponses: parseDisclaimerResponses(data.custom_disclaimer_responses),
   };
 }
 
 export interface LeadgenFetchOptions {
   version?: string;
   fetchFn?: typeof fetch;
+  /** `appsecret_proof` için secret (varsayılan: META_APP_SECRET; boş dize kanıtı kapatır). */
+  appSecret?: string;
 }
 
 /**
  * `GET /{version}/{leadgen_id}?fields=…` — token Authorization başlığında taşınır
- * (URL/log sızıntısı olmaz). Hatalar `MetaGraphError` olarak yükselir.
+ * (URL/log sızıntısı olmaz), `appsecret_proof` (secret varsa) sorgu parametresindedir.
+ * Hatalar `MetaGraphError` olarak yükselir.
  */
 export async function getLeadgenData(
   leadgenId: string,
@@ -185,6 +222,8 @@ export async function getLeadgenData(
     `https://graph.facebook.com/${version}/${encodeURIComponent(leadgenId)}`,
   );
   url.searchParams.set("fields", LEADGEN_FIELDS);
+  const proof = appSecretProof(token, options.appSecret);
+  if (proof) url.searchParams.set("appsecret_proof", proof);
   const res = await rawGraph(url.toString(), options.fetchFn ?? fetch, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
@@ -240,5 +279,7 @@ export function getLeadgenDataMock(leadgenId: string): MetaLeadgenData {
     platform: "fb",
     fieldData,
     normalized: normalizeLeadgenFields(fieldData),
+    // Admedic formlarının zorunlu rıza kutusu işaretli gelir (gerçek formda gönderim için zorunludur).
+    disclaimerResponses: [{ key: LEAD_FORM_CONSENT_KEY, checked: true }],
   };
 }

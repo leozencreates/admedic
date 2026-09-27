@@ -7,6 +7,7 @@ import {
   buildLeadFormBody,
   createMetaClient,
   isPublishLanguage,
+  LEAD_FORM_CONSENT_KEY,
   MetaGraphError,
   MOCK_AD_ACCOUNT_ID,
   pickLocaleKeys,
@@ -29,7 +30,7 @@ import {
   type ContentDraft,
 } from "./campaign-content";
 import { splitEvenly } from "./campaign-budget";
-import { leadFormTexts } from "./lead-form-texts";
+import { leadFormConsentSnapshot, leadFormTexts } from "./lead-form-texts";
 import { requireLiveMetaConnection, resolvePublishPage } from "./meta-connection";
 import { requireSpendAuthority } from "./spend-authority";
 import { assertWithinMonthlyCap } from "./spend-cap";
@@ -295,7 +296,6 @@ export interface PublishResult {
   status: "COMPLETE" | "IN_PROGRESS";
   metaCampaignId: string | null;
   policyWarning: string | null;
-  metaReviewStatus?: string;
   warnings: string[];
   progress: PublishProgress;
 }
@@ -396,7 +396,6 @@ export async function publishCampaign(
   let calls = 0;
   let step: PublishStep = "structure";
   let metaCampaignId = campaign.metaCampaignId;
-  let metaReviewStatus: string | undefined;
 
   const saveState = () => prisma.campaign.update({ where: { id }, data: { publishState: json(state) } });
   /** Her Meta çağrısından önce: süre dolduysa (ve bu istekte en az bir ilerleme varsa) dur. */
@@ -466,23 +465,11 @@ export async function publishCampaign(
       );
       if (!created.success || !created.campaignId) throw new HttpError(502, "Meta kampanya oluşturma işlemi başarısız.");
       const newCampaignId = created.campaignId;
-      let metaRejectionReason: Prisma.InputJsonValue | undefined;
-      if (created.reviewFeedbackGlobal && Object.keys(created.reviewFeedbackGlobal).length > 0) {
-        metaReviewStatus = "DISAPPROVED";
-        metaRejectionReason = json({
-          global: created.reviewFeedbackGlobal,
-          placement_specific: created.reviewFeedbackPlacements ?? {},
-        });
-      }
+      // Meta inceleme durumu reklam düzeyindedir; yayından sonra reklam incelemesi senkronlanır (ADR-0015).
       await recordCreated("kampanya", newCampaignId, async () => {
         const moved = await prisma.campaign.updateMany({
           where: { id, workflowStatus: "APPROVED", metaCampaignId: null },
-          data: {
-            metaCampaignId: newCampaignId,
-            syncedAt: new Date(),
-            ...(metaReviewStatus ? { metaReviewStatus } : {}),
-            ...(metaRejectionReason ? { metaRejectionReason } : {}),
-          },
+          data: { metaCampaignId: newCampaignId, syncedAt: new Date() },
         });
         if (moved.count !== 1) throw new Error("kampanya durumu değişti");
       });
@@ -504,6 +491,7 @@ export async function publishCampaign(
     if (delivery.link === "LEAD_FORM") {
       if (!page.pageToken || !org.privacyPolicyUrl)
         throw new HttpError(422, "Instant Form için sayfa token'ı ve gizlilik politikası bağlantısı gerekli.");
+      const privacyPolicyUrl = org.privacyPolicyUrl;
       for (const draft of usedDrafts) {
         if (state.leadForms[draft.draftId]) continue;
         const texts = leadFormTexts(draft.language, org.consentText);
@@ -511,14 +499,37 @@ export async function publishCampaign(
           name: `${campaign.name} — ${draft.name} (${draft.language}) #${id.slice(-6)}`,
           language: draft.language,
           customQuestions: draft.instantForm?.questions ?? [],
-          privacyPolicyUrl: org.privacyPolicyUrl,
+          privacyPolicyUrl,
           privacyLinkText: texts.privacyLink,
           consent: { title: texts.title, body: texts.body, checkboxText: texts.checkbox },
         });
         beforeMetaCall();
         const form = await meta.createLeadForm(page.pageId, body, page.pageToken);
         state.leadForms[draft.draftId] = form.id;
-        await recordCreated("lead formu", form.id, saveState);
+        // Form kimliği ve kişinin göreceği rıza metninin kopyası birlikte yazılır: gelen lead'in kutu
+        // yanıtı bu kayıtla ConsentRecord'a dönüşür (spec 3.11, ADR-0015).
+        const formRecord = {
+          orgId: actor.orgId,
+          workspaceId: actor.workspaceId,
+          campaignId: id,
+          draftId: draft.draftId,
+          pageId: page.pageId,
+          language: draft.language,
+          consentKey: LEAD_FORM_CONSENT_KEY,
+          consentRequired: true,
+          consentText: leadFormConsentSnapshot(texts, privacyPolicyUrl),
+          privacyPolicyUrl,
+        };
+        await recordCreated("lead formu", form.id, () =>
+          prisma.$transaction([
+            prisma.campaign.update({ where: { id }, data: { publishState: json(state) } }),
+            prisma.leadForm.upsert({
+              where: { metaFormId: form.id },
+              create: { metaFormId: form.id, ...formRecord },
+              update: formRecord,
+            }),
+          ]),
+        );
       }
     }
 
@@ -660,7 +671,6 @@ export async function publishCampaign(
               creatives: progress.creatives,
               leadForms: progress.leadForms,
               attempts: completed.attempts,
-              ...(metaReviewStatus ? { metaReviewStatus } : {}),
             },
           },
           tx,
@@ -672,7 +682,6 @@ export async function publishCampaign(
       status: "COMPLETE",
       metaCampaignId,
       policyWarning,
-      ...(metaReviewStatus ? { metaReviewStatus } : {}),
       warnings: readiness.warnings,
       progress,
     };
@@ -683,7 +692,6 @@ export async function publishCampaign(
         status: "IN_PROGRESS",
         metaCampaignId,
         policyWarning,
-        ...(metaReviewStatus ? { metaReviewStatus } : {}),
         warnings: readiness.warnings,
         progress: await loadProgress(id, metaCampaignId, state, campaign.content),
       };

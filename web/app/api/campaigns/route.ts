@@ -37,6 +37,31 @@ const CampaignSchema = z.object({
 
 const READINESS_STATUSES = ["DRAFT", "REJECTED", "IN_REVIEW", "APPROVED"];
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Reklam düzeyi Meta inceleme özeti (ADR-0015): durum + sorunlu reklamlar ve gerekçeleri. */
+function reviewSummary(status: string | null, checkedAt: Date | null, reason: unknown) {
+  if (!status) return null;
+  const detail = isRecord(reason) ? reason : {};
+  const summary = isRecord(detail.summary) ? detail.summary : {};
+  const ads = Array.isArray(detail.ads) ? detail.ads.filter(isRecord) : [];
+  return {
+    status,
+    checkedAt,
+    disapproved: typeof summary.disapproved === "number" ? summary.disapproved : 0,
+    withIssues: typeof summary.withIssues === "number" ? summary.withIssues : 0,
+    pending: typeof summary.pending === "number" ? summary.pending : 0,
+    total: typeof summary.total === "number" ? summary.total : null,
+    ads: ads.slice(0, 10).map((ad) => ({
+      name: typeof ad.name === "string" ? ad.name : "",
+      effectiveStatus: typeof ad.effectiveStatus === "string" ? ad.effectiveStatus : null,
+      reasons: Array.isArray(ad.reasons) ? ad.reasons.filter((r): r is string => typeof r === "string").slice(0, 5) : [],
+    })),
+  };
+}
+
 export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
@@ -78,6 +103,7 @@ export async function GET() {
           budgetCents: c.dailyBudget,
           currency: adAccount.currency,
           content: summarizeContent(content),
+          review: reviewSummary(c.metaReviewStatus, c.metaReviewCheckedAt, c.metaRejectionReason),
           readiness: readiness
             ? { ready: readiness.ready, reasons: readiness.reasons, warnings: readiness.warnings }
             : null,

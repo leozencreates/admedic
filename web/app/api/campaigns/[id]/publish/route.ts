@@ -43,7 +43,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           metaCampaignId: result.metaCampaignId,
           action: input.action,
           policyWarning: result.policyWarning,
-          ...(result.metaReviewStatus ? { metaReviewStatus: result.metaReviewStatus } : {}),
         },
         publish: { status: result.status, progress: result.progress, warnings: result.warnings },
       };

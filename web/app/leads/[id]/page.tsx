@@ -30,6 +30,46 @@ const STATUS_LABEL: Record<string, string> = {
   LOST: "Kaybedildi",
 };
 
+interface ConsentRow {
+  id: string;
+  type: string;
+  status: string;
+  source: string | null;
+  consentText: string;
+  acceptedAt: string | null;
+  withdrawnAt: string | null;
+  createdAt: string;
+  basis: string | null;
+  formLanguage: string | null;
+}
+
+interface LeadExtras {
+  lostReason?: string | null;
+  pendingFetch?: { error: string | null; attempts: number } | null;
+  consents?: ConsentRow[];
+}
+
+const CONSENT_TYPE_LABEL: Record<string, string> = {
+  MARKETING: "Pazarlama iletişimi",
+  DATA_PROCESSING: "Veri işleme ve iletişim",
+  HEALTH_QUESTIONNAIRE: "Sağlık formu",
+};
+const CONSENT_STATUS_LABEL: Record<string, string> = {
+  GRANTED: "Verildi",
+  DENIED: "Verilmedi",
+  WITHDRAWN: "Geri çekildi",
+  PENDING: "Bekliyor",
+};
+const CONSENT_SOURCE_LABEL: Record<string, string> = {
+  INSTANT_FORM: "Meta Instant Form",
+  PANEL: "Panel",
+  API: "API",
+};
+const CONSENT_BASIS_LABEL: Record<string, string> = {
+  CHECKBOX_RESPONSE: "formdaki kutu işaretli (Meta yanıtı)",
+  REQUIRED_CHECKBOX: "zorunlu kutu (form ancak işaretlenerek gönderilebilir)",
+};
+
 const FLOW: Record<string, string[]> = {
   NEW: ["CONTACTED", "LOST"],
   CONTACTED: ["QUALIFIED", "LOST"],
@@ -40,7 +80,8 @@ const FLOW: Record<string, string[]> = {
 
 export default function LeadDetailPage() {
   const { id } = useParams();
-  const [lead, setLead] = useState<(ReturnType<typeof toLead> & { lostReason?: string | null }) | null>(null);
+  const [lead, setLead] = useState<(ReturnType<typeof toLead> & LeadExtras) | null>(null);
+  const [refetching, setRefetching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,10 +95,12 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await api<{ lead: ApiLead & { lostReason?: string | null } }>(`/api/leads/${id}`);
+      const data = await api<{ lead: ApiLead & LeadExtras }>(`/api/leads/${id}`);
       setLead({
         ...toLead(data.lead),
         lostReason: data.lead.lostReason ?? null,
+        pendingFetch: data.lead.pendingFetch ?? null,
+        consents: data.lead.consents ?? [],
       });
       setConsentGiven(data.lead.consentGiven ?? false);
     } catch (e) {
@@ -102,6 +145,29 @@ export default function LeadDetailPage() {
       return;
     }
     await transitionStatus("LOST", lostReasonInput);
+  }
+
+  async function refetchFromMeta() {
+    setRefetching(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await api<{ recovered: number; failed: number; results: { status: string; message?: string }[] }>(
+        "/api/leads/refetch",
+        "POST",
+        { leadId: id },
+      );
+      if (result.recovered > 0) {
+        setNotice("Lead alanları Meta'dan çekildi.");
+        await load();
+      } else {
+        setError(result.results[0]?.message ?? "Lead alanları hâlâ çekilemiyor; Meta bağlantısını ve lead izinlerini kontrol edin.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Yeniden çekme başarısız.");
+    } finally {
+      setRefetching(false);
+    }
   }
 
   async function grantConsent() {
@@ -175,6 +241,23 @@ export default function LeadDetailPage() {
           <LanguageSwitcher />
         </div>
       </header>
+
+      {lead.pendingFetch && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="status">
+          <p className="font-semibold">Form yanıtları Meta'dan çekilemedi</p>
+          <p className="mt-1">
+            Lead kimliğiyle kaydedildi; ad, iletişim ve form yanıtları eksik.
+            {lead.pendingFetch.error ? ` Son hata: ${lead.pendingFetch.error}` : ""}
+            {` (deneme: ${lead.pendingFetch.attempts})`}
+          </p>
+          <p className="mt-1 text-xs">
+            Meta bağlantısı yenilendiğinde ve yeni lead geldiğinde otomatik yeniden denenir.
+          </p>
+          <button className="primary-button mt-3" disabled={refetching} onClick={() => void refetchFromMeta()}>
+            {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className="studio-card">
@@ -316,12 +399,12 @@ export default function LeadDetailPage() {
 
       <section className="studio-card">
         <div className="section-kicker">RIZA KAYDI</div>
-        <h2>Veri İşleme Onayı</h2>
+        <h2>Rıza ve Onaylar</h2>
         {consentGiven ? (
           <div className="mt-3 space-y-3">
             <div className="flex items-center gap-2 text-sm text-green-700">
               <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-              Pazarlama iletişimi onaylandı.
+              Pazarlama iletişimi ve Meta dönüşüm ölçümü (CAPI) onaylandı.
             </div>
             <button
               className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
@@ -334,7 +417,8 @@ export default function LeadDetailPage() {
         ) : (
           <div className="mt-3 space-y-3">
             <p className="text-sm text-slate-500">
-              Bu lead için pazarlama iletişimi onayı gerekmektedir.
+              Pazarlama iletişimi ve Meta dönüşüm ölçümü (CAPI) için ayrı onay gerekir. Instant Form rıza kutusu
+              yalnızca talebe yanıt ve iletişim için veri işleme onayıdır.
             </p>
             <button
               className="primary-button"
@@ -343,6 +427,37 @@ export default function LeadDetailPage() {
             >
               {consentBusy ? "Kaydediliyor…" : "Rıza Ver"}
             </button>
+          </div>
+        )}
+        {(lead.consents ?? []).length > 0 && (
+          <div className="mt-5 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rıza kayıtları</p>
+            <ul className="space-y-2">
+              {(lead.consents ?? []).map((c) => (
+                <li key={c.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={c.status === "GRANTED" ? "green" : c.status === "WITHDRAWN" || c.status === "DENIED" ? "red" : "gray"}>
+                      {CONSENT_STATUS_LABEL[c.status] ?? c.status}
+                    </Badge>
+                    <span className="font-medium text-slate-900">{CONSENT_TYPE_LABEL[c.type] ?? c.type}</span>
+                    <span className="text-xs text-slate-500">
+                      {CONSENT_SOURCE_LABEL[c.source ?? ""] ?? "Kaynak belirtilmemiş"}
+                      {c.formLanguage ? ` · form dili ${c.formLanguage}` : ""}
+                      {" · "}
+                      {formatDate(c.acceptedAt ?? c.createdAt)}
+                    </span>
+                  </div>
+                  {c.basis && (
+                    <p className="mt-1 text-xs text-slate-500">Dayanak: {CONSENT_BASIS_LABEL[c.basis] ?? c.basis}</p>
+                  )}
+                  {c.withdrawnAt && <p className="mt-1 text-xs text-rose-600">Geri çekilme: {formatDate(c.withdrawnAt)}</p>}
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs text-violet-600">Onaylanan metin</summary>
+                    <p className="mt-1 whitespace-pre-line text-xs text-slate-600">{c.consentText}</p>
+                  </details>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </section>

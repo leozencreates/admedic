@@ -62,6 +62,10 @@ Kural (spec §6): emin olmadığın her konuda güncel resmi dokümantasyona bak
 
 ## 2026-09-25 — Ad review durumu (spec 3.5 red raporu)
 
+> **2026-09-27 düzeltmesi:** Reklam alanının adı `ad_review_feedback`'tir (`review_feedback` değil); kampanya nesnesinde
+> inceleme geri bildirimi yoktur ve `effective_status` enum'unda `IN_REVIEW`/`PENDING_IN_REVIEW` yok, `PENDING_REVIEW`
+> ve `IN_PROCESS` var. Güncel bilgi aşağıdaki 2026-09-27 bölümündedir (ADR-0015).
+
 - Ad seviyesi inceleme: `GET /{ad-id}?fields=id,effective_status,configured_status,review_feedback`.
   Kaynak: developers.facebook.com/docs/marketing-api/reference/adgroup-review-feedback + effective_status/configured_status (2026-09-24 websearch ile doğrulandı).
 - `review_feedback.global`: `Record<policyKey, açıklama>` — platformlar arası genel red nedenleri.
@@ -312,7 +316,72 @@ OWNER/ADMIN değil, yalnızca harcama yetkisi olan kişi (Owner veya yetki verdi
   Sonuç: planlayıcı web yönteminde LINK_CLICKS kullanır; ROAS/satın alma optimizasyonu Meta'ya gönderilmez.
 
 ### Bilinen açıklar
-- `MetaMarketingClient` yazma/okuma çağrılarında `appsecret_proof` göndermiyor (yalnızca `graphGetAuthed` gönderiyor).
-  Uygulama ayarında "Require App Secret" açıksa Marketing API çağrıları reddedilir → canlıya geçmeden istemciye eklenmeli.
+- ~~`MetaMarketingClient` `appsecret_proof` göndermiyor~~ → giderildi (2026-09-27, aşağıdaki bölüm).
 - Meta'nın ad set başına günlük asgari bütçesi (para birimi ve optimizasyona göre değişir) önceden denetlenmiyor;
   küçük ABO paylarında ad set adımı Meta hatasıyla durabilir (hata mesajı yayın ilerlemesinde gösterilir).
+
+## 2026-09-27 — `appsecret_proof` tüm sunucu çağrılarında (canlı öncesi P0)
+
+Kaynaklar (2026-09-27 kontrol edildi): developers.facebook.com/docs/graph-api/guides/secure-requests ve
+developers.facebook.com/docs/facebook-login/security ("Verifying Graph API Calls with appsecret_proof").
+
+- Hesap: "sha256 hash of your access token, using your app secret as the key" → `HMAC-SHA256(key=app_secret,
+  data=access_token)` hex (`packages/meta-api/src/secret-proof.ts`). Uygulama panelinde **Require App Secret** açıkken
+  kanıtsız sunucu çağrısı başarısız olur. Belge örnekleri kanıtı istek parametresi olarak gösterir (POST'ta form
+  alanı); GET'te sorgu parametresi olarak gönderilir.
+- Zaman damgalı varyant (`appsecret_time`, 5 dk geçerli) kullanılmıyor; klasik kanıt her çağrıda yeniden hesaplanır.
+- Kanıtın eklendiği yerler: Marketing istemcisi (`MetaMarketingClient` — tüm GET sorguları ve form POST gövdeleri;
+  `createMetaClient` `META_APP_SECRET`'ı geçirir, doğrudan kurulumda secret verilmezse kanıt yok), Lead Ads çekimi
+  (`getLeadgenData`), Conversions API (`postConversionEvents`), Messenger/Instagram Send API (web + worker),
+  bağlantı token'ıyla WhatsApp Cloud API gönderimi (`WhatsAppTransport.appsecretProof`), `/me/*` keşif çağrıları
+  (önceden vardı). Kanıt her zaman **çağrıda kullanılan token'dan** hesaplanır (sayfa token'ı → sayfa token'ının kanıtı).
+- **Kanıt eklenmeyen yer:** ortam düzeyi `WHATSAPP_TOKEN` (tek kiracılı yedek). Bu token başka bir uygulamada
+  (ör. Business Manager sistem kullanıcısı) üretilmiş olabilir; Graph, gönderilen fakat eşleşmeyen kanıtı ayar kapalı
+  olsa bile reddeder ("Invalid appsecret_proof provided in the API argument", kod 100) ❗ **DOĞRULANMADI (canlı).**
+  Bu nedenle kanıt yalnızca bu uygulamanın OAuth akışından gelen token'lara eklenir. Aynı gerekçeyle
+  `PostConversionOptions.appSecret` / `LeadgenFetchOptions.appSecret` / `MessengerTextInput.appSecret` için boş dize
+  kanıtı kapatır.
+- Sayfalama: `paging.next` bağlantısının kanıtı içerip içermediği belgede yazmıyor ❗ **DOĞRULANMADI**. `nextPageUrl`
+  ilk istekte sorguda gönderilen `access_token`/`appsecret_proof` bağlantıda yoksa ekler ve yalnızca
+  `https://graph.facebook.com` kökündeki bağlantıyı izler (token başka sunucuya gitmez).
+- ❗ **DOĞRULANMADI (canlı):** token `Authorization: Bearer` başlığında, kanıt sorguda olduğunda (Lead Ads, CAPI,
+  Send API, `/me/*`) kabul edildiği gerçek uygulamayla doğrulanmalı; uyumsuzlukta token `access_token` parametresine
+  taşınmalı. Canlı kontrol: panelde "Require App Secret" açıkken bağlantı yenileme, insights senkronu, yayın ve
+  lead çekimi hatasız çalışmalı.
+
+## 2026-09-27 — Lead rıza kutusu yanıtları, bekleyen çekim ve reklam düzeyinde inceleme (ADR-0015)
+
+### Instant Form onay kutusu yanıtları
+Kaynak: developers.facebook.com/documentation/ads-commerce/marketing-api/guides/lead-ads/retrieving (2026-09-27
+kontrol edildi) ve resmi Python SDK (`adobjects/lead.py`, `userleadgendisclaimerresponse.py`).
+- "The `field_data` does not contain the responses to optional custom disclaimer check boxes" → yanıtlar
+  `GET /{lead_id}?fields=custom_disclaimer_responses` ile **açıkça** istenir. Tip `list<UserLeadGenDisclaimerResponse>`:
+  `checkbox_key` (string), `is_checked` (string; `"1"` işaretli, `""` işaretsiz).
+- Admedic formunun kutusu **zorunludur** (`is_required: true`, anahtar `kvkk_consent`). ❗ **DOĞRULANMADI:** zorunlu
+  kutunun yanıtının `custom_disclaimer_responses`'ta döndüğü (belge örneği isteğe bağlı kutuları gösterir). Dönmezse rıza
+  "zorunlu kutu" dayanağıyla yazılır (form kutu işaretlenmeden gönderilemez); canlı ilk lead'de kayıt dayanağı
+  (`evidence.basis`) kontrol edilmeli.
+- Leadgen webhook yükü yalnızca kimlik taşır (`leadgen_id`, `page_id`, `form_id`, `adgroup_id`, `ad_id`, `created_time`);
+  kutu yanıtı webhook'ta yoktur.
+
+### Lead saklama süresi
+- ❗ **DOĞRULANMADI:** Meta yardım sayfası (business/help/1526849577619206, "About expired leads") robots nedeniyle
+  okunamadı; ikincil kaynak (dashops.io) yaklaşık 90 gün sonra doğrudan indirmenin kapandığını, API ile erişimin
+  sürebileceğini yazıyor. Uygulama 90 günden eski bekleyen lead'i yeniden denemez (`REFETCH_MAX_AGE_DAYS`).
+
+### Reklam inceleme durumu
+Kaynak: developers.facebook.com/docs/marketing-api/reference/adgroup ve /reference/adgroup-review-feedback (2026-09-27),
+resmi Python SDK (`adobjects/ad.py`, `adgroupreviewfeedback.py`, `adgroupissuesinfo.py`, `campaign.py`).
+- Reklam alanları: `effective_status` enum'u ACTIVE, PAUSED, DELETED, PENDING_REVIEW, DISAPPROVED, PREAPPROVED,
+  PENDING_BILLING_INFO, CAMPAIGN_PAUSED, ARCHIVED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES; `ad_review_feedback`
+  (AdgroupReviewFeedback: `global` map<string,string>, `placement_specific`); `issues_info` (list: `error_code` int,
+  `error_message`, `error_summary`, `error_type`, `level`).
+- **Kampanya nesnesinde `review_feedback` alanı YOK** (SDK `campaign.py`'de geçmiyor). Önceki kod kampanya
+  oluşturduktan sonra bu alanı okuyordu; Graph "nonexisting field" (#100) döndürür ve oluşturulmuş kampanyanın kimliği
+  kaybolurdu (yeniden denemede yinelenen kampanya). Okuma kaldırıldı; inceleme reklam düzeyinde senkronlanır.
+- Toplu okuma: `GET /{version}/?ids=a,b,c&fields=…` (Graph çoklu kimlik okuması, istek başına 50 kimlik). ❗
+  **DOĞRULANMADI (canlı):** listedeki bir kimlik artık yoksa isteğin tamamının #100 ile reddedildiği; istemci bu durumda
+  parçayı tek tek okur.
+- ❗ **DOĞRULANMADI:** PAUSED oluşturulan reklamların etkinleştirilmeden incelenip incelenmediği; worker PUBLISHED_PAUSED
+  kampanyaları 6 saatte, ACTIVE kampanyaları 15 dakikada bir okur.
+

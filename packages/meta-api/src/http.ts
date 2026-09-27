@@ -1,5 +1,6 @@
 import { AdmedicError, isAdmedicError } from "@admedic/shared";
 import { requireGraphVersion } from "@admedic/config";
+import { appSecretProof } from "./secret-proof";
 
 import type { MetaApiErrorShape, MetaPagedResponse } from "./types";
 
@@ -68,6 +69,31 @@ export interface RawResponse {
   throttle?: string;
 }
 
+/** Sayfalamada ilk istekten taşınan kimlik parametreleri. */
+const CARRIED_AUTH_PARAMS = ["access_token", "appsecret_proof"] as const;
+
+/**
+ * `paging.next` bağlantısını güvenle izlenebilir hale getirir: yalnızca Graph kökündeki (https) bağlantı
+ * izlenir (token başka bir sunucuya gönderilmez); ilk istekte sorgu parametresi olarak gönderilen
+ * `access_token`/`appsecret_proof` bağlantıda yoksa eklenir ("Require App Secret" açıkken sonraki
+ * sayfalar kanıtsız reddedilir; Meta'nın next bağlantısı kanıtı içermeyebilir — DOĞRULANMADI).
+ */
+export function nextPageUrl(next: unknown, carry: Record<string, string | undefined> = {}): string | null {
+  if (typeof next !== "string" || next === "") return null;
+  let url: URL;
+  try {
+    url = new URL(next);
+  } catch {
+    return null;
+  }
+  if (url.origin !== GRAPH_BASE) return null;
+  for (const key of CARRIED_AUTH_PARAMS) {
+    const value = carry[key];
+    if (value && !url.searchParams.has(key)) url.searchParams.set(key, value);
+  }
+  return url.toString();
+}
+
 /**
  * Graph API'ye GET isteği; sayfalama kapatan (paging.next) ve hataları
  * `MetaGraphError`'e çeviren taşıyıcı.
@@ -91,8 +117,10 @@ export async function graphGet<T>(
       rows.push(paged as unknown as T);
       return rows;
     }
-    const next =
-      isRecord(paged) && isRecord(paged.paging) ? paged.paging.next : undefined;
+    const next = nextPageUrl(
+      isRecord(paged) && isRecord(paged.paging) ? paged.paging.next : undefined,
+      params,
+    );
     if (!next) break;
     url = next;
   }
@@ -148,13 +176,17 @@ async function wrappedFetch(
   }
 }
 
-/** Form-encoded POST (Meta güncelleme uçları için). */
+/**
+ * Form-encoded POST (Meta güncelleme uçları için). `appSecret` açıkça verilirse `appsecret_proof`
+ * eklenir (ortamdan okumaz; istemci kendi secret'ını geçirir).
+ */
 export async function graphPost(
   version: string,
   path: string,
   data: Record<string, string | number | undefined>,
   token: string,
   fetchFn: typeof fetch = fetch,
+  appSecret?: string,
 ): Promise<unknown> {
   const url = graphUrl(version, path, {});
   const body = new URLSearchParams();
@@ -162,6 +194,8 @@ export async function graphPost(
     if (v !== undefined && v !== null) body.set(k, String(v));
   }
   body.set("access_token", token);
+  const proof = appSecret ? appSecretProof(token, appSecret) : undefined;
+  if (proof) body.set("appsecret_proof", proof);
   const res = await rawGraph(url, fetchFn, {
     method: "POST",
     body,

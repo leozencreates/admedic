@@ -1,6 +1,6 @@
 import { prisma } from "@admedic/database";
 import { loadEnv } from "@admedic/config";
-import { getGraphVersion } from "@admedic/meta-api";
+import { appSecretProof, getGraphVersion } from "@admedic/meta-api";
 import { tryDecryptField } from "./encrypt";
 
 /**
@@ -8,7 +8,8 @@ import { tryDecryptField } from "./encrypt";
  * - Messenger: `POST https://graph.facebook.com/{version}/{pageId}/messages`
  * - Instagram: `POST https://graph.facebook.com/{version}/{igId}/messages`
  * Sayfa token'ı `MetaConnection` (orgId + pageId/instaId, CONNECTED, tokenCiphertext)
- * kaydından çözülür ve yalnızca Authorization başlığında taşınır (sorgu dizesine konmaz).
+ * kaydından çözülür ve yalnızca Authorization başlığında taşınır (sorgu dizesine konmaz);
+ * `META_APP_SECRET` varsa `appsecret_proof` sorgu parametresi eklenir ("Require App Secret").
  * `META_MOCK_MODE=true` iken hiçbir dış istek yapılmaz.
  */
 
@@ -109,9 +110,12 @@ export async function sendMessengerMessage(input: MessengerSendInput): Promise<M
       : { messaging_type: "RESPONSE" }),
     message: { text: input.text },
   };
+  const url = new URL(`https://graph.facebook.com/${version}/${encodeURIComponent(targetId)}/messages`);
+  const proof = appSecretProof(token, env.META_APP_SECRET);
+  if (proof) url.searchParams.set("appsecret_proof", proof);
   try {
     const response = await fetch(
-      `https://graph.facebook.com/${version}/${encodeURIComponent(targetId)}/messages`,
+      url.toString(),
       {
         method: "POST",
         headers: {

@@ -68,7 +68,19 @@ pnpm desktop:dev     # Tauri kabuğu (Rust toolchain gerekir; bkz. desktop/READM
 (production dışında) faturalandırma ödeme simülasyonu modundadır. Production'da `AUTH_SECRET`, `ENCRYPTION_KEY`
 ve (mock kapalıysa) `META_API_VERSION` zorunludur; `loadEnv()` eksikse başlatmayı reddeder.
 
-## Bu turda değişenler (2026-09-27) — panelde nereye bakmalı
+## Bu turda değişenler (2026-09-27, ikinci tur) — panelde nereye bakmalı
+
+- **Lead CRM** (`/leads`, `/leads/[id]`): Instant Form'daki rıza kutusu artık lead ile birlikte **rıza kaydı** olarak
+  saklanır (formda gösterilen metin, tarih ve dayanakla; lead detayında "Rıza kayıtları"). Form yanıtları Meta'dan
+  çekilemeyen lead'ler için uyarı ve **"Meta'dan yeniden çek"** düğmesi; bağlantı yenilenince ve yeni lead gelince
+  otomatik yeniden denenir.
+- **Kampanya Planlayıcı**: yayınlanan kampanyada reklam düzeyinde **Meta inceleme durumu** (reddedildi / sorunlu /
+  incelemede / sorun yok) ve red gerekçeleri; "İncelemeyi yenile". Reddedilen reklam **Uyarılar**'a düşer
+  ("Meta reklamı reddetti"); worker durumu düzenli yeniler.
+- Tüm Meta sunucu çağrıları `appsecret_proof` gönderir (Meta panelinde "Require App Secret" açılabilir).
+  Ayrıntı: ADR-0015; yeni migration için `docs/remaining-work.md` §0.
+
+## Önceki tur (2026-09-27) — tam yayın ve harcama yetkisi
 
 - **Kampanya Planlayıcı** (`/campaign-planner`): onaylı stüdyo taslakları ve reklam görseli kampanyaya bağlanır;
   "Yayınla" Meta'da kampanya → ad set (pazar × dil) → lead formu → kreatif → reklamı **PAUSED** kurar, yarım kalırsa

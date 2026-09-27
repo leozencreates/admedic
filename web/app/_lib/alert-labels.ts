@@ -16,6 +16,7 @@ export const ALERT_TYPE_LABEL: Record<string, string> = {
   BUDGET_MODIFIED_EXTERNAL: "Bütçe dışarıdan değiştirildi",
   TOKEN_EXPIRING: "Token süresi dolmak üzere",
   CONVERSATION_ESCALATED: "Konuşma koordinatöre devredildi",
+  AD_DISAPPROVED: "Meta reklamı reddetti",
 };
 
 export const ALERT_STATUS_LABEL: Record<string, string> = {

@@ -1,107 +1,44 @@
 import { prisma, Prisma } from "@admedic/database";
-import { requireActor, requireRole } from "../../../_lib/auth";
-import { body, respond, sameOrigin } from "../../../_lib/http";
-import { createMetaClient } from "@admedic/meta-api";
-import { requireLiveMetaConnection } from "../../../_lib/meta-connection";
 import { z } from "zod";
+import { requireActor, requireRole, EDIT_ROLES } from "../../../_lib/auth";
+import { body, HttpError, respond, sameOrigin } from "../../../_lib/http";
 import { logAudit } from "../../../_lib/audit";
+import { syncCampaignAdReviews } from "../../../_lib/ad-review-sync";
 export const maxDuration = 30;
 const SyncSchema = z.object({ campaignId: z.string().optional() }).strict();
 
+/**
+ * Meta inceleme durumunu reklam düzeyinde yeniler (spec 3.5; ADR-0015). Kampanya nesnesinde inceleme geri
+ * bildirimi yoktur: durum, kampanyanın Meta'daki reklamlarından (`effective_status`, `ad_review_feedback`,
+ * `issues_info`) toplanır. Yeni reddedilen reklam AD_DISAPPROVED uyarısı üretir. Worker aynı senkronu
+ * zamanlanmış olarak yapar.
+ */
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, ["OWNER", "ADMIN"]);
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, SyncSchema);
     const campaigns = await prisma.campaign.findMany({
       where: {
         workspaceId: actor.workspaceId,
-        ...(input.campaignId ? { id: input.campaignId } : {}),
+        adAccount: { orgId: actor.orgId },
+        ...(input.campaignId ? { id: input.campaignId } : { workflowStatus: { in: ["PUBLISHED_PAUSED", "ACTIVE"] } }),
         metaCampaignId: { not: null },
       },
-      include: { adAccount: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { id: true, name: true, adAccount: { select: { connectionId: true } } },
     });
-    const meta = createMetaClient();
-    const results: Array<Record<string, unknown>> = [];
-    for (const campaign of campaigns) {
-      if (!campaign.adAccount?.connectionId) continue;
-      let token: string;
-      try {
-        token = (
-          await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId)
-        ).token;
-      } catch (e) {
-        results.push({
-          campaignId: campaign.id,
-          name: campaign.name,
-          metaReviewStatus: "ERROR",
-          error: e instanceof Error ? e.message : "Meta bağlantısı aktif değil.",
-        });
-        continue;
-      }
-      try {
-        const { review } = await meta.getAdReview(campaign.metaCampaignId!, token);
-        if (!review) {
-          results.push({
-            campaignId: campaign.id,
-            name: campaign.name,
-            metaReviewStatus: "UNKNOWN",
-            error: "Meta inceleme verisi döndürmedi.",
-          });
-          continue;
-        }
-        const globalKeys = Object.keys(review.reviewFeedbackGlobal ?? {});
-        const rejected = review.effectiveStatus === "DISAPPROVED";
-        const pending =
-          review.effectiveStatus === "IN_REVIEW" || review.effectiveStatus === "PENDING";
-        const status = review.effectiveStatus
-          ? review.effectiveStatus
-          : rejected
-            ? "DISAPPROVED"
-            : pending
-              ? "PENDING"
-              : "ACTIVE";
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: {
-            metaReviewStatus: status,
-            metaRejectionReason:
-              rejected || pending
-                ? {
-                    global: review.reviewFeedbackGlobal ?? {},
-                    placements: review.reviewFeedbackPlacements ?? {},
-                    effectiveStatus: review.effectiveStatus,
-                    configuredStatus: review.configuredStatus,
-                  }
-                : Prisma.JsonNull,
-            syncedAt: new Date(),
-          },
-        });
-        results.push({
-          campaignId: campaign.id,
-          name: campaign.name,
-          metaReviewStatus: status,
-          globalIssueCount: globalKeys.length,
-        });
-      } catch (e) {
-        results.push({
-          campaignId: campaign.id,
-          name: campaign.name,
-          metaReviewStatus: "ERROR",
-          error: e instanceof Error ? e.message : "Meta sorgusu başarısız.",
-        });
-      }
-    }
+    if (input.campaignId && campaigns.length === 0) throw new HttpError(404, "Meta'da yayınlanmış kampanya bulunamadı.");
+    const results = [];
+    for (const campaign of campaigns) results.push(await syncCampaignAdReviews(campaign, actor.orgId));
     await logAudit({
       actor,
       action: "META_REVIEW_SYNC",
       entityType: "WORKSPACE",
       entityId: actor.workspaceId,
-      after: {
-        count: results.length,
-        campaigns: results,
-      } as unknown as Prisma.InputJsonValue,
+      after: { count: results.length, campaigns: results } as unknown as Prisma.InputJsonValue,
     });
     return { synced: results.length, campaigns: results };
   });

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 /** Shared by the privacy endpoint and retention jobs; never stores the old PII in audit. */
 export async function anonymizeLead(
@@ -20,7 +20,8 @@ export async function anonymizeLead(
   });
   await tx.consentRecord.updateMany({
     where: { leadId: subject.id, workspaceId: subject.workspaceId },
-    data: { status: "WITHDRAWN", withdrawnAt: now, consentText: "[anonymized]", ip: null, userAgent: null },
+    // Kanıt (form/leadgen kimlikleri) Meta'daki kişisel veriye bağ kurar: anonimleştirmede silinir.
+    data: { status: "WITHDRAWN", withdrawnAt: now, consentText: "[anonymized]", ip: null, userAgent: null, evidence: Prisma.DbNull },
   });
   await tx.lead.updateMany({
     where,

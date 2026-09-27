@@ -70,3 +70,11 @@ export function leadFormTexts(language: BriefLanguage, orgConsentText?: string |
   const custom = orgConsentText?.trim();
   return language === "TR" && custom ? { ...base, body: custom } : base;
 }
+
+/**
+ * Formda gösterilen rıza metninin kayıt için tek parça hali (LeadForm.consentText → ConsentRecord.consentText):
+ * başlık, gövde, kutu metni ve gizlilik politikası bağlantısı — kişinin onayladığı metin budur.
+ */
+export function leadFormConsentSnapshot(texts: LeadFormTexts, privacyPolicyUrl: string): string {
+  return [texts.title, texts.body, `☑ ${texts.checkbox}`, `${texts.privacyLink}: ${privacyPolicyUrl}`].join("\n\n");
+}

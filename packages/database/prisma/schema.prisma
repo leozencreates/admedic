@@ -198,6 +198,7 @@ enum AlertType {
   BUDGET_MODIFIED_EXTERNAL
   TOKEN_EXPIRING
   CONVERSATION_ESCALATED
+  AD_DISAPPROVED
 }
 
 enum InsightGranularity {
@@ -425,8 +426,10 @@ model Campaign {
   approvedAt     DateTime?
   rejectionBy    String?
   rejectionReason String?
-  metaReviewStatus String?  // Meta reklam inceleme durumu (APPROVED/REJECTED/...)
+  metaReviewStatus String?  // Reklamlardan toplanan Meta inceleme durumu (DISAPPROVED/WITH_ISSUES/PENDING_REVIEW/NO_ISSUES/UNKNOWN)
   metaRejectionReason Json? // Meta red gerekçesi (kural iyileştirme için raporlanır)
+  /// Son reklam düzeyi inceleme senkronu (worker bu zamana göre seyreltir).
+  metaReviewCheckedAt DateTime?
   plan Json? // Planlayıcı çıktısı + girişler (structure/strategy/rationale/testPlan/pazarlar/diller) — spec 3.3
   /// Kampanyaya bağlanan onaylı stüdyo taslakları (dil başına reklam metni; spec 3.4/3.6).
   contentDraftIds String[] @default([])
@@ -446,6 +449,7 @@ model Campaign {
   adsets              AdSet[]
   insightSnapshots    InsightSnapshot[]
   conversionEvents    ConversionEvent[]
+  leadForms           LeadForm[]
 
   @@unique([adAccountId, metaCampaignId])
   @@index([workspaceId])
@@ -491,6 +495,11 @@ model Ad {
   metaCreativeId  String?
   creativeId      String? // sistemdeki Creative'e bağ
   creative        Json?       // meta creative anlık görüntüsü
+  /// Meta `effective_status` (PENDING_REVIEW, DISAPPROVED, WITH_ISSUES, ACTIVE, …) — son inceleme senkronu.
+  metaEffectiveStatus String?
+  /// `ad_review_feedback` (global, placement_specific) + `issues_info`; sorun yoksa null.
+  metaReviewFeedback  Json?
+  metaReviewCheckedAt DateTime?
   syncStatus      SyncStatus  @default(OK)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -1148,6 +1157,10 @@ model ConsentRecord {
   withdrawnAt  DateTime?
   ip           String?
   userAgent    String?
+  /// Rızanın alındığı yer: INSTANT_FORM (Meta lead formu kutusu), PANEL, API; eski kayıtlarda null.
+  source       String?
+  /// Kanıt (PII içermez): form kimliği, kutu anahtarı, Meta yanıtı / dayanak, leadgen kimliği.
+  evidence     Json?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
@@ -1156,6 +1169,32 @@ model ConsentRecord {
 
   @@index([leadId])
   @@index([workspaceId, type])
+}
+
+/// Admedic'in Meta'da oluşturduğu Instant Form (lead formu). Formda gösterilen rıza metninin değişmez kopyası
+/// tutulur; gelen lead'in rıza kutusu yanıtı bu kayıtla `ConsentRecord`'a yazılır (spec 3.11, ADR-0015).
+model LeadForm {
+  id               String   @id @default(cuid())
+  orgId            String
+  workspaceId      String?
+  campaignId       String
+  /// Formu üreten stüdyo taslağı (dil başına içerik).
+  draftId          String
+  metaFormId       String   @unique
+  pageId           String
+  language         String
+  /// Rıza kutusunun anahtarı (`custom_disclaimer.checkboxes[].key`).
+  consentKey       String
+  consentRequired  Boolean  @default(true)
+  /// Formda gösterilen rıza metni: başlık + gövde + kutu metni + gizlilik politikası bağlantısı.
+  consentText      String
+  privacyPolicyUrl String
+  createdAt        DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([campaignId])
 }
 
 model LlmCallLog {

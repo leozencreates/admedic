@@ -7,6 +7,7 @@ import {
   getTokenDebug,
   graphAuth,
   MetaGraphError,
+  nextPageUrl,
   rawGraph,
   type MetaAccount,
 } from "@admedic/meta-api";
@@ -364,10 +365,10 @@ export async function fetchPageAccounts(
       });
     }
     const paging = isRecord(body) && isRecord(body.paging) ? body.paging : {};
-    const next = typeof paging.next === "string" ? paging.next : null;
+    const auth = graphAuth(token, loadEnv().META_APP_SECRET);
+    // Yalnızca Graph kökündeki bağlantı izlenir; `appsecret_proof` bağlantıda yoksa taşınır.
+    const next = nextPageUrl(paging.next, auth.params);
     if (!next) break;
-    const env = loadEnv();
-    const auth = graphAuth(token, env.META_APP_SECRET);
     body = (await rawGraph(next, fetchFn, { method: "GET", headers: auth.headers })).body;
   }
   return pages;

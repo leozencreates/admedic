@@ -165,19 +165,21 @@ describe("MetaMarketingClient (gerçek istemci, enjekte edilen fetch)", () => {
       .toMatchObject({ daily_budget: 100, status: "PAUSED" });
   });
 
-  it("createCampaign form body'yi Meta'ya gönderir ve review_feedback'i okur", async () => {
+  it("createCampaign form body'yi Meta'ya gönderir; oluşturma sonrası kampanyada inceleme alanı okumaz", async () => {
     const calls: { url: string; body?: URLSearchParams }[] = [];
     const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
       calls.push({ url, body: init?.body as URLSearchParams | undefined });
       if (init?.method === "POST") return fakeResponse({ id: "9001" }, true, 200);
-      return fakeResponse({ id: "9001", review_feedback: { global: { personal_health: "x" } } }, true, 200);
+      // Kampanya düğümünde review_feedback yoktur; okunmaya çalışılsaydı Meta #100 döndürürdü.
+      return fakeResponse({ error: { code: 100, message: "Tried accessing nonexisting field (review_feedback)" } }, false, 400);
     };
     const client = new MetaMarketingClient({ version: "v26.0", fetchFn: fetchFn as unknown as typeof fetch });
     const result = await client.createCampaign(
       { accountId: "111", name: "Kampanya", objective: "MAX_IMPRESSIONS", dailyBudgetCents: 30000 },
       "tok",
     );
-    expect(result).toMatchObject({ success: true, campaignId: "9001", reviewFeedbackGlobal: { personal_health: "x" } });
+    expect(result).toMatchObject({ success: true, campaignId: "9001" });
+    expect(calls).toHaveLength(1);
     const post = calls[0]!;
     expect(new URL(post.url).pathname).toBe("/v26.0/act_111/campaigns");
     expect(post.body?.get("objective")).toBe("OUTCOME_AWARENESS");
@@ -185,7 +187,61 @@ describe("MetaMarketingClient (gerçek istemci, enjekte edilen fetch)", () => {
     expect(post.body?.get("special_ad_categories")).toBe("[]");
     expect(post.body?.get("daily_budget")).toBe("30000");
     expect(post.body?.get("access_token")).toBe("tok");
-    expect(new URL(calls[1]!.url).searchParams.get("fields")).toBe("review_feedback");
+  });
+
+  it("getAdReviews reklamları çoklu kimlikle okur, ad_review_feedback/issues_info ayrıştırır; #100'de tek tek okur", async () => {
+    const calls: string[] = [];
+    const fetchFn = async (url: string): Promise<Response> => {
+      calls.push(url);
+      const u = new URL(url);
+      const ids = u.searchParams.get("ids");
+      if (ids === "11,22,33")
+        return fakeResponse({ error: { code: 100, message: "Some of the aliases you requested do not exist: 33" } }, false, 400);
+      if (ids === "11,22")
+        return fakeResponse(
+          {
+            "11": {
+              id: "11",
+              name: "Reklam A",
+              effective_status: "DISAPPROVED",
+              ad_review_feedback: { global: { PERSONAL_HEALTH: "Kişisel sağlık iddiası" }, placement_specific: { instagram: { TEXT: "Metin" } } },
+            },
+            "22": { id: "22", effective_status: "WITH_ISSUES", issues_info: [{ error_code: "1815869", error_summary: "Ödeme sorunu", level: "AD" }] },
+          },
+          true,
+          200,
+        );
+      if (u.pathname.endsWith("/33")) return fakeResponse({ error: { code: 100, message: "does not exist" } }, false, 400);
+      const id = u.pathname.split("/").pop()!;
+      return fakeResponse({ id, effective_status: id === "11" ? "DISAPPROVED" : "ACTIVE" }, true, 200);
+    };
+    const client = new MetaMarketingClient({ version: "v26.0", fetchFn: fetchFn as unknown as typeof fetch });
+    const batch = await client.getAdReviews(["11", "22"], "tok");
+    const first = new URL(calls[0]!);
+    expect(first.pathname).toBe("/v26.0/");
+    expect(first.searchParams.get("fields")).toContain("ad_review_feedback");
+    expect(first.searchParams.get("fields")).toContain("issues_info");
+    expect(batch).toEqual([
+      {
+        id: "11",
+        name: "Reklam A",
+        effectiveStatus: "DISAPPROVED",
+        reviewFeedbackGlobal: { PERSONAL_HEALTH: "Kişisel sağlık iddiası" },
+        reviewFeedbackPlacements: { instagram: { TEXT: "Metin" } },
+      },
+      {
+        id: "22",
+        effectiveStatus: "WITH_ISSUES",
+        reviewFeedbackGlobal: {},
+        reviewFeedbackPlacements: {},
+        issues: [{ code: 1815869, summary: "Ödeme sorunu", message: null, level: "AD" }],
+      },
+    ]);
+    calls.length = 0;
+    // Silinmiş reklam (33) tüm toplu isteği bozar → tek tek okunur ve atlanır.
+    const fallback = await client.getAdReviews(["11", "22", "33"], "tok");
+    expect(fallback.map((r) => [r.id, r.effectiveStatus])).toEqual([["11", "DISAPPROVED"], ["22", "ACTIVE"]]);
+    expect(calls).toHaveLength(4);
   });
 
   it("ad set / kreatif / reklam / lead formu doğru uca form gövdesiyle gider ve id döner", async () => {

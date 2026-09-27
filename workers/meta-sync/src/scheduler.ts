@@ -1,6 +1,7 @@
-import { prisma, anonymizeExpiredLeads } from "@admedic/database";
+import { prisma, anonymizeExpiredLeads, applyAdReviewSync } from "@admedic/database";
 import { decryptField, encryptField, loadEnv } from "@admedic/config";
 import {
+  buildAdReviewSync,
   createMetaClient,
   exchangeUserToken,
   getAppAccessToken,
@@ -135,6 +136,7 @@ async function runScheduled(meta: MetaClientLike) {
       alertsCreated += health.alerts;
       webhooksDelivered += health.webhooks;
       insightsSynced += await syncInsights(meta, workspace);
+      alertsCreated += await syncAdReviews(meta, workspace);
       alertsCreated += await runAnomalyAlerts(workspace.id);
       alertsCreated += await runAnonRetention(org ?? { id: workspace.orgId, retentionDays: 0 }, workspace.id);
       emailsSent += await deliverWeeklyReport(workspace.id, org?.reportRecipient ?? null);
@@ -602,6 +604,66 @@ export async function syncInsights(meta: MetaClientLike, workspace: any): Promis
     }
   }
   return synced;
+}
+
+/** Reklam düzeyi Meta inceleme senkronu sıklığı: aktif kampanya 15 dk, PAUSED yayınlanmış kampanya 6 saat. */
+export const REVIEW_INTERVAL_ACTIVE_MS = 15 * 60_000;
+export const REVIEW_INTERVAL_PAUSED_MS = 6 * 3600_000;
+/** Tur başına en fazla bu kadar kampanya (her biri 50 reklamlık toplu okuma). */
+const REVIEW_CAMPAIGNS_PER_RUN = 20;
+
+/**
+ * Reklam düzeyinde Meta inceleme senkronu (spec 3.5; ADR-0015): Admedic'in yayınladığı reklamların
+ * `effective_status` + `ad_review_feedback` + `issues_info` değerleri okunur ve `applyAdReviewSync` ile yazılır
+ * (yeni red → AD_DISAPPROVED uyarısı, red kalkınca uyarı çözülür). Meta hatası kampanyayı atlar; tur sürer.
+ * Döner: oluşturulan uyarı sayısı.
+ */
+export async function syncAdReviews(
+  meta: MetaClientLike,
+  workspace: { id: string; orgId: string },
+  now = new Date(),
+): Promise<number> {
+  const due = (ms: number) => ({ OR: [{ metaReviewCheckedAt: null }, { metaReviewCheckedAt: { lt: new Date(now.getTime() - ms) } }] });
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      workspaceId: workspace.id,
+      metaCampaignId: { not: null },
+      adsets: { some: { ads: { some: { metaAdId: { not: null } } } } },
+      OR: [
+        { workflowStatus: "ACTIVE", ...due(REVIEW_INTERVAL_ACTIVE_MS) },
+        { workflowStatus: "PUBLISHED_PAUSED", ...due(REVIEW_INTERVAL_PAUSED_MS) },
+      ],
+    },
+    orderBy: { metaReviewCheckedAt: { sort: "asc", nulls: "first" } },
+    take: REVIEW_CAMPAIGNS_PER_RUN,
+    select: { id: true, adAccount: { select: { connectionId: true } } },
+  });
+  const mock = loadEnv().META_MOCK_MODE;
+  let alerts = 0;
+  for (const campaign of campaigns) {
+    const connectionId = campaign.adAccount.connectionId;
+    if (!connectionId) continue;
+    const connection = await prisma.metaConnection.findFirst({ where: { id: connectionId, orgId: workspace.orgId } });
+    if (!connection || connection.status !== "CONNECTED" || (connection.expiresAt && connection.expiresAt <= now)) continue;
+    const token = mock ? "mock-token" : connection.tokenCiphertext ? decryptToken(connection.tokenCiphertext) : null;
+    if (!token) continue;
+    const ads = await prisma.ad.findMany({
+      where: { adSet: { campaignId: campaign.id }, metaAdId: { not: null } },
+      select: { metaAdId: true },
+    });
+    try {
+      const reviews = await meta.getAdReviews(ads.map((a) => a.metaAdId!), token);
+      const result = await applyAdReviewSync(prisma, { campaignId: campaign.id, ...buildAdReviewSync(reviews), checkedAt: now });
+      alerts += result.alertsCreated;
+    } catch (err) {
+      if (err instanceof MetaGraphError) {
+        console.warn(`[meta-sync] reklam incelemesi okunamadı (kampanya ${campaign.id}); atlandı: ${errorSummary(err)}`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  return alerts;
 }
 
 /**

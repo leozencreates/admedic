@@ -40,6 +40,12 @@ export function templateLanguageCode(language: string | null | undefined): strin
 export interface WhatsAppTransport {
   apiUrl: string;
   token: string;
+  /**
+   * Token bu uygulamanın OAuth bağlantısından geldiğinde `appsecret_proof` ("Require App Secret").
+   * Ortam düzeyi WHATSAPP_TOKEN'a kanıt eklenmez: başka bir uygulamada üretilmiş olabilir ve yanlış kanıt
+   * çağrıyı reddettirir.
+   */
+  appsecretProof?: string | null;
 }
 
 export async function sendWhatsAppMessage(
@@ -86,7 +92,8 @@ export async function sendWhatsAppMessage(
         text: { body: content },
       };
   try {
-    const response = await fetch(`${url}/messages`, {
+    const proof = lead.transport?.appsecretProof;
+    const response = await fetch(`${url}/messages${proof ? `?appsecret_proof=${encodeURIComponent(proof)}` : ""}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),

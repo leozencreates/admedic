@@ -528,6 +528,16 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
         expect(disclaimer.checkboxes[0]).toMatchObject({ is_required: true });
       }
       expect((spies.createLeadForm.mock.calls[1]![1] as Body).locale).toBe("TR_TR");
+      // Her form, kişinin göreceği rıza metninin kopyasıyla kaydedilir (gelen lead'in kutu yanıtı → ConsentRecord).
+      const forms = await prisma.leadForm.findMany({ where: { campaignId: id }, orderBy: { language: "asc" } });
+      expect(forms.map((f) => [f.language, f.consentKey, f.consentRequired, f.pageId, f.orgId])).toEqual([
+        ["DE", "kvkk_consent", true, "page_mock_1", orgIds[0]],
+        ["TR", "kvkk_consent", true, "page_mock_1", orgIds[0]],
+      ]);
+      expect(forms.every((f) => /^lf_mock_/.test(f.metaFormId) && f.privacyPolicyUrl === "https://klinik.example/gizlilik")).toBe(true);
+      expect(forms[0]!.consentText).toContain("Ich willige");
+      expect(forms[1]!.consentText).toContain("Kişisel verilerimin");
+      expect(forms[1]!.consentText).toContain("https://klinik.example/gizlilik");
       expect(spies.createAdCreative).toHaveBeenCalledTimes(4);
       for (const call of spies.createAdCreative.mock.calls) {
         const spec = json(call[1] as Body, "object_story_spec") as { page_id: string; link_data: Record<string, unknown> };

@@ -50,6 +50,12 @@ export async function GET(_request: Request, { params }: Context) {
         consentRecords: lead.consentRecords.map((cr) => ({
           type: cr.type,
           status: cr.status,
+          // Rızanın nerede ve hangi dayanakla alındığı (ör. Meta Instant Form kutusu) veri sahibine de gösterilir.
+          source: cr.source,
+          basis:
+            cr.evidence && typeof cr.evidence === "object" && !Array.isArray(cr.evidence)
+              ? ((cr.evidence as Record<string, unknown>).basis ?? null)
+              : null,
           consentText: cr.consentText,
           acceptedAt: cr.acceptedAt,
           withdrawnAt: cr.withdrawnAt,

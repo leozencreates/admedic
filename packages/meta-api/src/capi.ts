@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { loadEnv } from "@admedic/config";
 import { AdmedicError, mulberry32, seedFromString } from "@admedic/shared";
 import { getGraphVersion, rawGraph } from "./http";
+import { appSecretProof } from "./secret-proof";
 
 /**
  * Meta Conversions API (spec 3.9): `POST /{version}/{PIXEL_ID}/events`.
@@ -312,6 +313,11 @@ export interface PostConversionOptions {
   testEventCode?: string;
   /** META_MOCK_MODE override'ı (test için). */
   mock?: boolean;
+  /**
+   * `appsecret_proof` için secret (varsayılan: META_APP_SECRET; boş dize kanıtı kapatır). Token bu uygulamanın
+   * OAuth bağlantısından gelir; başka uygulamanın (ör. Events Manager'da üretilen) token'ı kullanılacaksa boş verin.
+   */
+  appSecret?: string;
 }
 
 /**
@@ -346,7 +352,8 @@ export async function postConversionEvents(
   }
   if (!token) throw new AdmedicError("AUTH_ERROR", "Meta erişim token'ı yok.");
   const version = getGraphVersion(options.version);
-  const url = `https://graph.facebook.com/${version}/${pixelId.trim()}/events`;
+  const proof = appSecretProof(token, options.appSecret);
+  const url = `https://graph.facebook.com/${version}/${pixelId.trim()}/events${proof ? `?appsecret_proof=${proof}` : ""}`;
   const body: Record<string, unknown> = { data };
   if (options.testEventCode) body.test_event_code = options.testEventCode;
   const res = await rawGraph(url, options.fetchFn ?? fetch, {

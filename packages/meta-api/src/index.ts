@@ -14,6 +14,7 @@ export * from "./leadgen";
 export * from "./types";
 export * from "./whatsapp";
 export * from "./messenger";
+export * from "./review";
 
 export interface MetaClientFactoryOptions {
   /** META_MOCK_MODE override'si (test için). */
@@ -35,7 +36,7 @@ export function createMetaClient(options: MetaClientFactoryOptions = {}) {
   if (mock) {
     return new MockMetaClient({ version });
   }
-  return new MetaMarketingClient({ version, fetchFn: options.fetchFn });
+  return new MetaMarketingClient({ version, fetchFn: options.fetchFn, appSecret: env.META_APP_SECRET });
 }
 
 export type AnyMetaClient = ReturnType<typeof createMetaClient>;

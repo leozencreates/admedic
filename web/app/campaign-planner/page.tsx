@@ -18,6 +18,14 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_PUBLISH_ROUNDS = 20;
 interface ContentSummary { attachedAt: string; landingUrl: string | null; languages: string[]; drafts: { draftId: string; name: string; language: string; headlines: string[]; formQuestions: number }[]; }
 interface Readiness { ready: boolean; reasons: string[]; warnings: string[]; }
+interface ReviewSummary { status: string; checkedAt: string | null; disapproved: number; withIssues: number; pending: number; total: number | null; ads: { name: string; effectiveStatus: string | null; reasons: string[] }[]; }
+const REVIEW_LABEL: Record<string, { text: string; tone: Tone }> = {
+  DISAPPROVED: { text: "Meta reklam reddetti", tone: "red" },
+  WITH_ISSUES: { text: "Meta: teslimat sorunu", tone: "amber" },
+  PENDING_REVIEW: { text: "Meta incelemesinde", tone: "amber" },
+  NO_ISSUES: { text: "Meta incelemesi: sorun yok", tone: "green" },
+  UNKNOWN: { text: "Meta inceleme durumu bilinmiyor", tone: "gray" },
+};
 interface PublishProgress { status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETE" | "EXTERNAL"; campaignCreated: boolean; adSets: { total: number; published: number }; ads: { expected: number; published: number }; leadForms: number; creatives: number; lastError: { step: string; message: string; at: string } | null; }
 /** Bütçeler minor unit (cent) gelir; gösterim `formatMoney(cents, currency)` ile yapılır. */
 interface CampaignData {
@@ -26,13 +34,14 @@ interface CampaignData {
   metaCampaignId: string | null; rejectionReason: string | null; imageHash: string | null; imageUrl: string | null;
   plan: { conversionMethod?: string; strategy?: string; languages?: string[] } | null;
   content: ContentSummary | null; readiness: Readiness | null; publish: PublishProgress;
+  review: ReviewSummary | null;
 }
 interface Plan { name: string; dailyBudgetCents: number; monthlyProjectedCents: number; monthlyCommittedCents: number; currency: string; structure: string; strategy: string; rationale: string; targetingRationale: string; blocked: boolean; blockingReasons: string[]; testPlan: { creativeVariations: number; testDurationDays: number; decisionMetric: string }; adSets: PlanAdSet[]; reasons: PlanReasons; languages: string[]; }
 interface OrgSettings { monthlyAdBudgetCapCents: number | null; monthlyAdBudgetCap: number | null; monthlyCommittedCents: number; currency: string; privacyPolicyUrl: string | null; }
 interface Member { userId: string; email: string; name: string | null; role: string; status: string; isSelf: boolean; canApproveSpend: boolean; delegable: boolean; spendGrantedAt: string | null; spendGrantedBy: string | null; }
 interface StudioDraftRow { id: string; name: string; status: string; content: { language?: string; service?: string; variants?: { headline?: string }[] } | null; }
 interface ActionResult {
-  campaign?: { policyWarning?: string | null; metaReviewStatus?: string; warnings?: string[] };
+  campaign?: { policyWarning?: string | null; warnings?: string[] };
   publish?: { status: "COMPLETE" | "IN_PROGRESS"; progress: PublishProgress; warnings: string[] };
 }
 interface ContentEditor { campaignId: string; selected: string[]; landingUrl: string; }
@@ -118,10 +127,8 @@ export default function CampaignPlannerPage() {
   }
   function showWarning(result: ActionResult | undefined) {
     const w = result?.campaign?.policyWarning;
-    const review = result?.campaign?.metaReviewStatus;
     const parts = [
       w ? `Orta risk uyarısı: ${w}` : "",
-      review === "DISAPPROVED" ? "Meta inceleme geri bildirimi: kampanya DISAPPROVED olarak işaretlendi." : "",
       ...(result?.campaign?.warnings ?? []),
       ...(result?.publish?.warnings ?? []),
     ].filter(Boolean);
@@ -198,6 +205,24 @@ export default function CampaignPlannerPage() {
       setNotice(""); showWarning(result); load();
     }
     catch (e) { setNotice((e as Error).message || "İşlem tamamlanamadı. Yetki veya içerik kontrolünü kontrol edin."); }
+    setBusy(null);
+  }
+  /** Meta reklam incelemesini (effective_status + red gerekçeleri) şimdi yeniler. */
+  async function refreshReview(id: string) {
+    setBusy(id); setNotice("");
+    try {
+      const result = await api<{ campaigns: { status: string; newlyDisapproved: number; error?: string }[] }>(
+        "/api/meta/review-sync",
+        "POST",
+        { campaignId: id },
+      );
+      const row = result.campaigns[0];
+      if (row?.error) setNotice(`Meta incelemesi yenilenemedi: ${row.error}`);
+      else if (row?.status === "NO_ADS") setNotice("Bu kampanyanın Meta'da yayınlanmış reklamı yok.");
+      else if (row?.newlyDisapproved) setNotice(`Meta ${row.newlyDisapproved} reklamı reddetti; gerekçeler kampanya satırında ve uyarılarda.`);
+      else setNotice("Meta inceleme durumu güncellendi.");
+      load();
+    } catch (e) { setNotice((e as Error).message || "Meta incelemesi yenilenemedi."); }
     setBusy(null);
   }
   /** Tam yayın: sunucu süre dolunca ilerlemeyi kaydeder; kalan adımlar için otomatik devam edilir. */
@@ -350,6 +375,9 @@ export default function CampaignPlannerPage() {
           <button disabled={isBusy} onClick={() => runAction(c.id, "publish", { action: "PAUSE" })} className="rounded-md border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60">Duraklat</button>
           <button disabled={isBusy} onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">Arşivle</button>
         </>}
+        {["PUBLISHED_PAUSED", "ACTIVE"].includes(w) && c.ads > 0 && (
+          <button disabled={isBusy} onClick={() => refreshReview(c.id)} title="Reklamların Meta inceleme durumunu ve red gerekçelerini şimdi okur" className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">İncelemeyi yenile</button>
+        )}
       </div>
     );
   }
@@ -559,6 +587,31 @@ export default function CampaignPlannerPage() {
                       )}
                       {progress.lastError && c.workflowStatus === "APPROVED" && (
                         <p className="text-xs text-rose-600">Son hata ({progress.lastError.step}): {progress.lastError.message}</p>
+                      )}
+                      {c.review && (
+                        <div className="mt-1 space-y-1 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge tone={REVIEW_LABEL[c.review.status]?.tone ?? "gray"}>{REVIEW_LABEL[c.review.status]?.text ?? c.review.status}</Badge>
+                            {(c.review.disapproved > 0 || c.review.withIssues > 0 || c.review.pending > 0) && (
+                              <span className="text-slate-500">
+                                {[
+                                  c.review.disapproved ? `${c.review.disapproved} reddedildi` : "",
+                                  c.review.withIssues ? `${c.review.withIssues} sorunlu` : "",
+                                  c.review.pending ? `${c.review.pending} incelemede` : "",
+                                ].filter(Boolean).join(" · ")}
+                                {c.review.total ? ` / ${c.review.total} reklam` : ""}
+                              </span>
+                            )}
+                            {c.review.checkedAt && <span className="text-slate-400">{new Date(c.review.checkedAt).toLocaleString("tr-TR")}</span>}
+                          </div>
+                          {c.review.ads.length > 0 && (
+                            <ul className="list-inside list-disc text-rose-700">
+                              {c.review.ads.map((ad, i) => (
+                                <li key={`${ad.name}-${i}`}>{ad.name || "Reklam"}{ad.effectiveStatus ? ` (${ad.effectiveStatus})` : ""}: {ad.reasons.length ? ad.reasons.join("; ") : "Meta gerekçe bildirmedi."}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-2">

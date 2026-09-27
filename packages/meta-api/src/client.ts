@@ -1,9 +1,12 @@
-import { graphGet, graphPost, getGraphVersion } from "./http";
+import { graphGet, graphPost, getGraphVersion, MetaGraphError } from "./http";
+import { appSecretProof } from "./secret-proof";
 import { normalizeInsightRow } from "./parse";
+import { AD_REVIEW_BATCH_SIZE, AD_REVIEW_FIELDS, parseAdReview, parseAdReviewBatch } from "./review";
 import type {
   CreateCampaignInput,
   MetaAccount,
   MetaAd,
+  MetaAdReview,
   MetaAdReviewResult,
   MetaAdSet,
   MetaCampaign,
@@ -43,6 +46,8 @@ export interface MetaClientLike {
     token: string,
   ): Promise<MetaCreateCampaignResult>;
   getAdReview(adId: string, token: string): Promise<MetaAdReviewResult>;
+  /** Reklamların inceleme durumu (çoklu kimlik okuması, istek başına en fazla 50 kimlik). */
+  getAdReviews(adIds: string[], token: string): Promise<MetaAdReview[]>;
   /** `POST act_{id}/adsets` — gövde `buildAdSetBody` ile üretilir (status PAUSED). */
   createAdSet(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject>;
   /** `POST act_{id}/adcreatives` — gövde `buildAdCreativeBody` ile üretilir. */
@@ -125,10 +130,18 @@ function createdId(body: unknown, what: string): string {
 export class MetaMarketingClient implements MetaClientLike {
   private readonly version: string;
   private readonly fetchFn: typeof fetch;
+  private readonly appSecret: string | undefined;
 
   constructor(options: MetaClientOptions = {}) {
     this.version = getGraphVersion(options.version);
     this.fetchFn = options.fetchFn ?? fetch;
+    this.appSecret = options.appSecret || undefined;
+  }
+
+  /** GET sorgusu için token + (secret varsa) `appsecret_proof`. */
+  private auth(token: string): Record<string, string> {
+    const proof = this.appSecret ? appSecretProof(token, this.appSecret) : undefined;
+    return proof ? { access_token: token, appsecret_proof: proof } : { access_token: token };
   }
 
   getVersion(): string {
@@ -141,7 +154,7 @@ export class MetaMarketingClient implements MetaClientLike {
       "me/adaccounts",
       {
         fields: "id,name,currency,timezone_name,account_status,is_business",
-        access_token: token,
+        ...this.auth(token),
         limit: "50",
       },
       this.fetchFn,
@@ -168,7 +181,7 @@ export class MetaMarketingClient implements MetaClientLike {
       {
         fields:
           "id,name,objective,status,effective_status,daily_budget,lifetime_budget,start_time,stop_time",
-        access_token: token,
+        ...this.auth(token),
         limit: "100",
       },
       this.fetchFn,
@@ -196,7 +209,7 @@ export class MetaMarketingClient implements MetaClientLike {
       {
         fields:
           "id,campaign_id,name,status,effective_status,bid_strategy,optimization_goal,billing_event,daily_budget,lifetime_budget,targeting",
-        access_token: token,
+        ...this.auth(token),
         limit: "100",
       },
       this.fetchFn,
@@ -230,7 +243,7 @@ export class MetaMarketingClient implements MetaClientLike {
       `act_${accountId}/ads`,
       {
         fields: "id,adset_id,name,status,effective_status,creative_id",
-        access_token: token,
+        ...this.auth(token),
         limit: "100",
       },
       this.fetchFn,
@@ -257,7 +270,7 @@ export class MetaMarketingClient implements MetaClientLike {
     const fields = [...INSIGHT_DEFAULT_FIELDS, ...(query?.extraFields ?? [])];
     const params: Record<string, string> = {
       fields: fields.join(","),
-      access_token: token,
+      ...this.auth(token),
     };
     if (query?.datePreset) params.date_preset = query.datePreset;
     if (query?.timeRange) params.time_range = JSON.stringify(query.timeRange);
@@ -292,6 +305,7 @@ export class MetaMarketingClient implements MetaClientLike {
       { daily_budget: input.dailyBudgetCents },
       token,
       this.fetchFn,
+      this.appSecret,
     );
     return {
       success: true,
@@ -311,6 +325,7 @@ export class MetaMarketingClient implements MetaClientLike {
       { status: input.status },
       token,
       this.fetchFn,
+      this.appSecret,
     );
     return {
       success: true,
@@ -330,25 +345,13 @@ export class MetaMarketingClient implements MetaClientLike {
       buildCreateCampaignBody(input),
       token,
       this.fetchFn,
+      this.appSecret,
     )) as { id?: unknown };
     const id = body?.id;
     if (!id) throw new Error("Meta kampanya oluşturmadı: id dönmedi.");
-    const campaignId = String(id);
-    // graphGet tek nesne yanıtını tek elemanlı dizi olarak döndürür.
-    const reviewRows = (await graphGet<Record<string, unknown>>(
-      this.version,
-      campaignId,
-      { fields: "review_feedback", access_token: token },
-      this.fetchFn,
-    )) as { review_feedback?: { global?: Record<string, string>; placement_specific?: Record<string, Record<string, string>> } }[];
-    const rf = reviewRows[0]?.review_feedback ?? {};
-    return {
-      success: true,
-      campaignId,
-      metaResponse: body,
-      reviewFeedbackGlobal: rf.global,
-      reviewFeedbackPlacements: rf.placement_specific,
-    };
+    // Kampanya nesnesinde inceleme geri bildirimi alanı yoktur (inceleme reklam düzeyindedir, `ad_review_feedback`).
+    // Oluşturma sonrası ek okuma yapılmaz: başarısız bir okuma, Meta'da oluşmuş kampanyanın kimliğini kaybettirirdi.
+    return { success: true, campaignId: String(id), metaResponse: body };
   }
 
   async getAdReview(
@@ -358,37 +361,47 @@ export class MetaMarketingClient implements MetaClientLike {
     const raw = await graphGet<Record<string, unknown>>(
       this.version,
       adId,
-      {
-        fields: "id,effective_status,configured_status,review_feedback",
-        access_token: token,
-      },
+      { fields: AD_REVIEW_FIELDS, ...this.auth(token) },
       this.fetchFn,
+      1,
     );
-    const obj = (raw as Record<string, unknown>[])[0] ?? {};
-    const rf = (obj.review_feedback ?? {}) as {
-      global?: Record<string, string>;
-      placement_specific?: Record<string, Record<string, string>>;
-    };
-    return {
-      review: {
-        id: String(obj.id ?? adId),
-        effectiveStatus:
-          obj.effective_status !== undefined
-            ? String(obj.effective_status)
-            : undefined,
-        configuredStatus:
-          obj.configured_status !== undefined
-            ? String(obj.configured_status)
-            : undefined,
-        reviewFeedbackGlobal: rf.global,
-        reviewFeedbackPlacements: rf.placement_specific,
-      },
-      fetchedAt: new Date().toISOString(),
-    };
+    return { review: parseAdReview(raw[0], adId), fetchedAt: new Date().toISOString() };
+  }
+
+  async getAdReviews(adIds: string[], token: string): Promise<MetaAdReview[]> {
+    const ids = Array.from(new Set(adIds.map((id) => id.trim()).filter((id) => /^[0-9A-Za-z_]+$/.test(id))));
+    const out: MetaAdReview[] = [];
+    for (let i = 0; i < ids.length; i += AD_REVIEW_BATCH_SIZE) {
+      const chunk = ids.slice(i, i + AD_REVIEW_BATCH_SIZE);
+      try {
+        // Çoklu kimlik okuması: yanıt `{ "<id>": {...} }` biçimindedir (sayfalı değil).
+        const rows = await graphGet<Record<string, unknown>>(
+          this.version,
+          "",
+          { ids: chunk.join(","), fields: AD_REVIEW_FIELDS, ...this.auth(token) },
+          this.fetchFn,
+          1,
+        );
+        out.push(...parseAdReviewBatch(rows[0], chunk));
+      } catch (error) {
+        // Kimliklerden biri artık yoksa (#100) Meta tüm isteği reddeder: bu parça tek tek okunur,
+        // erişilemeyen reklam atlanır. Diğer hatalar (token, izin, limit) çağırana yükselir.
+        if (!(error instanceof MetaGraphError) || error.detail.code !== 100) throw error;
+        for (const id of chunk) {
+          try {
+            const { review } = await this.getAdReview(id, token);
+            if (review) out.push(review);
+          } catch (inner) {
+            if (!(inner instanceof MetaGraphError) || inner.detail.code !== 100) throw inner;
+          }
+        }
+      }
+    }
+    return out;
   }
 
   private async createUnder(path: string, body: GraphBody, token: string, what: string): Promise<MetaCreatedObject> {
-    const response = await graphPost(this.version, path, body, token, this.fetchFn);
+    const response = await graphPost(this.version, path, body, token, this.fetchFn, this.appSecret);
     return { id: createdId(response, what), metaResponse: response };
   }
 
@@ -416,6 +429,7 @@ export class MetaMarketingClient implements MetaClientLike {
       { bytes: image.bytesBase64 },
       token,
       this.fetchFn,
+      this.appSecret,
     )) as { images?: Record<string, { hash?: unknown; url?: unknown }> };
     // Yanıt: { images: { "<ad>": { hash, url, … } } } — anahtar dosya adı ya da "bytes" olabilir.
     const first = Object.values(response?.images ?? {})[0];
@@ -428,7 +442,7 @@ export class MetaMarketingClient implements MetaClientLike {
     const rows = await graphGet<{ key?: unknown; name?: unknown }>(
       this.version,
       "search",
-      { type: "adlocale", q: query, limit: "100", access_token: token },
+      { type: "adlocale", q: query, limit: "100", ...this.auth(token) },
       this.fetchFn,
       1,
     );

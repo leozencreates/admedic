@@ -100,6 +100,7 @@ export async function POST(request: Request) {
             org?.consentText ??
             "Pazarlama iletişimleri için veri işleme onayı.",
           acceptedAt: new Date(), ip: null, userAgent: null,
+          source: "PANEL", evidence: { recordedBy: actor.userId },
         },
       });
     }
