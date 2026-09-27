@@ -19,6 +19,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
   const users: string[] = [];
   const orgs: string[] = [];
   const tokens: Record<string, string> = {};
+  const userByRole: Record<string, string> = {};
   let workspaceId: string;
   let accountId: string;
   let connectionId: string;
@@ -41,6 +42,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
           expiresAt: new Date(Date.now() + 600_000),
         } });
         tokens[foreign ? "FOREIGN" : role] = token;
+        userByRole[foreign ? "FOREIGN" : role] = user.id;
       }
       if (!foreign) {
         workspaceId = org.workspaces[0].id;
@@ -75,21 +77,95 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("campaign budget authorizati
       body: JSON.stringify({ dailyBudget, reason: "Budget review" }),
     }), { params: Promise.resolve({ id }) });
   };
-  it("buyer can decrease but cannot increase; owner/admin can increase; audit includes before/after in cents", async () => {
+  // Harcama yetkisi devri (Owner'ın verdiği yetki; uç testi spend-authority.integration.test.ts'te).
+  const setSpendAuthority = (role: string, granted: boolean) =>
+    prisma.membership.updateMany({ where: { orgId: orgs[0], userId: userByRole[role] }, data: { canApproveSpend: granted } });
+  it("increases need Owner or delegated spend authority; decreases are open to editors; audit in cents", async () => {
     const c = await draft();
     expect((await change(c.id, "MEDIA_BUYER", 300)).status).toBe(403);
     const decreased = await change(c.id, "MEDIA_BUYER", 100);
     expect(decreased.status).toBe(200);
     expect((await decreased.json()).campaign).toMatchObject({ dailyBudgetCents: 10_000, dailyBudget: 100 });
     expect((await change(c.id, "OWNER", 300)).status).toBe(200);
+    // ADMIN rolü tek başına bütçe artıramaz (spec 3.6); Owner yetki verince artırabilir, geri alınca yine 403.
+    const denied = await change(c.id, "ADMIN", 400.5);
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error).toMatch(/Owner/);
+    await setSpendAuthority("ADMIN", true);
     expect((await change(c.id, "ADMIN", 400.5)).status).toBe(200);
+    await setSpendAuthority("ADMIN", false);
+    expect((await change(c.id, "ADMIN", 450)).status).toBe(403);
+    await setSpendAuthority("MEDIA_BUYER", true);
+    expect((await change(c.id, "MEDIA_BUYER", 410)).status).toBe(200);
+    await setSpendAuthority("MEDIA_BUYER", false);
     const logs = await prisma.auditLog.findMany({ where: { entityId: c.id }, orderBy: { createdAt: "asc" } });
-    expect(logs).toHaveLength(3);
+    expect(logs).toHaveLength(4);
     expect(logs[0].before).toMatchObject({ dailyBudgetCents: 20_000 });
-    expect(logs[0].after).toMatchObject({ dailyBudgetCents: 10_000, reason: "Budget review" });
-    expect(logs[2].after).toMatchObject({ dailyBudgetCents: 40_050 });
-    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } })).dailyBudget).toBe(40_050);
+    expect(logs[0].after).toMatchObject({ dailyBudgetCents: 10_000, reason: "Budget review", increase: false });
+    expect(logs[2].after).toMatchObject({ dailyBudgetCents: 40_050, increase: true });
+    expect((await prisma.campaign.findUniqueOrThrow({ where: { id: c.id } })).dailyBudget).toBe(41_000);
     expect(updateBudget).not.toHaveBeenCalled();
+  });
+  it("the monthly cap counts other active campaigns of the same currency, never the campaign itself", async () => {
+    const active = await prisma.campaign.create({ data: {
+      adAccountId: accountId, workspaceId, name: "Aktif", dailyBudget: 50_000, status: "ACTIVE", workflowStatus: "ACTIVE",
+      metaCampaignId: `meta-${randomBytes(8).toString("hex")}`,
+    } });
+    const c = await draft();
+    // 50.000 × 30 = 1.500.000 aktif; 500 × 30 = 1.500.000 → toplam 3.000.000 = sınır (aşmıyor).
+    expect((await change(c.id, "OWNER", 500)).status).toBe(200);
+    const over = await change(c.id, "OWNER", 501);
+    expect(over.status).toBe(422);
+    expect((await over.json()).error).toMatch(/aktif kampanyalar/);
+    // Aktif kampanyanın kendi artışı kendisini ikinci kez saymaz (sayılsaydı 1.500.000 + 2.997.000 > 3.000.000);
+    // taslak (PAUSED) kampanyalar toplamda yer almaz.
+    expect((await change(active.id, "OWNER", 999)).status).toBe(200);
+    expect(updateBudget).toHaveBeenLastCalledWith({ entityType: "campaign", entityId: active.metaCampaignId, dailyBudgetCents: 99_900 }, "mock-token");
+    await prisma.campaign.update({ where: { id: active.id }, data: { status: "ARCHIVED", workflowStatus: "ARCHIVED" } });
+  });
+  it("ABO: published budgets go to Meta ad sets proportionally and local shares follow; drafts rescale locally", async () => {
+    const published = await prisma.campaign.create({ data: {
+      adAccountId: accountId, workspaceId, name: "ABO yayında", dailyBudget: 20_000, workflowStatus: "PUBLISHED_PAUSED",
+      metaCampaignId: `meta-${randomBytes(8).toString("hex")}`, plan: { strategy: "ABO" },
+      adsets: { create: [
+        { workspaceId, name: "DE", dailyBudget: 5_000, metaAdSetId: "as-meta-1" },
+        { workspaceId, name: "TR", dailyBudget: 15_000, metaAdSetId: "as-meta-2" },
+      ] },
+    } });
+    const res = await change(published.id, "OWNER", 300);
+    expect(res.status).toBe(200);
+    expect(updateBudget.mock.calls.map(([arg]) => arg)).toEqual([
+      { entityType: "adset", entityId: "as-meta-1", dailyBudgetCents: 7_500 },
+      { entityType: "adset", entityId: "as-meta-2", dailyBudgetCents: 22_500 },
+    ]);
+    const rows = await prisma.adSet.findMany({ where: { campaignId: published.id }, orderBy: { name: "asc" } });
+    expect(rows.map((r) => r.dailyBudget)).toEqual([7_500, 22_500]);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: published.id } });
+    expect(audit.after).toMatchObject({ metaLevel: "adset", dailyBudgetCents: 30_000 });
+
+    // İkinci ad set Meta'da başarısız: ilki eski değerine geri alınır, yerel değişiklik yok.
+    updateBudget.mockReset().mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error("x")).mockResolvedValue({ success: true });
+    expect((await change(published.id, "OWNER", 250)).status).toBe(502);
+    expect(updateBudget.mock.calls.at(-1)?.[0]).toEqual({ entityType: "adset", entityId: "as-meta-1", dailyBudgetCents: 7_500 });
+    expect((await prisma.adSet.findMany({ where: { campaignId: published.id }, orderBy: { name: "asc" } })).map((r) => r.dailyBudget)).toEqual([7_500, 22_500]);
+
+    updateBudget.mockReset().mockResolvedValue({ success: true });
+    const local = await prisma.campaign.create({ data: {
+      adAccountId: accountId, workspaceId, name: "ABO taslak", dailyBudget: 9_000, plan: { strategy: "ABO" },
+      adsets: { create: [{ workspaceId, name: "A", dailyBudget: 4_500 }, { workspaceId, name: "B", dailyBudget: 4_500 }] },
+    } });
+    expect((await change(local.id, "MEDIA_BUYER", 60)).status).toBe(200);
+    expect((await prisma.adSet.findMany({ where: { campaignId: local.id }, orderBy: { name: "asc" } })).map((r) => r.dailyBudget)).toEqual([3_000, 3_000]);
+    expect(updateBudget).not.toHaveBeenCalled();
+  });
+  it("a half-finished Meta publish blocks budget edits until it is completed or archived", async () => {
+    const c = await prisma.campaign.create({ data: {
+      adAccountId: accountId, workspaceId, name: "Yarım yayın", dailyBudget: 20_000, workflowStatus: "APPROVED",
+      metaCampaignId: `meta-${randomBytes(8).toString("hex")}`,
+    } });
+    const res = await change(c.id, "OWNER", 100);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/yarım kaldı/);
   });
   it("rejects viewer, foreign tenant, invalid input, foreign origin and over-cap budgets", async () => {
     const c = await draft();

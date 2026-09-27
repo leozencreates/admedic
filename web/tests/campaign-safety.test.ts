@@ -3,10 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const f = vi.hoisted(() => ({
   actor: { orgId: "org", workspaceId: "ws", userId: "owner", role: "OWNER" },
   // dailyBudget minor unit (ADR-0011): 100,00 = 10_000 cent.
-  campaign: { id: "campaign", name: "Fixture", dailyBudget: 10000, objective: "MAX_CONVERSIONS", workflowStatus: "APPROVED", status: "PAUSED", metaCampaignId: null as string | null, plan: null as unknown, adAccount: { connectionId: "conn", metaAccountId: "act_account" as string | null } },
+  campaign: {
+    id: "campaign", name: "Fixture", dailyBudget: 10000, objective: "MAX_CONVERSIONS", workflowStatus: "APPROVED", status: "PAUSED",
+    metaCampaignId: null as string | null, plan: null as unknown, content: null as unknown, imageHash: null as string | null,
+    publishState: null as unknown, publishLockedUntil: null as Date | null,
+    adAccount: { connectionId: "conn", metaAccountId: "act_account" as string | null, currency: "EUR" },
+  },
   create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), adSetCreate: vi.fn(), account: vi.fn(), audit: vi.fn(),
-  policy: vi.fn(), createCampaign: vi.fn(), setStatus: vi.fn(), cap: 1_000_000, live: { token: "fixture", mockMode: false },
+  policy: vi.fn(), createCampaign: vi.fn(), setStatus: vi.fn(), cap: 1_000_000 as number | null, live: { token: "fixture", mockMode: false },
   clinic: { bannedPhrases: [] as string[], marketLanguages: {} as Record<string, string[]> },
+  // Aktif kampanyaların aylık toplamı için (status=ACTIVE) satırlar.
+  committed: [] as { dailyBudget: number | null; lifetimeBudget: number | null; budgetType: string | null }[],
+  canApproveSpend: false,
+  ads: [{ metaAdId: "ad-1" }, { metaAdId: "ad-2" }], adSets: [{ metaAdSetId: "as-1" }],
 }));
 vi.mock("@admedic/config", () => ({ loadEnv: () => ({ AUTH_URL: "http://localhost:3000" }) }));
 vi.mock("../app/_lib/auth", () => ({
@@ -24,13 +33,25 @@ vi.mock("../app/_lib/campaign-workflow", () => ({
   clinicPolicyContext: async () => f.clinic,
 }));
 vi.mock("../app/_lib/meta-connection", () => ({ requireLiveMetaConnection: async () => f.live }));
-vi.mock("@admedic/meta-api", () => ({ MOCK_AD_ACCOUNT_ID: "act_mock_001", createMetaClient: () => ({ createCampaign: f.createCampaign, setStatus: f.setStatus }) }));
+vi.mock("@admedic/meta-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@admedic/meta-api")>()),
+  createMetaClient: () => ({ createCampaign: f.createCampaign, setStatus: f.setStatus }),
+}));
 vi.mock("@admedic/database", () => {
   const db = {
     $queryRaw: vi.fn(),
-    campaign: { create: f.create, update: f.update, updateMany: f.updateMany }, adSet: { create: f.adSetCreate },
+    campaign: {
+      create: f.create, update: f.update, updateMany: f.updateMany,
+      findFirst: async () => f.campaign, findMany: async () => f.committed,
+    },
+    adSet: { create: f.adSetCreate, findMany: async () => f.adSets, updateMany: async () => ({ count: 1 }) },
+    ad: { findMany: async () => f.ads, updateMany: async () => ({ count: 1 }) },
     adAccount: { findFirst: f.account },
-    organization: { findUnique: async () => ({ monthlyAdBudgetCap: f.cap }), findUniqueOrThrow: async () => ({ monthlyAdBudgetCap: f.cap }) },
+    membership: { findUnique: async () => ({ role: f.actor.role, status: "ACTIVE", canApproveSpend: f.canApproveSpend }) },
+    organization: {
+      findUnique: async () => ({ monthlyAdBudgetCap: f.cap }),
+      findUniqueOrThrow: async () => ({ monthlyAdBudgetCap: f.cap, privacyPolicyUrl: null, consentText: null }),
+    },
   };
   return { Prisma: {}, prisma: { ...db, $transaction: (run: (tx: typeof db) => unknown) => run(db) } };
 });
@@ -44,10 +65,11 @@ const auditCalls = () => f.audit.mock.calls.map(([arg]) => arg as { action: stri
 
 describe("campaign safety", () => {
   beforeEach(() => {
-    vi.clearAllMocks(); f.actor.role = "OWNER"; f.cap = 1_000_000;
+    vi.clearAllMocks(); f.actor.role = "OWNER"; f.cap = 1_000_000; f.committed = []; f.canApproveSpend = false;
+    f.ads = [{ metaAdId: "ad-1" }, { metaAdId: "ad-2" }]; f.adSets = [{ metaAdSetId: "as-1" }];
     f.live = { token: "fixture", mockMode: false };
     f.clinic = { bannedPhrases: [], marketLanguages: {} };
-    Object.assign(f.campaign, { workflowStatus: "APPROVED", status: "PAUSED", metaCampaignId: null, plan: null, dailyBudget: 10000 });
+    Object.assign(f.campaign, { workflowStatus: "APPROVED", status: "PAUSED", metaCampaignId: null, plan: null, dailyBudget: 10000, publishState: null, content: null, imageHash: null });
     f.campaign.adAccount.metaAccountId = "act_account";
     f.account.mockResolvedValue({ id: "account", currency: "EUR" });
     f.policy.mockResolvedValue({ risk: "LOW", findings: [] });
@@ -95,70 +117,95 @@ describe("campaign safety", () => {
     expect(f.policy).toHaveBeenCalledWith("Ucuz saç ekimi", ["ucuz"]);
     expect((await res.json()).campaign.policyWarning).toContain("yasaklanan");
   });
-  it("blocks publish before approval and activation by a marketer", async () => {
+  it("evaluates the monthly cap against active campaigns plus the new draft", async () => {
+    f.cap = 600_000;
+    f.committed = [{ dailyBudget: 10_000, lifetimeBudget: null, budgetType: "DAILY" }]; // 300.000 cent/ay aktif
+    const over = await create(request({ name: "Fixture", budget: 101 })); // 303.000 + 300.000 > 600.000
+    expect(over.status).toBe(422);
+    expect((await over.json()).error).toMatch(/aktif kampanyalar/);
+    expect((await create(request({ name: "Fixture", budget: 100 }))).status).toBe(200); // tam sınırda
+  });
+  it("refuses plans whose objective and conversion method cannot be published to Meta", async () => {
+    const res = await create(request({ name: "Fixture", budget: 50, markets: ["DE"], objective: "MAX_ROAS", conversionMethod: "instant_form" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/Instant Form/);
+    expect((await create(request({ name: "Fixture", budget: 50, markets: ["DE"], conversionMethod: "instagram_dm" }))).status).toBe(422);
+    expect(f.create).not.toHaveBeenCalled();
+  });
+  it("blocks publish before approval and activation without spend authority", async () => {
     f.campaign.workflowStatus = "DRAFT";
     expect((await action("PUBLISH")).status).toBe(409);
+    Object.assign(f.campaign, { workflowStatus: "PUBLISHED_PAUSED", metaCampaignId: "remote", publishState: { version: 1, completedAt: "t" } });
     f.actor.role = "MEDIA_BUYER";
-    expect((await action("ACTIVATE")).ok).toBe(false);
+    expect((await action("ACTIVATE")).status).toBe(403);
+    f.actor.role = "ADMIN";
+    expect((await action("ACTIVATE")).status).toBe(403);
     expect(f.createCampaign).not.toHaveBeenCalled(); expect(f.setStatus).not.toHaveBeenCalled();
   });
-  it("rechecks current policy and budget before publishing", async () => {
+  it("rechecks current policy before publishing and refuses a campaign that is not ready for Meta", async () => {
     f.policy.mockResolvedValue({ risk: "HIGH", findings: [] });
     expect((await action("PUBLISH")).status).toBe(422);
-    f.policy.mockResolvedValue({ risk: "LOW", findings: [] }); f.cap = 100;
-    expect((await action("PUBLISH")).status).toBe(422);
+    f.policy.mockResolvedValue({ risk: "LOW", findings: [] });
+    const notReady = await action("PUBLISH");
+    expect(notReady.status).toBe(422);
+    expect((await notReady.json()).error).toMatch(/planlayıcı/);
     expect(f.createCampaign).not.toHaveBeenCalled();
   });
-  it("publishes only PAUSED with cents and does not record failed external actions", async () => {
-    f.campaign.plan = { strategy: "ABO" };
-    expect((await action("PUBLISH")).status).toBe(200);
-    expect(f.createCampaign).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "PAUSED", dailyBudgetCents: 10000, budgetStrategy: "ABO", objective: "MAX_CONVERSIONS", accountId: "account" }),
-      "fixture",
-    );
-    expect(f.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ workflowStatus: "APPROVED", metaCampaignId: null }),
-      data: expect.objectContaining({ workflowStatus: "PUBLISHED_PAUSED", status: "PAUSED", metaCampaignId: "remote" }),
-    }));
-    expect(auditCalls()[0]).toMatchObject({ action: "CAMPAIGN_PUBLISHED", after: { metaCampaignId: "remote", action: "PUBLISH" } });
-    f.update.mockClear(); f.updateMany.mockClear(); f.createCampaign.mockResolvedValue({ success: false });
-    expect((await action("PUBLISH")).status).toBe(502);
-    expect(f.update).not.toHaveBeenCalled(); expect(f.updateMany).not.toHaveBeenCalled();
-  });
-  it("keeps medium-risk warnings out of metaRejectionReason but returns and audits them", async () => {
-    f.policy.mockResolvedValue({ risk: "MEDIUM", findings: [{ rule: "clinic-restriction", reason: "Klinik kısıtı" }] });
-    const res = await action("PUBLISH");
-    expect(res.status).toBe(200);
-    expect((await res.json()).campaign.policyWarning).toBe("Klinik kısıtı");
-    const data = f.updateMany.mock.calls[0][0].data;
-    expect(data).not.toHaveProperty("metaRejectionReason");
-    expect(auditCalls()[0].after).toMatchObject({ policyWarning: "Klinik kısıtı" });
-  });
-  it("refuses to publish to the mock account in live mode when metaAccountId is missing", async () => {
-    f.campaign.adAccount.metaAccountId = null;
-    expect((await action("PUBLISH")).status).toBe(400);
-    expect(f.createCampaign).not.toHaveBeenCalled();
-    f.live = { token: "mock-token", mockMode: true };
-    expect((await action("PUBLISH")).status).toBe(200);
-    expect(f.createCampaign).toHaveBeenCalledWith(expect.objectContaining({ accountId: "mock_001" }), "mock-token");
-  });
-  it("audits the orphaned Meta campaign when the local write fails after a successful create", async () => {
-    f.updateMany.mockResolvedValue({ count: 0 });
-    const res = await action("PUBLISH");
-    expect(res.status).toBe(409);
-    const orphan = auditCalls().find((a) => a.action === "CAMPAIGN_PUBLISH_ORPHANED");
-    expect(orphan?.after).toMatchObject({ metaCampaignId: "remote" });
-  });
-  it("uses distinct audit actions for activate/pause and rechecks policy on activation", async () => {
+  it("an externally created (synced) campaign activates only at campaign level, with the same authority and cap rules", async () => {
     Object.assign(f.campaign, { workflowStatus: "PUBLISHED_PAUSED", metaCampaignId: "remote" });
+    f.updateMany.mockResolvedValue({ count: 1 });
+    expect((await action("ACTIVATE")).status).toBe(200);
+    expect(f.setStatus.mock.calls.map(([arg]) => `${arg.entityType}:${arg.entityId}`)).toEqual(["campaign:remote"]);
+    expect(auditCalls().at(-1)).toMatchObject({ action: "CAMPAIGN_ACTIVATED", after: { scope: "campaign", adsActivated: 0 } });
+  });
+  it("a fully published campaign rechecks policy and activates ads → ad sets → campaign", async () => {
+    Object.assign(f.campaign, { workflowStatus: "PUBLISHED_PAUSED", metaCampaignId: "remote" });
+    f.campaign.publishState = { version: 1, completedAt: "2026-09-27T00:00:00.000Z" };
+    f.ads = [];
+    expect((await action("ACTIVATE")).status).toBe(409); // tam yayında reklam yoksa etkinleştirme yok
+    f.ads = [{ metaAdId: "ad-1" }, { metaAdId: "ad-2" }];
     f.policy.mockResolvedValue({ risk: "HIGH", findings: [] });
     expect((await action("ACTIVATE")).status).toBe(422);
     expect(f.setStatus).not.toHaveBeenCalled();
     f.policy.mockResolvedValue({ risk: "LOW", findings: [] });
+    f.updateMany.mockResolvedValue({ count: 1 });
+    const res = await action("ACTIVATE");
+    expect(res.status).toBe(200);
+    expect(f.setStatus.mock.calls.map(([arg]) => `${arg.entityType}:${arg.entityId}:${arg.status}`)).toEqual([
+      "ad:ad-1:ACTIVE", "ad:ad-2:ACTIVE", "adset:as-1:ACTIVE", "campaign:remote:ACTIVE",
+    ]);
+    // Rezervasyon (status=ACTIVE) Meta çağrılarından önce yazılır.
+    expect(f.update).toHaveBeenCalledWith({ where: { id: "campaign" }, data: { status: "ACTIVE" } });
+    expect(auditCalls().at(-1)).toMatchObject({
+      action: "CAMPAIGN_ACTIVATED",
+      after: { scope: "cascade", adsActivated: 2, adSetsActivated: 1, monthlyCapCents: 1_000_000, monthlyCommittedCents: 0, monthlyProjectedCents: 300_000 },
+    });
+  });
+  it("a delegated media buyer may activate; the committed monthly cap is enforced before any Meta call", async () => {
+    Object.assign(f.campaign, { workflowStatus: "PUBLISHED_PAUSED", metaCampaignId: "remote", publishState: { version: 1, completedAt: "t" } });
+    f.actor.role = "MEDIA_BUYER"; f.canApproveSpend = true;
+    f.committed = [{ dailyBudget: 25_000, lifetimeBudget: null, budgetType: "DAILY" }]; // 750.000 + 300.000 > 1.000.000
+    const over = await action("ACTIVATE");
+    expect(over.status).toBe(422);
+    expect((await over.json()).error).toMatch(/Aylık bütçe üst sınırı aşılıyor/);
+    expect(f.update).not.toHaveBeenCalled(); expect(f.setStatus).not.toHaveBeenCalled();
+    f.committed = [{ dailyBudget: 20_000, lifetimeBudget: null, budgetType: "DAILY" }];
+    f.updateMany.mockResolvedValue({ count: 1 });
     expect((await action("ACTIVATE")).status).toBe(200);
-    expect(auditCalls().at(-1)).toMatchObject({ action: "CAMPAIGN_ACTIVATED" });
-    Object.assign(f.campaign, { workflowStatus: "ACTIVE", status: "ACTIVE" });
+  });
+  it("releases the activation reservation and reports failure when Meta refuses", async () => {
+    Object.assign(f.campaign, { workflowStatus: "PUBLISHED_PAUSED", metaCampaignId: "remote", publishState: { version: 1, completedAt: "t" } });
+    f.setStatus.mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({ success: false });
+    f.updateMany.mockResolvedValue({ count: 1 });
+    expect((await action("ACTIVATE")).status).toBe(502);
+    expect(f.updateMany).toHaveBeenCalledWith({ where: { id: "campaign", workflowStatus: "PUBLISHED_PAUSED" }, data: { status: "PAUSED" } });
+    expect(auditCalls().at(-1)).toMatchObject({ action: "CAMPAIGN_ACTIVATION_FAILED", after: { campaignActivated: false } });
+  });
+  it("uses a distinct audit action for pause", async () => {
+    Object.assign(f.campaign, { workflowStatus: "ACTIVE", status: "ACTIVE", metaCampaignId: "remote" });
+    f.updateMany.mockResolvedValue({ count: 1 });
     expect((await action("PAUSE")).status).toBe(200);
+    expect(f.setStatus).toHaveBeenCalledWith({ entityType: "campaign", entityId: "remote", status: "PAUSED" }, "fixture");
     expect(auditCalls().at(-1)).toMatchObject({ action: "CAMPAIGN_PAUSED" });
   });
   it("stops remote spend before archiving, leaving local state untouched on failure", async () => {

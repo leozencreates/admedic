@@ -1,6 +1,6 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-26 (spec denetimi + düzeltme turu). Bu dosya `docs/spec.md` ile kod
+Son güncelleme: 2026-09-27 (tam PAUSED yayın + harcama yetkisi turu, ADR-0014). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
 ADR'ler yeterli). Her maddede öncelik (P0/P1/P2), ilgili spec bölümü ve önerilen yaklaşım vardır.
 
@@ -23,6 +23,17 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 2. Canlı veritabanında API ile oluşturulmuş eski kampanya bütçeleri major birimde kalmış olabilir; ADR-0011'deki
    tek seferlik `UPDATE` operatör kararıyla uygulanır (yerel demo veritabanı seed ile yenilendiği için gerekmedi).
 3. Yerel `.env` içinde `AUTH_SECRET` yenilendi; çalışan `next dev` oturumları yeniden giriş ister.
+4. **2026-09-27 turu için:** `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy`
+   (yeni migration `20260927090000_full_publish_and_spend_authority`, toplam 22). Ardından:
+   - Klinik & Marka → Organizasyon Ayarları'nda **gizlilik politikası bağlantısı** (https) — Instant Form yayını için zorunlu.
+   - Kampanya Planlayıcı → **Harcama yetkisi** kartından, etkinleştirme/bütçe artışı yapacak ADMIN/MEDIA_BUYER
+     üyelere Owner yetki verir (ADMIN rolü artık tek başına yetkili değil).
+   - Meta bağlantısını yeniden yetkilendirin: OAuth kapsamına `pages_manage_ads` eklendi (Instant Form).
+   - Birden fazla Facebook Sayfası bağlıysa reklam hesabı bağlantısına yayın sayfasının kimliği (Sayfa ID) girilmeli.
+5. **Güvenlik:** web testlerindeki sabit `ENCRYPTION_KEY` fixture'ı yerel `.env` anahtarıyla aynıydı ve git
+   geçmişinde herkese açık. Testler artık rastgele anahtar üretiyor; yerel `ENCRYPTION_KEY` yenilenmeli
+   (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) — şifreli token/iletişim alanları
+   eski anahtarla okunamayacağı için `pnpm db:seed` ile yeniden tohumlayın ve Meta bağlantısını yeniden kurun.
 
 ## 1. Mimari (spec §4) — P1
 
@@ -73,13 +84,23 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 - **Planlayıcı deterministik**, LLM ajanı değil: doğal dil `brief` plana yazılıyor ama işlenmiyor.
   Öneri: `packages/agents/campaign-planner` (Zod girdi/çıktı, `lead-assistant` ile aynı `callWithLog`),
   deterministik plan = güvenlik zemini, LLM = gerekçe ve öneri katmanı.
-- **Meta'ya yalnızca kampanya yazılır**; ad set/ad/hedefleme (`geo_locations`, sayısal `locales`
-  kimlikleri, yaş) Meta'ya gönderilmiyor. `plan.adSets` üretiliyor; `createAdSet` istemci fonksiyonu +
-  yayın adımı gerekiyor. ODAX objective eşlemesi (`OUTCOME_*`) canlı doğrulanmadı.
-- Aylık üst sınır **taslak bazında** (`günlük×30`); diğer aktif kampanyaların toplamı eklenmiyor.
-- Spec 3.6 "yalnızca Tenant Owner": ACTIVATE ve bütçe artışı OWNER **ve ADMIN** tarafından yapılabiliyor;
-  yetki devri kaydı (delegation) yok.
-- `StudioStatus`'ta ARCHIVED yok; kampanya ARCHIVE yalnızca ACTIVE/PUBLISHED_PAUSED'dan.
+- **Tam yayın canlı doğrulanmadı** (ADR-0014): ad set/lead formu/kreatif/reklam gövdeleri resmi belgelerle
+  kuruldu ve mock'ta uçtan uca test edildi; gerçek hesapta ODAX (`OUTCOME_LEADS` + ON_AD, WhatsApp + CONVERSATIONS,
+  Sales + WEBSITE + LINK_CLICKS / piksel gereksinimi), lead formu locale değerleri, adlocale adları ve Meta'nın
+  ad set başına asgari günlük bütçesi doğrulanmalı (`docs/meta-constraints.md`, 2026-09-27). `appsecret_proof`
+  Marketing istemcisinde yok (P0, canlıya geçmeden).
+- Yalnızca tek görselli reklam: video, carousel ve format uyarlama (1:1/4:5/9:16) yok; görsel başına tek kreatif.
+- Sayfa seçimi arayüzü yok: birden fazla sayfada reklam hesabı bağlantısına Sayfa ID elle girilir. WhatsApp
+  reklamında sayfanın WhatsApp numarasına bağlı olduğu denetlenmiyor (Meta hatası yayın adımında görünür).
+- Yayınlanan içerik değiştirilemez: yeni metin/görsel için kampanya arşivlenip yeniden oluşturulur (Meta'da
+  kreatif güncelleme akışı yok). Meta ad set/reklam red durumları (`effective_status`, `ad_review_feedback`)
+  reklam düzeyinde senkronlanmıyor (yalnızca kampanya `review-sync`).
+- Aylık üst sınır kur çevrimi yapmaz (yalnızca aynı para birimli hesaplar toplanır); Meta'dan senkronlanan
+  ABO kampanyanın bütçesi yalnızca ilk içe aktarmada ad set toplamından yazılır (sonraki değişiklikler için
+  ad set senkronu gerekir).
+- Harcama yetkisi devrinde süre sınırı yok (Owner geri alana kadar geçerli); üye/rol yönetimi arayüzü yok
+  (rol değişimi veritabanından; etkin yetki rol değişince kendiliğinden düşer).
+- `StudioStatus`'ta ARCHIVED yok; kampanya ARCHIVE yalnızca yayındaki veya yayını yarım kalmış kampanyadan.
 - 3 ondalıklı para birimleri (KWD/BHD): worker `toMinorUnits` ile doğru; kampanya/bütçe rotaları hâlâ
   `×100` varsayar (`AdAccount.currency` ölçeği rotalara taşınmalı).
 
@@ -87,8 +108,9 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 
 - Görsel brief ve format uyarlama (1:1, 4:5, 9:16) mock (`/api/creative/adapt` gerçek üretim/yükleme yok).
 - Yerelleştirme dil bazlı; spec "pazar bazlı ayrı prompt" ister (DE için Almanya vs Avusturya ayrımı yok).
-- Veri modeli: `CreativeVariant`, `PolicyCheck`, `Approval` tabloları yok (JSON sütunlarında).
-  Kreatif → Kampanya/Ad bağlantısı (`creativeId`) yazılmıyor; onaylı kopya kampanya onay akışına girmiyor.
+- Veri modeli: `CreativeVariant`, `PolicyCheck`, `Approval` tabloları yok (JSON sütunlarında). Onaylı
+  stüdyo taslakları artık kampanyaya değişmez kopya olarak bağlanıyor (`Campaign.content`, `Ad.creative.key`
+  = taslak:varyant); `/api/creative` ile üretilen `Creative` kayıtları ise kampanyaya bağlanamıyor (`Ad.creativeId` boş).
 - Meta red gerekçeleri tek `Campaign.metaRejectionReason` alanında; append-only tablo + kural
   iyileştirme raporu ve worker'da zamanlanmış `review-sync` (ad bazlı) yok.
 - Politika motoru matcher kimlikleri V1 (şema enum'u); Unicode kelime sınırı değişikliği motor sürümüyle
@@ -96,9 +118,11 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 
 ## 6. Lead CRM ve asistan (spec 3.7, 3.8) — P0/P1
 
-- **Rıza lead'den alınmıyor:** Instant Form rıza alanı / bot akışında açık rıza kaydı yok; yalnızca panelden
-  "Rıza Ver/Geri Çek". Öneri: form `field_data` içindeki rıza sorusunu ConsentRecord'a yazmak, bot ilk
-  mesajında rıza metni + onay yanıtını kaydetmek.
+- **Rıza lead'den alınmıyor:** Admedic'in kurduğu Instant Form'larda zorunlu rıza kutusu var (anahtar
+  `kvkk_consent`), ancak lead çekimi `custom_disclaimer_responses` alanını istemiyor ve ConsentRecord yazmıyor;
+  bot akışında da açık rıza kaydı yok (yalnızca panelden "Rıza Ver/Geri Çek"). Öneri: leadgen alanlarına
+  `custom_disclaimer_responses` ekleyip `kvkk_consent` yanıtını ConsentRecord'a yazmak. Rıza metni Türkçe dışı
+  formlarda genel yerel metindir; dil başına kuruluş rıza metni ayarı yok.
 - WhatsApp şablon kaydı (registry) ve pencere dışı gönderimde opt-in kontrolü yok; şablon adı elle girilir.
 - `Lead.channel` serbest metin (enum değil).
 - Messenger `HUMAN_AGENT` etiketi ve Instagram mesajlaşma izinleri App Review gerektirir; canlı doğrulanmadı.
@@ -133,8 +157,6 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
   bağlanmalı (kod enum değerlerini yazıyor).
 - `lookupHash` anahtarsız SHA-256 (pepper yok); GET yanıtlarından çıkarıldı ama DB'de brute-force
   riski sürer → HMAC(pepper) + telefon E.164 normalizasyonu (libphonenumber).
-- Testlerde sabit `ENCRYPTION_KEY` fixture'ları (spec §6 "gizli anahtarları teste yazma") —
-  `randomBytes` ile üretilmeli.
 - Üretimde `META_MOCK_MODE` açıkça `false` yapılmalı (aksi halde başlatma reddedilir; demo sunucusu için
   `ALLOW_MOCK_IN_PRODUCTION=true`).
 - Fastify API (`apps/api`) yalnızca `API_TOKEN` ile korunuyor; kiracı seçimi "ilk workspace"

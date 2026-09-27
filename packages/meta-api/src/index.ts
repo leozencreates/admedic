@@ -5,6 +5,7 @@ import { MockMetaClient } from "./mock";
 
 export * from "./client";
 export * from "./mock";
+export * from "./publish";
 export * from "./http";
 export * from "./parse";
 export * from "./token";

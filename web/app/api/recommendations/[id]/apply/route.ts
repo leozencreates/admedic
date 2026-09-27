@@ -1,10 +1,9 @@
 import { prisma } from "@admedic/database";
-import { createMetaClient } from "@admedic/meta-api";
-import { loadEnv } from "@admedic/config";
 import { EDIT_ROLES, requireActor, requireRole } from "../../../../_lib/auth";
 import { body, HttpError, respond, sameOrigin } from "../../../../_lib/http";
 import { logAudit } from "../../../../_lib/audit";
-import { decrypt } from "../../../../_lib/encrypt";
+import { applyDailyBudgetChange } from "../../../../_lib/budget-change";
+import { requireSpendAuthority } from "../../../../_lib/spend-authority";
 import { isApplicableRecommendation, recommendationKind } from "../../../../_lib/recommendation-kinds";
 import { z } from "zod";
 
@@ -13,9 +12,10 @@ const ApplySchema = z.object({ campaignId: z.string().min(1).max(64).optional() 
 
 /**
  * Onaylanmış (APPROVED) öneriyi hedef kampanyaya uygular. Bütçe her zaman minor unit (ADR-0011):
- * BUDGET_INCREASE → ×1.2 (OWNER/ADMIN; spec 3.6), BUDGET_REALLOCATION → kazanan payı (%70),
- * BUDGET_DECREASE → −pct. Hedef kampanya `action.campaignId` (veya istek gövdesinde açıkça
- * verilen `campaignId`); ilk kampanyaya düşme yoktur.
+ * BUDGET_INCREASE → ×1.2, BUDGET_REALLOCATION → kazanan payı (%70), BUDGET_DECREASE → −pct.
+ * Bütçeyi artıran her uygulama yalnızca Owner veya Owner'ın harcama yetkisi verdiği üye tarafından
+ * ve toplam aylık üst sınır içinde yapılabilir (spec 3.3/3.6). Hedef kampanya `action.campaignId`
+ * (veya istek gövdesinde açıkça verilen `campaignId`); ilk kampanyaya düşme yoktur.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
@@ -35,7 +35,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const kind = recommendationKind(rec);
     if (!isApplicableRecommendation(kind))
       throw new HttpError(422, `Bu öneri türü otomatik uygulanamaz (${kind}); değerlendirme notu olarak kalır.`);
-    if (kind === "BUDGET_INCREASE") requireRole(actor, ["OWNER", "ADMIN"]);
+    // Erken ret: artış önerisi harcama yetkisi ister (yetki transaction içinde yeniden doğrulanır).
+    if (kind === "BUDGET_INCREASE") await requireSpendAuthority(actor);
 
     const targetCampaignId =
       (typeof action.campaignId === "string" && action.campaignId.trim()) || input.campaignId?.trim() || null;
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         WHERE "id" = ${targetCampaignId} AND "workspaceId" = ${actor.workspaceId} FOR UPDATE`;
       const campaign = await tx.campaign.findFirst({
         where: { id: targetCampaignId, workspaceId: actor.workspaceId, adAccount: { orgId: actor.orgId } },
-        include: { adAccount: { include: { connection: true } } },
+        include: { adAccount: { select: { currency: true, connectionId: true } } },
       });
       if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
       if (campaign.workflowStatus === "ARCHIVED") throw new HttpError(409, "Arşivlenmiş kampanyaya uygulanamaz.");
@@ -69,32 +70,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         newCents = Math.round(currentCents * (1 - pct / 100));
       }
       if (newCents < 1) throw new HttpError(422, "Bütçe çok küçük.");
-      if (newCents > currentCents) {
-        requireRole(actor, ["OWNER", "ADMIN"]);
-        const org = await tx.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { monthlyAdBudgetCap: true } });
-        if (org.monthlyAdBudgetCap != null && newCents * 30 > org.monthlyAdBudgetCap)
-          throw new HttpError(422, "Yeni bütçe kuruluşun aylık üst sınırını aşıyor.");
-      }
 
-      const published = ["ACTIVE", "PUBLISHED_PAUSED"].includes(campaign.workflowStatus ?? "");
-      if (published && campaign.metaCampaignId && newCents !== currentCents) {
-        const conn = campaign.adAccount.connection;
-        if (!conn || conn.orgId !== actor.orgId || conn.status !== "CONNECTED" ||
-            (conn.expiresAt && conn.expiresAt <= new Date()))
-          throw new HttpError(400, "Meta bağlantısı aktif değil.");
-        const mock = loadEnv().META_MOCK_MODE;
-        if (!mock && !conn.tokenCiphertext) throw new HttpError(400, "Meta erişim token'ı bulunamadı.");
-        try {
-          const meta = await createMetaClient().updateBudget(
-            { entityType: "campaign", entityId: campaign.metaCampaignId, dailyBudgetCents: newCents },
-            mock ? "mock-token" : decrypt(conn.tokenCiphertext!),
-          );
-          if (!meta.success) throw new Error("Meta update failed");
-          metaSynced = true;
-        } catch {
-          throw new HttpError(502, "Meta bütçe güncellemesi başarısız. Bütçe değiştirilmedi.");
-        }
-      }
+      // Artışta harcama yetkisi + toplam aylık üst sınır; yayındaysa Meta önce güncellenir (CBO/ABO).
+      const outcome = newCents === currentCents
+        ? null
+        : await applyDailyBudgetChange(tx, actor, campaign, newCents, {
+            failureMessage: "Meta bütçe güncellemesi başarısız. Bütçe değiştirilmedi.",
+          });
+      metaSynced = Boolean(outcome?.metaLevel);
 
       const updated = await tx.campaign.update({
         where: { id: campaign.id },

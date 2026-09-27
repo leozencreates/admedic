@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@admedic/database";
 import { HttpError } from "./http";
 import type { Actor } from "./auth";
+import { contentPolicyText } from "./campaign-content";
 
 export async function ownedCampaign(actor: Actor, id: string, db: Prisma.TransactionClient = prisma) {
   const campaign = await db.campaign.findFirst({
@@ -25,11 +26,15 @@ export async function lockCampaignRow(tx: Prisma.TransactionClient, actor: Actor
     WHERE "id" = ${id} AND "workspaceId" = ${actor.workspaceId} FOR UPDATE`;
 }
 
-/** Politika kontrolüne beslenen kampanya metni: ad + (varsa) plan brief'i. */
-export function campaignPolicyText(campaign: { name: string; plan?: unknown }): string {
+/**
+ * Politika kontrolüne beslenen kampanya metni: ad + (varsa) plan brief'i + bağlı onaylı içerik
+ * (başlık, metin, açıklama, form soruları, WhatsApp karşılaması). Meta'ya giden metnin tamamı
+ * her onay/yayın/etkinleştirme adımında taze kural setiyle yeniden kontrol edilir (ADR-0008).
+ */
+export function campaignPolicyText(campaign: { name: string; plan?: unknown; content?: unknown }): string {
   const plan = campaign.plan as { brief?: unknown } | null | undefined;
   const brief = typeof plan?.brief === "string" ? plan.brief : "";
-  return [campaign.name, brief].filter((s) => s.trim().length > 0).join("\n");
+  return [campaign.name, brief, contentPolicyText(campaign.content)].filter((s) => s.trim().length > 0).join("\n");
 }
 
 export interface ClinicPolicyContext {

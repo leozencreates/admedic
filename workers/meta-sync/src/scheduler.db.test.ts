@@ -83,7 +83,10 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync
   }
 
   it("insight tutarlarını hesap para birimine göre minor unit yazar; throttle hesabını atlar", async () => {
-    const meta = stubClient({ [`kwd${suffix}`]: async () => [insightRow("2026-09-20"), insightRow("2026-09-21", { cpc: undefined, cpm: undefined })] });
+    // Tarihler bugüne göre 60/59 gün önce: anomali testinin 14 günlük penceresine hiçbir zaman
+    // düşmez (sabit tarih kullanıldığında 2026-09-27'den itibaren fazladan SPEND_SPIKE üretiyordu).
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+    const meta = stubClient({ [`kwd${suffix}`]: async () => [insightRow(daysAgo(60)), insightRow(daysAgo(59), { cpc: undefined, cpm: undefined })] });
     const synced = await syncInsights(meta, await workspaceWithAccounts());
     expect(synced).toBe(2);
     const rows = await prisma.insightSnapshot.findMany({ where: { workspaceId, adAccountId: kwdAccountId }, orderBy: { date: "asc" } });
@@ -111,6 +114,57 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync
     expect(isMetaThrottleError(new MetaGraphError({ code: 80004, message: "x" }))).toBe(true);
     expect(isMetaThrottleError(new MetaGraphError({ code: 100, message: "x" }))).toBe(false);
     expect(isMetaThrottleError(new Error("x"))).toBe(false);
+  });
+
+  it("kampanya bütçesini (CBO kampanya, ABO aktif ad set toplamı) ve Meta durumunu yerele yansıtır", async () => {
+    const budgetAccountId = (await prisma.adAccount.create({
+      data: { orgId, workspaceId, connectionId, name: "Bütçe", currency: "EUR", metaAccountId: `act_budget${suffix}` },
+    })).id;
+    const partial = await prisma.campaign.create({ data: {
+      adAccountId: budgetAccountId, workspaceId, name: "Yarım yayın", metaCampaignId: `cmp_partial${suffix}`,
+      workflowStatus: "APPROVED", status: "PAUSED", dailyBudget: 1_000,
+    } });
+    let round = 1;
+    const listAdSets = vi.fn(async () => [
+      { id: "as1", campaignId: `cmp_abo${suffix}`, name: "a", status: "ACTIVE", dailyBudgetCents: 3_000 },
+      { id: "as2", campaignId: `cmp_abo${suffix}`, name: "b", status: "ACTIVE", dailyBudgetCents: 2_000 },
+      { id: "as3", campaignId: `cmp_abo${suffix}`, name: "c", status: "PAUSED", dailyBudgetCents: 9_999 },
+    ]);
+    const meta = {
+      listAdSets,
+      async listCampaigns(accountId: string) {
+        if (accountId !== `budget${suffix}`) throw new MetaGraphError({ code: 100, message: "bilinmeyen hesap" });
+        return [
+          { id: `cmp_cbo${suffix}`, name: "CBO", status: round === 1 ? "ACTIVE" : "PAUSED", dailyBudgetCents: round === 1 ? 5_000 : 7_000 },
+          { id: `cmp_abo${suffix}`, name: "ABO", status: "ACTIVE" },
+          { id: `cmp_life${suffix}`, name: "Ömür", status: round === 1 ? "PAUSED" : "ARCHIVED", lifetimeBudgetCents: 100_000 },
+          { id: `cmp_partial${suffix}`, name: "Yarım yayın", status: "ACTIVE", dailyBudgetCents: 9_000 },
+        ];
+      },
+      async getInsights() { return []; },
+    } as unknown as MetaClientLike;
+    await syncInsights(meta, await workspaceWithAccounts());
+    const byMeta = async () => new Map(
+      (await prisma.campaign.findMany({ where: { adAccountId: budgetAccountId } })).map((c) => [c.metaCampaignId!.replace(suffix, ""), c]),
+    );
+    let rows = await byMeta();
+    expect(rows.get("cmp_cbo")).toMatchObject({ dailyBudget: 5_000, lifetimeBudget: null, budgetType: "DAILY", status: "ACTIVE", workflowStatus: "ACTIVE" });
+    expect(rows.get("cmp_abo")).toMatchObject({ dailyBudget: 5_000, budgetType: "DAILY", status: "ACTIVE" });
+    expect(rows.get("cmp_life")).toMatchObject({ dailyBudget: null, lifetimeBudget: 100_000, budgetType: "LIFETIME", status: "PAUSED" });
+    // Yarım kalan Admedic yayını (APPROVED) senkronla değişmez.
+    expect(rows.get("cmp_partial")).toMatchObject({ id: partial.id, workflowStatus: "APPROVED", status: "PAUSED", dailyBudget: 1_000 });
+    expect(listAdSets).toHaveBeenCalledTimes(1);
+
+    round = 2;
+    await syncInsights(meta, await workspaceWithAccounts());
+    rows = await byMeta();
+    expect(rows.get("cmp_cbo")).toMatchObject({ dailyBudget: 7_000, status: "PAUSED" });
+    expect(rows.get("cmp_life")).toMatchObject({ status: "ARCHIVED" });
+    expect(rows.get("cmp_partial")).toMatchObject({ status: "PAUSED", dailyBudget: 1_000 });
+    // Mevcut kampanyalar için ad set listesi yeniden çekilmez.
+    expect(listAdSets).toHaveBeenCalledTimes(1);
+    await prisma.campaign.deleteMany({ where: { adAccountId: budgetAccountId } });
+    await prisma.adAccount.delete({ where: { id: budgetAccountId } });
   });
 
   it("anomali uyarılarını OPEN dedup ile oluşturur", async () => {

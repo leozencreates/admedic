@@ -18,6 +18,8 @@ export const META_REQUIRED_SCOPES = [
 
 export const META_OPTIONAL_SCOPES = [
   "pages_manage_metadata",
+  /** Instant Form (leadgen_forms) oluşturma ve sayfa token'ıyla lead okuma (lead ads App Review). */
+  "pages_manage_ads",
   "pages_messaging",
   "instagram_basic",
   "instagram_manage_messages",
@@ -32,6 +34,7 @@ export const META_OAUTH_SCOPES = [
   "ads_read",
   "pages_show_list",
   "pages_manage_metadata",
+  "pages_manage_ads",
   "pages_messaging",
   "leads_retrieval",
   "instagram_basic",

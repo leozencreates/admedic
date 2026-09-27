@@ -19,6 +19,8 @@ import type {
   UpdateBudgetInput,
 } from "./types";
 import { INSIGHT_DEFAULT_FIELDS } from "./types";
+import type { AdImageUpload, MetaAdImage, MetaAdLocale, MetaCreatedObject } from "./types";
+import type { GraphBody } from "./publish";
 
 export interface MetaClientLike {
   getVersion(): string;
@@ -41,6 +43,18 @@ export interface MetaClientLike {
     token: string,
   ): Promise<MetaCreateCampaignResult>;
   getAdReview(adId: string, token: string): Promise<MetaAdReviewResult>;
+  /** `POST act_{id}/adsets` — gövde `buildAdSetBody` ile üretilir (status PAUSED). */
+  createAdSet(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject>;
+  /** `POST act_{id}/adcreatives` — gövde `buildAdCreativeBody` ile üretilir. */
+  createAdCreative(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject>;
+  /** `POST act_{id}/ads` — gövde `buildAdBody` ile üretilir (status PAUSED). */
+  createAd(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject>;
+  /** `POST {page_id}/leadgen_forms` — sayfa erişim token'ı ile. */
+  createLeadForm(pageId: string, body: GraphBody, pageToken: string): Promise<MetaCreatedObject>;
+  /** `POST act_{id}/adimages` (bytes, base64) → görsel hash'i. */
+  uploadAdImage(accountId: string, image: AdImageUpload, token: string): Promise<MetaAdImage>;
+  /** `GET search?type=adlocale&q=…` → locale anahtarları. */
+  searchAdLocales(query: string, token: string): Promise<MetaAdLocale[]>;
 }
 
 function num(v: unknown): number | undefined {
@@ -78,7 +92,10 @@ export function toMetaObjective(objective: string): MetaOutcomeObjective {
 /**
  * `POST act_{id}/campaigns` gövdesi. `special_ad_categories` Meta'da zorunludur;
  * sağlık turizmi özel reklam kategorisi (kredi/istihdam/konut/politika) değildir → `[]`.
- * `status` her zaman PAUSED; `daily_budget` yalnızca CBO'da (ABO'da bütçe ad set'tedir).
+ * `status` her zaman PAUSED. CBO'da `daily_budget` + teklif stratejisi kampanyadadır ("campaign budget
+ * optimization kullanılıyorsa bid_strategy üst kampanyada ayarlanmalı"). ABO'da bütçe ad set'tedir ve
+ * v24.0'dan beri `is_adset_budget_sharing_enabled` zorunludur (belirtilmezse 100/4834011); pazar
+ * paylarının sabit kalması için `false` gönderilir (docs/meta-constraints.md, 2026-09-27).
  */
 export function buildCreateCampaignBody(
   input: CreateCampaignInput,
@@ -92,8 +109,17 @@ export function buildCreateCampaignBody(
     objective: toMetaObjective(input.objective),
     status: "PAUSED",
     special_ad_categories: JSON.stringify([]),
-    ...(sendBudget ? { daily_budget: Math.round(input.dailyBudgetCents!) } : {}),
+    ...(sendBudget
+      ? { daily_budget: Math.round(input.dailyBudgetCents!), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }
+      : { is_adset_budget_sharing_enabled: "false" }),
   };
+}
+
+/** Graph `POST` yanıtından nesne kimliği; yoksa açık hata (Meta'ya giden isteğin sonucu belirsiz kalmaz). */
+function createdId(body: unknown, what: string): string {
+  const id = (body as { id?: unknown } | null)?.id;
+  if (id === undefined || id === null || id === "") throw new Error(`Meta ${what} oluşturmadı: id dönmedi.`);
+  return String(id);
 }
 
 export class MetaMarketingClient implements MetaClientLike {
@@ -359,5 +385,55 @@ export class MetaMarketingClient implements MetaClientLike {
       },
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  private async createUnder(path: string, body: GraphBody, token: string, what: string): Promise<MetaCreatedObject> {
+    const response = await graphPost(this.version, path, body, token, this.fetchFn);
+    return { id: createdId(response, what), metaResponse: response };
+  }
+
+  async createAdSet(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject> {
+    return this.createUnder(`act_${accountId.replace(/^act_/, "")}/adsets`, body, token, "ad set");
+  }
+
+  async createAdCreative(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject> {
+    return this.createUnder(`act_${accountId.replace(/^act_/, "")}/adcreatives`, body, token, "kreatif");
+  }
+
+  async createAd(accountId: string, body: GraphBody, token: string): Promise<MetaCreatedObject> {
+    return this.createUnder(`act_${accountId.replace(/^act_/, "")}/ads`, body, token, "reklam");
+  }
+
+  async createLeadForm(pageId: string, body: GraphBody, pageToken: string): Promise<MetaCreatedObject> {
+    return this.createUnder(`${pageId}/leadgen_forms`, body, pageToken, "lead formu");
+  }
+
+  async uploadAdImage(accountId: string, image: AdImageUpload, token: string): Promise<MetaAdImage> {
+    const response = (await graphPost(
+      this.version,
+      `act_${accountId.replace(/^act_/, "")}/adimages`,
+      // Belgelenen parametre yalnızca `bytes` (base64); `filename` çok parçalı dosya yüklemesi içindir.
+      { bytes: image.bytesBase64 },
+      token,
+      this.fetchFn,
+    )) as { images?: Record<string, { hash?: unknown; url?: unknown }> };
+    // Yanıt: { images: { "<ad>": { hash, url, … } } } — anahtar dosya adı ya da "bytes" olabilir.
+    const first = Object.values(response?.images ?? {})[0];
+    if (!first || typeof first.hash !== "string" || first.hash === "")
+      throw new Error("Meta görsel yüklemesi hash döndürmedi.");
+    return { hash: first.hash, url: typeof first.url === "string" ? first.url : undefined };
+  }
+
+  async searchAdLocales(query: string, token: string): Promise<MetaAdLocale[]> {
+    const rows = await graphGet<{ key?: unknown; name?: unknown }>(
+      this.version,
+      "search",
+      { type: "adlocale", q: query, limit: "100", access_token: token },
+      this.fetchFn,
+      1,
+    );
+    return rows
+      .map((r) => ({ key: Number(r.key), name: String(r.name ?? "") }))
+      .filter((r) => Number.isInteger(r.key) && r.key > 0 && r.name !== "");
   }
 }

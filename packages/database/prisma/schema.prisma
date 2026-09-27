@@ -211,9 +211,10 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
-  monthlyAdBudgetCap Int? // minor; kampanya taslak toplam bütçesi bu sınırı aşarsa bloklanır
+  monthlyAdBudgetCap Int? // minor; aktif kampanyaların aylık toplamı + yeni bütçe bu sınırı aşarsa işlem bloklanır
   retentionDays Int   @default(365) // lead saklama süresi; süresi dolan lead'ler anonimleştirilir
   consentText String? // tenant'a özel rıza/aydınlatma metni (varsayılan yerine)
+  privacyPolicyUrl String? // Instant Form gizlilik politikası bağlantısı (Meta lead formu için zorunlu; spec 3.11)
   reportRecipient String? // haftalık rapor alıcısı (tenant bazlı; boşsa WEEKLY_REPORT_RECIPIENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -274,6 +275,10 @@ model Membership {
   role      Role
   status    MembershipStatus @default(ACTIVE)
   createdAt DateTime         @default(now())
+  /// Harcama yetkisi devri (spec 3.6): OWNER'ın yetki verdiği üye kampanya etkinleştirme ve bütçe artışı yapabilir.
+  canApproveSpend Boolean   @default(false)
+  spendGrantedBy  String?   // yetkiyi veren OWNER kullanıcı kimliği
+  spendGrantedAt  DateTime?
 
   org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -423,6 +428,17 @@ model Campaign {
   metaReviewStatus String?  // Meta reklam inceleme durumu (APPROVED/REJECTED/...)
   metaRejectionReason Json? // Meta red gerekçesi (kural iyileştirme için raporlanır)
   plan Json? // Planlayıcı çıktısı + girişler (structure/strategy/rationale/testPlan/pazarlar/diller) — spec 3.3
+  /// Kampanyaya bağlanan onaylı stüdyo taslakları (dil başına reklam metni; spec 3.4/3.6).
+  contentDraftIds String[] @default([])
+  /// Bağlama anındaki onaylı içeriğin değişmez kopyası: onaya giden ve Meta'ya gönderilen metin budur.
+  content Json?
+  /// Reklam görseli: Meta reklam hesabı görsel kütüphanesindeki hash (+ önizleme URL'si).
+  imageHash String?
+  imageUrl  String?
+  /// Meta yayın ilerlemesi (sayfa, lead formları, locale anahtarları, kreatifler, tamamlanma) — yarım kalan yayın kaldığı yerden sürer.
+  publishState Json?
+  /// Eşzamanlı yayın isteklerini engelleyen kısa süreli kilit (süresi dolan kilit geçersizdir).
+  publishLockedUntil DateTime?
 
   adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)

@@ -247,6 +247,31 @@ export interface MetaUpdateResult {
   metaResponse?: unknown;
 }
 
+/** Graph `POST` ile oluşturulan nesne (ad set, kreatif, reklam, lead formu). */
+export interface MetaCreatedObject {
+  id: string;
+  metaResponse?: unknown;
+}
+
+/** Reklam görseli yükleme girdisi: base64 içerik (Meta `bytes` parametresi). */
+export interface AdImageUpload {
+  bytesBase64: string;
+  /** Yalnızca kayıt/iz için; Meta'ya gönderilmez. */
+  filename: string;
+}
+
+/** Reklam hesabı görsel kütüphanesindeki görsel: kreatiflerde `image_hash` olarak kullanılır. */
+export interface MetaAdImage {
+  hash: string;
+  url?: string;
+}
+
+/** `search?type=adlocale` sonucu: `targeting.locales` için sayısal anahtar. */
+export interface MetaAdLocale {
+  key: number;
+  name: string;
+}
+
 export interface MetaClientOptions {
   /** Graph API sürümü; META_API_VERSION env'den okunur. Koda sabit yazılmaz. */
   version?: string;

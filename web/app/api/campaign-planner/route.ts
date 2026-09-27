@@ -8,6 +8,8 @@ import {
   PLAN_OBJECTIVES,
 } from "../../_lib/campaign-plan";
 import { clinicPolicyContext } from "../../_lib/campaign-workflow";
+import { activeMonthlyCommitmentCents } from "../../_lib/spend-cap";
+import { withDeliveryCheck } from "../../_lib/campaign-content";
 
 export const maxDuration = 15;
 
@@ -47,10 +49,15 @@ export async function POST(request: Request) {
       // Klinik pazar hedefleri (MarketTarget) varsa dilleri öncelikli (salt okunur).
       clinicPolicyContext(actor.workspaceId),
     ]);
-    const plan = buildCampaignPlan({
+    const currency = adAccount?.currency ?? "EUR";
+    // Toplam aylık üst sınır: aktif kampanyaların aylık toplamı + bu planın aylık öngörüsü (spec 3.3).
+    const monthlyCommittedCents =
+      org?.monthlyAdBudgetCap != null ? await activeMonthlyCommitmentCents(prisma, actor.orgId, currency) : 0;
+    const plan = withDeliveryCheck(buildCampaignPlan({
       objective: input.objective,
       dailyBudgetCents: input.dailyBudgetCents,
       monthlyCapCents: org?.monthlyAdBudgetCap ?? undefined,
+      monthlyCommittedCents,
       markets: input.markets,
       ageMin: input.ageMin,
       ageMax: input.ageMax,
@@ -59,8 +66,8 @@ export async function POST(request: Request) {
       strategy: input.strategy,
       brief: input.brief,
       marketLanguageOverrides: clinic.marketLanguages,
-      currency: adAccount?.currency ?? "EUR",
-    });
+      currency,
+    }));
     return { plan };
   });
 }

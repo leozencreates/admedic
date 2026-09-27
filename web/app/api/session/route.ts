@@ -5,9 +5,14 @@ import { prisma } from "@admedic/database";
 import { currentActor, quota, SESSION_COOKIE } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { tokenHash, verifyPassword } from "../../_lib/password";
+import { hasSpendAuthority } from "../../_lib/spend-authority";
 
 export async function GET() {
-  return respond(async () => ({ actor: await currentActor() }));
+  return respond(async () => {
+    const actor = await currentActor();
+    // Arayüz etkinleştirme/bütçe artışı düğmelerini buna göre gösterir; yetki her işlemde sunucuda yeniden doğrulanır.
+    return { actor: actor ? { ...actor, canApproveSpend: await hasSpendAuthority(actor) } : null };
+  });
 }
 export async function POST(request: Request) {
   return respond(async () => {

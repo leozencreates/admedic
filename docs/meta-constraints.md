@@ -217,3 +217,102 @@ Kaynaklar (2026-09-26 kontrol edildi): developers.facebook.com/docs/facebook-log
 - Gelen mesaja yanıt 24 saatlik pencere içinde serbest metindir (WhatsApp `type:"text"`, Messenger `messaging_type:"RESPONSE"`); pencere dışı şablon/HUMAN_AGENT gereksinimi karşılama akışındaki gibi geçerlidir.
 - Acil durum / insan isteği / kapsam dışı (fiyat, tıbbi uygunluk) tespiti kelime sınırlı çok dilli sözlükle (`detectHandoff`) yapılır; devirde lead'e kendi dilinde kısa bilgilendirme gider, koordinatör için `Alert` (tip `PAUSE_APPLIED`, `entityType:"CONVERSATION"`; acilde CRITICAL, aksi INFO) açılır. ❗ Şemaya `AlertType.CONVERSATION_ESCALATED` eklenmesi önerilir.
 - Prompt'ta lead adı/telefon/e-posta yoktur: `sha256(orgId:leadId)` ilk 8 karakteri takma kimlik; lead serbest metnindeki e-posta/telefon maskelenir (spec 3.11).
+
+---
+
+## 2026-09-27 — Tam PAUSED yayın: ad set, lead formu, kreatif, reklam (spec 3.3/3.6; ADR-0014)
+
+Kod: `packages/meta-api/src/publish.ts` (saf gövde üreticileri + doğrulama), `client.ts`/`mock.ts` (uçlar),
+`web/app/_lib/campaign-publish.ts` (yayın/etkinleştirme orkestrasyonu). Aşağıdaki kaynaklar 2026-09-27'de
+kontrol edildi; "ikincil" işaretliler resmi sayfa yerine uzman kaynağından alındı. 2026-09-26 notundaki iki madde
+güncellendi: ad set/hedefleme artık Meta'ya gönderiliyor (sayısal locale anahtarlarıyla) ve ACTIVE geçişini
+OWNER/ADMIN değil, yalnızca harcama yetkisi olan kişi (Owner veya yetki verdiği üye) yapabiliyor (ADR-0014).
+
+### Kampanya bütçesi: CBO / ABO ve `is_adset_budget_sharing_enabled`
+- v24.0+: kampanyada bütçe yoksa (ABO) `is_adset_budget_sharing_enabled` alanına True/False verilmesi **zorunlu**;
+  verilmezse hata 100 / **4834011** ("Must specify True or False in is_adset_budget_sharing_enabled field. This is
+  required field starting v24 if you are not setting budget at the campaign level"). Kaynak:
+  developers.facebook.com/documentation/ads-commerce/marketing-api/bidding/guides/adset-budget-sharing.
+  Uygulama: ABO'da `false` (pazar payları birbirine kaymasın). Önceki sürüm bu alanı göndermiyordu → v24+'da
+  her ABO kampanya oluşturma hatası veriyordu (düzeltildi, `buildCreateCampaignBody`).
+- CBO: kampanyada `daily_budget` + `bid_strategy=LOWEST_COST_WITHOUT_CAP`; ABO: ad set'te `daily_budget` +
+  `bid_strategy`. ❗ **DOĞRULANMADI (canlı):** CBO'da `bid_strategy`'nin zorunluluğu; gönderilen değer Meta varsayılanıdır.
+- Bütçe değişikliği: CBO'da kampanya, ABO'da her Meta ad set'i orantılı payını alır (kampanyaya bütçe yazmak
+  yapıyı değiştirir). Bir ad set başarısız olursa önceden güncellenenler eski değerine geri yazılır (en iyi çaba).
+
+### Ad set (`POST act_{id}/adsets`) — hepsi `status=PAUSED`, `billing_event=IMPRESSIONS`
+- **Instant Form:** `OUTCOME_LEADS` + `destination_type=ON_AD` + `optimization_goal=LEAD_GENERATION` +
+  `promoted_object={"page_id":…}`. Kaynak: /docs/marketing-api/guides/lead-ads/create/ ("optimization_goal:
+  LEAD_GENERATION or LINK_CLICKS", "promoted_object set to the corresponding PAGE_ID", LEAD_GENERATION'da
+  billing IMPRESSIONS). ❗ Bu sayfa hâlâ eski `objective=LEAD_GENERATION` yazıyor; yeni kampanyalarda eski
+  objective'ler reddedildiği için ODAX eşdeğeri `OUTCOME_LEADS` kullanılıyor → **canlı doğrulanmalı**.
+- **Click-to-WhatsApp:** objective `OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_SALES | OUTCOME_TRAFFIC`;
+  `destination_type=WHATSAPP`; `promoted_object.page_id` zorunlu (`whatsapp_phone_number` isteğe bağlı);
+  `optimization_goal=CONVERSATIONS`. Kaynak: /docs/marketing-api/ad-creative/messaging-ads/click-to-whatsapp/.
+  ❗ **DOĞRULANMADI:** belge optimizasyon hedeflerini açıkça yalnızca OUTCOME_ENGAGEMENT için listeliyor
+  (CONVERSATIONS, LINK_CLICKS); LEADS/SALES ile CONVERSATIONS canlı doğrulanmalı. Sayfanın bir WhatsApp Business
+  numarasına bağlı olması gerekir; bu bağ Admedic'te denetlenmiyor (Meta hatası yayın adımında gösterilir).
+- **Açılış sayfası:** `destination_type=WEBSITE` + `optimization_goal=LINK_CLICKS` (bilinirlikte hedef türü yok,
+  `REACH`). Gerekçe: sağlık/wellness veri kısıtları web dönüşüm optimizasyonunu kısıtlıyor (aşağıda). ODAX eşleme
+  tablosu (/docs/marketing-api/reference/ad-campaign/) Leads → Website için "Landing Page Views, Link Clicks"
+  içeriyor; Sales → Website için Link Clicks'i ikincil kaynak doğruluyor (jonloomer.com/odax-facebook-objectives).
+  ❗ **DOĞRULANMADI:** OUTCOME_SALES + WEBSITE ad set'inde piksel (`promoted_object.pixel_id`) zorunlu olabilir.
+- **Instagram DM:** `INSTAGRAM_DIRECT` planlayıcının hedefleriyle desteklenmiyor → plan kaydedilmeden engellenir.
+- **Hedefleme:** `geo_locations.countries` (ISO alpha-2), `age_min ≥ 18` (spec 3.3), `age_max ≤ 65` (Meta üst sınırı),
+  `locales`: sayısal anahtarlar `GET /search?type=adlocale&q=<İngilizce dil adı>`
+  (/docs/marketing-api/audiences/reference/targeting-search). Seçim: "<Dil> (All)" varsa yalnızca o; yoksa adı tam
+  eşleşen; yoksa "<Dil> (…)" bölgesel varyantlar ("Upside Down"/"Pirate" hariç). Eşleşme yoksa dil hedeflemesi
+  yapılmaz (ülke hedeflemesi kalır). ❗ **DOĞRULANMADI:** dil bazında "(All)" kaydının varlığı ve adları.
+- **Ad set başına tek dil:** Meta aynı ad set'te reklam dilini izleyicinin diline göre seçmez; planlayıcının pazar
+  ad set'i yayında pazar × içerik dili olarak bölünür (ABO payı diller arasında eşit, toplam korunur).
+
+### Lead formu (`POST {page_id}/leadgen_forms`)
+- Sayfa erişim token'ı ile; lead ads App Review'ında `leads_retrieval` **ve** `pages_manage_ads` gerekir
+  (/documentation/ads-commerce/marketing-api/guides/lead-ads: "You must include the leads_retrieval and
+  pages_manage_ads permissions in your submission"). `pages_manage_ads` OAuth kapsamına eklendi (opsiyonel; eksikse
+  Instant Form yayını açık mesajla durur).
+- Gövde: `name`, `locale` (TR_TR, EN_US, DE_DE, RU_RU, AR_AR, FR_FR, NL_NL, PL_PL), `questions`
+  (FULL_NAME, PHONE, EMAIL + taslağın soruları `CUSTOM`/`question_N`), `privacy_policy {url (https), link_text}`,
+  `custom_disclaimer {title, body, checkboxes:[{key:"kvkk_consent", is_required:true, is_checked_by_default:false}]}`.
+  Taslak başına bir form (taslağın dili ve soruları); rıza metni formun dilindedir (TR'de kuruluş metni).
+- ❗ **DOĞRULANMADI:** TR/RU/NL/PL için `locale` enum değerleri; form adının sayfa başına benzersizlik zorunluluğu
+  (ada kampanya kimliği son eki eklendi); sağlık durumu soran özel soruların lead ads politikası gereği reddedilmesi
+  (taslak soruları kampanya politika kontrolüne dahil edildi).
+
+### Kreatif (`POST act_{id}/adcreatives`), reklam (`POST act_{id}/ads`), görsel (`POST act_{id}/adimages`)
+- `object_story_spec.link_data`: `name` (başlık), `message` (metin), `description`, `link`, `image_hash`,
+  `call_to_action`; `page_id` her kreatifte zorunlu.
+- **Lead reklamı:** `link="http://fb.me/"` (izin verilen tek URL), `call_to_action.value.lead_gen_form_id`; CTA
+  yalnızca APPLY_NOW, DOWNLOAD, GET_QUOTE, LEARN_MORE, SIGN_UP, SUBSCRIBE (lead-ads/create) — diğerleri LEARN_MORE'a
+  indirgenir. **WhatsApp:** `link="https://api.whatsapp.com/send"`, `{"type":"WHATSAPP_MESSAGE","value":{"app_destination":"WHATSAPP"}}`.
+  **Web:** `link=<https açılış sayfası>`, `call_to_action.value.link` aynı adres.
+- **Advantage+ kreatif özellikleri:** v22.0'dan beri `standard_enhancements` paketi açılıp kapatılamaz; özellikler
+  `degrees_of_freedom_spec.creative_features_spec.<özellik>.enroll_status` (OPT_IN/OPT_OUT) ile tek tek yönetilir
+  (/docs/marketing-api/advantage-catalog-ads/standard-enhancements/). Politika kontrolünden geçmiş sağlık metnini
+  değiştirmemesi için `text_optimizations`, `description_automation`, `add_text_overlay` **OPT_OUT** gönderilir
+  (üçü de v26 Ad Creative Features Spec'te mevcut: /docs/marketing-api/reference/ad-creative-features-spec/).
+  ❗ **DOĞRULANMADI:** `text_translation`, `generate_cta`, `replace_media_text` gibi diğer metin özelliklerinin tek
+  görselli link reklamlarındaki varsayılanı (şimdilik gönderilmiyor).
+- **Reklam:** `status=PAUSED`, `adset_id`, `creative={"creative_id":…}`; kreatif, taslak varyantı başına bir kez
+  oluşturulur ve aynı dildeki ad set'lerde paylaşılır.
+- **Görsel:** `bytes` (base64) → yanıt `images.<ad>.hash` (+ `url`); kreatife `image_hash` olarak girer. Uygulama
+  sınırı: JPEG/PNG, ≤3 MB (sunucusuz ortam istek gövdesi sınırı ~4,5 MB); ≥1080×1080 önerisi uyarıdır, engel değil.
+
+### Etkinleştirme ve durdurma
+- Tam yayınlanan kampanyada ACTIVE sırası reklamlar → ad set'ler → kampanya (her biri `POST /{id}` `status=ACTIVE`);
+  kampanya en son açıldığı için teslimat hazır yapıyla başlar. Duraklatma yalnızca kampanyada.
+- Meta'dan senkronlanan (Ads Manager'da kurulmuş) kampanyada yalnızca kampanya etkinleştirilir; ad set/reklam
+  durumlarına dokunulmaz.
+
+### Sağlık/wellness reklamverenleri — 2025 veri kısıtları (ikincil kaynak)
+- Ocak 2025'te başlayıp 14 Şubat 2025'te tüm reklamverenlere yayıldı: sağlık sınıflı alan adlarında alt huni web
+  olayları (lead, purchase, add-to-cart) ile optimizasyon ve bu olaylardan kitle oluşturma kısıtlı; AB'de landing
+  page view optimizasyonu da kapalı. Instant Form (lead ads) ve üst huni hedefleri (bilinirlik, trafik, etkileşim)
+  kullanılabilir. Kaynak: wheelhousedmg.com/insights/articles/meta-data-restrictions-healthcare-advertising/.
+  Sonuç: planlayıcı web yönteminde LINK_CLICKS kullanır; ROAS/satın alma optimizasyonu Meta'ya gönderilmez.
+
+### Bilinen açıklar
+- `MetaMarketingClient` yazma/okuma çağrılarında `appsecret_proof` göndermiyor (yalnızca `graphGetAuthed` gönderiyor).
+  Uygulama ayarında "Require App Secret" açıksa Marketing API çağrıları reddedilir → canlıya geçmeden istemciye eklenmeli.
+- Meta'nın ad set başına günlük asgari bütçesi (para birimi ve optimizasyona göre değişir) önceden denetlenmiyor;
+  küçük ABO paylarında ad set adımı Meta hatasıyla durabilir (hata mesajı yayın ilerlemesinde gösterilir).

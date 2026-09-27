@@ -19,12 +19,16 @@ export function sameOrigin(request: Request) {
     throw new HttpError(403, "İstek kaynağı doğrulanamadı.");
   }
 }
+/** Varsayılan JSON gövde sınırı (bayt). Görsel yükleme gibi uçlar `maxBytes` ile açıkça yükseltir. */
+export const DEFAULT_BODY_LIMIT = 32_768;
 export async function body<T>(
   request: Request,
   schema: z.ZodType<T>,
+  opts: { maxBytes?: number } = {},
 ): Promise<T> {
   if (!request.headers.get("content-type")?.startsWith("application/json"))
     throw new HttpError(415, "JSON içerik bekleniyor.");
+  const limit = opts.maxBytes ?? DEFAULT_BODY_LIMIT;
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, "İstek gövdesi eksik.");
   const chunks: Uint8Array[] = [];
@@ -33,7 +37,7 @@ export async function body<T>(
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 32_768) {
+    if (size > limit) {
       await reader.cancel();
       throw new HttpError(413, "İstek çok büyük.");
     }

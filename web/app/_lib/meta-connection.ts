@@ -267,6 +267,72 @@ export function mockDiscoveredPages(): DiscoveredPage[] {
   ];
 }
 
+/** Mock moddaki yayın sayfası (mockDiscoveredPages ile aynı). */
+export const MOCK_PAGE_ID = "page_mock_1";
+const MOCK_PAGE_TOKEN = "mock-page-token";
+
+export interface PublishPage {
+  pageId: string;
+  /** Yalnızca istenirse (Instant Form) çözülür. */
+  pageToken: string | null;
+}
+
+/**
+ * Reklamların yayınlanacağı Facebook Sayfası (kreatif `object_story_spec.page_id`, lead reklamı ve
+ * WhatsApp için ad set `promoted_object.page_id`). Öncelik: reklam hesabı bağlantısında elle girilen
+ * Sayfa ID → kuruluşun tek bağlı (CONNECTED) PAGE bağlantısı. Birden fazla sayfa varsa seçim zorunludur.
+ * Instant Form için sayfa erişim token'ı gerekir (leadgen_forms; pages_manage_ads izni).
+ */
+export async function resolvePublishPage(input: {
+  orgId: string;
+  connectionId: string | null;
+  mockMode: boolean;
+  needPageToken: boolean;
+}): Promise<PublishPage> {
+  const adConnection = input.connectionId
+    ? await prisma.metaConnection.findFirst({
+        where: { id: input.connectionId, orgId: input.orgId },
+        select: { pageId: true },
+      })
+    : null;
+  const pages = await prisma.metaConnection.findMany({
+    where: { orgId: input.orgId, type: "PAGE", status: "CONNECTED", pageId: { not: null } },
+    select: { pageId: true, tokenCiphertext: true, scopes: true },
+    orderBy: { createdAt: "asc" },
+  });
+  let pageId = adConnection?.pageId?.trim() || null;
+  if (!pageId) {
+    if (pages.length > 1)
+      throw new HttpError(
+        422,
+        "Birden fazla Facebook Sayfası bağlı; Meta bağlantıları sayfasında reklam hesabı bağlantısına yayın sayfasının kimliğini (Sayfa ID) girin.",
+      );
+    pageId = pages[0]?.pageId ?? null;
+  }
+  if (!pageId) {
+    if (input.mockMode)
+      return { pageId: MOCK_PAGE_ID, pageToken: input.needPageToken ? MOCK_PAGE_TOKEN : null };
+    throw new HttpError(
+      422,
+      "Reklamların yayınlanacağı Facebook Sayfası bulunamadı; Meta bağlantıları sayfasından sayfaları keşfedin veya Sayfa ID girin.",
+    );
+  }
+  if (!input.needPageToken) return { pageId, pageToken: null };
+  if (input.mockMode) return { pageId, pageToken: MOCK_PAGE_TOKEN };
+  const page = pages.find((p) => p.pageId === pageId);
+  if (!page?.tokenCiphertext)
+    throw new HttpError(
+      422,
+      "Instant Form için sayfa erişim token'ı bulunamadı; Meta bağlantıları sayfasından sayfaları yeniden keşfedin.",
+    );
+  if (page.scopes.length > 0 && !page.scopes.includes("pages_manage_ads"))
+    throw new HttpError(
+      422,
+      "Instant Form oluşturmak için Meta'da pages_manage_ads izni gerekli; Meta bağlantısını yeniden yetkilendirin.",
+    );
+  return { pageId, pageToken: decrypt(page.tokenCiphertext) };
+}
+
 /**
  * `GET /me/accounts?fields=id,name,access_token,instagram_business_account` —
  * kullanıcının rolü olduğu sayfalar + sayfa token'ları (pages_show_list) ve bağlı

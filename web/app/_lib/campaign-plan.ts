@@ -16,6 +16,8 @@ export interface CampaignPlanInput {
   dailyBudgetCents: number;
   /** Kuruluş aylık üst sınırı — minor unit. */
   monthlyCapCents?: number;
+  /** Kuruluşun hâlihazırda aktif kampanyalarının aylık toplamı (minor unit); sınır bu toplam + plan ile karşılaştırılır. */
+  monthlyCommittedCents?: number;
   markets: string[];
   ageMin?: number;
   ageMax?: number;
@@ -65,6 +67,8 @@ export interface CampaignPlan {
   objective: PlanObjective;
   dailyBudgetCents: number;
   monthlyProjectedCents: number;
+  /** Diğer aktif kampanyaların aylık toplamı (minor unit; sınır kontrolünde plana eklenir). */
+  monthlyCommittedCents: number;
   currency: string;
   structure: string;
   strategy: BudgetStrategy;
@@ -238,9 +242,12 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
   if (!Number.isFinite(input.dailyBudgetCents) || input.dailyBudgetCents <= 0)
     blockingReasons.push("Günlük bütçe pozitif bir değer olmalıdır.");
   const monthlyProjectedCents = Math.round(input.dailyBudgetCents * 30);
-  if (input.monthlyCapCents != null && monthlyProjectedCents > input.monthlyCapCents)
+  const monthlyCommittedCents = Math.max(0, Math.round(input.monthlyCommittedCents ?? 0));
+  if (input.monthlyCapCents != null && monthlyCommittedCents + monthlyProjectedCents > input.monthlyCapCents)
     blockingReasons.push(
-      `Aylık öngörülen bütçe (${formatPlanMoney(monthlyProjectedCents, currency)}) kuruluş üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor.`,
+      monthlyCommittedCents > 0
+        ? `Aktif kampanyaların aylık toplamı (${formatPlanMoney(monthlyCommittedCents, currency)}) ile bu planın aylık öngörüsü (${formatPlanMoney(monthlyProjectedCents, currency)}) kuruluş üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor.`
+        : `Aylık öngörülen bütçe (${formatPlanMoney(monthlyProjectedCents, currency)}) kuruluş üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor.`,
     );
 
   const mainMarket = markets[0] ?? "belirsiz";
@@ -324,6 +331,7 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
     objective: input.objective,
     dailyBudgetCents: input.dailyBudgetCents,
     monthlyProjectedCents,
+    monthlyCommittedCents,
     currency,
     structure,
     strategy,

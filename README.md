@@ -68,7 +68,17 @@ pnpm desktop:dev     # Tauri kabuğu (Rust toolchain gerekir; bkz. desktop/READM
 (production dışında) faturalandırma ödeme simülasyonu modundadır. Production'da `AUTH_SECRET`, `ENCRYPTION_KEY`
 ve (mock kapalıysa) `META_API_VERSION` zorunludur; `loadEnv()` eksikse başlatmayı reddeder.
 
-## Bu turda değişenler (2026-09-26) — panelde nereye bakmalı
+## Bu turda değişenler (2026-09-27) — panelde nereye bakmalı
+
+- **Kampanya Planlayıcı** (`/campaign-planner`): onaylı stüdyo taslakları ve reklam görseli kampanyaya bağlanır;
+  "Yayınla" Meta'da kampanya → ad set (pazar × dil) → lead formu → kreatif → reklamı **PAUSED** kurar, yarım kalırsa
+  kaldığı yerden sürer. "Aktifleştir" ve bütçe artışı yalnızca **Owner veya Owner'ın yetki verdiği** ADMIN/MEDIA_BUYER
+  üyeye açık (**Harcama yetkisi** kartı). Aylık üst sınır artık aktif kampanyaların toplamı + yeni bütçe ile denetlenir;
+  sınırı yükseltmek/kaldırmak yalnızca Owner. Ayrıntı: ADR-0014.
+- **Klinik & Marka** (`/clinic`): Instant Form için https **gizlilik politikası bağlantısı** alanı.
+- Yükseltme adımları ve canlı doğrulama listesi: `docs/remaining-work.md` §0 ve §4.
+
+## Önceki tur (2026-09-26)
 
 - **Lead CRM** (`/leads`, `/leads/[id]`): dil/hizmet/kaynak kampanya sütunları, kayıp nedeni zorunlu LOST akışı,
   rıza ver/geri çek, sohbette şablon gönderimi ve koordinatör devralması; VIEWER/ANALYST için maskeli iletişim bilgisi.
@@ -133,6 +143,6 @@ Boş bırakılan alanlar `undefined` sayılır.
 - `docs/spec.md` — ürün spesifikasyonu (zorunlu bağlam)
 - `docs/ad-studio.md` — stüdyo, onay akışı, API tablosu, doğrulama
 - `docs/meta-constraints.md` — Meta API kısıtları ve tarihli bulgular
-- `docs/decisions/` — ADR'ler (0001 Fastify, 0002 onay kapılı executor, 0003 masaüstü, 0009 kreatif dilleri, 0010 haftalık rapor, 0011 para birimleri, 0012 Stripe akışı, 0013 LLM katmanı)
+- `docs/decisions/` — ADR'ler (0001 Fastify, 0002 onay kapılı executor, 0003 masaüstü, 0009 kreatif dilleri, 0010 haftalık rapor, 0011 para birimleri, 0012 Stripe akışı, 0013 LLM katmanı, 0014 tam PAUSED yayın + harcama yetkisi)
 - `desktop/README.md` — masaüstü kabuğu kurulum/paketleme
 - `docs/remaining-work.md` — kalan işler ve bilinen riskler

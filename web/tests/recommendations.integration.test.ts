@@ -190,11 +190,16 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("recommendation pipeline: ge
     expect((await apply(req(`/api/recommendations/${rec.id}/apply`, "POST", { campaignId: publishedCampaignId }), ctx(rec.id))).status).toBe(409);
   });
 
-  it("BUDGET_INCREASE: MEDIA_BUYER 403, OWNER ×1.2, aylık üst sınır 422, Meta hatasında değişiklik yok", async () => {
+  it("BUDGET_INCREASE: MEDIA_BUYER/ADMIN 403 (harcama yetkisi yok), OWNER ×1.2, aylık üst sınır 422, Meta hatasında değişiklik yok", async () => {
     await prisma.campaign.update({ where: { id: publishedCampaignId }, data: { dailyBudget: 20_000 } });
     const rec = await mkRec({ type: "BUDGET_INCREASE", status: "APPROVED", action: { type: "BUDGET_INCREASE", campaignId: publishedCampaignId } });
     as("MEDIA_BUYER");
     expect((await apply(req(`/api/recommendations/${rec.id}/apply`, "POST"), ctx(rec.id))).status).toBe(403);
+    as("ADMIN");
+    const adminApply = await apply(req(`/api/recommendations/${rec.id}/apply`, "POST"), ctx(rec.id));
+    expect(adminApply.status).toBe(403);
+    expect((await adminApply.json() as { error: string }).error).toMatch(/Owner/);
+    expect(updateBudget).not.toHaveBeenCalled();
     as("OWNER");
     updateBudget.mockRejectedValueOnce(new Error("upstream secret"));
     const failed = await apply(req(`/api/recommendations/${rec.id}/apply`, "POST"), ctx(rec.id));

@@ -150,11 +150,15 @@ describe("MetaMarketingClient (gerçek istemci, enjekte edilen fetch)", () => {
     });
     expect(cbo).toEqual({
       name: "K", objective: "OUTCOME_LEADS", status: "PAUSED", special_ad_categories: "[]", daily_budget: 20050,
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
     });
     const abo = buildCreateCampaignBody({
       accountId: "1", name: "K", objective: "MAX_ROAS", dailyBudgetCents: 20050, budgetStrategy: "ABO",
     });
     expect(abo).not.toHaveProperty("daily_budget");
+    expect(abo).not.toHaveProperty("bid_strategy");
+    // v24+: bütçe ad set'teyken zorunlu (yoksa 100/4834011).
+    expect(abo.is_adset_budget_sharing_enabled).toBe("false");
     expect(abo.objective).toBe("OUTCOME_SALES");
     // Strateji verilmezse bütçe kampanya seviyesindedir (CBO varsayımı).
     expect(buildCreateCampaignBody({ accountId: "1", name: "K", objective: "OUTCOME_LEADS", dailyBudgetCents: 100 }))
@@ -182,5 +186,54 @@ describe("MetaMarketingClient (gerçek istemci, enjekte edilen fetch)", () => {
     expect(post.body?.get("daily_budget")).toBe("30000");
     expect(post.body?.get("access_token")).toBe("tok");
     expect(new URL(calls[1]!.url).searchParams.get("fields")).toBe("review_feedback");
+  });
+
+  it("ad set / kreatif / reklam / lead formu doğru uca form gövdesiyle gider ve id döner", async () => {
+    const calls: { url: string; body?: URLSearchParams }[] = [];
+    let next = 100;
+    const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, body: init?.body as URLSearchParams | undefined });
+      return fakeResponse({ id: String(next++) }, true, 200);
+    };
+    const client = new MetaMarketingClient({ version: "v26.0", fetchFn: fetchFn as unknown as typeof fetch });
+    expect((await client.createAdSet("act_111", { name: "AS", status: "PAUSED" }, "tok")).id).toBe("100");
+    expect((await client.createAdCreative("111", { name: "CR" }, "tok")).id).toBe("101");
+    expect((await client.createAd("111", { name: "AD", status: "PAUSED" }, "tok")).id).toBe("102");
+    expect((await client.createLeadForm("555", { name: "F" }, "page-tok")).id).toBe("103");
+    expect(calls.map((c) => new URL(c.url).pathname)).toEqual([
+      "/v26.0/act_111/adsets",
+      "/v26.0/act_111/adcreatives",
+      "/v26.0/act_111/ads",
+      "/v26.0/555/leadgen_forms",
+    ]);
+    expect(calls[0]!.body?.get("status")).toBe("PAUSED");
+    expect(calls[3]!.body?.get("access_token")).toBe("page-tok");
+  });
+
+  it("id dönmeyen oluşturma yanıtı sessizce yutulmaz", async () => {
+    const fetchFn = async (): Promise<Response> => fakeResponse({ success: true }, true, 200);
+    const client = new MetaMarketingClient({ version: "v26.0", fetchFn: fetchFn as unknown as typeof fetch });
+    await expect(client.createAd("111", { name: "AD" }, "tok")).rejects.toThrow(/id dönmedi/);
+  });
+
+  it("uploadAdImage bytes gönderir ve images içindeki hash'i okur; searchAdLocales adlocale arar", async () => {
+    const calls: { url: string; body?: URLSearchParams }[] = [];
+    const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, body: init?.body as URLSearchParams | undefined });
+      if (init?.method === "POST") return fakeResponse({ images: { bytes: { hash: "abc123", url: "https://cdn/x.jpg" } } }, true, 200);
+      return fakeResponse({ data: [{ key: 1001, name: "English (All)" }, { key: "x", name: "Bozuk" }] }, true, 200);
+    };
+    const client = new MetaMarketingClient({ version: "v26.0", fetchFn: fetchFn as unknown as typeof fetch });
+    expect(await client.uploadAdImage("111", { bytesBase64: "aGVsbG8=", filename: "a.jpg" }, "tok")).toEqual({
+      hash: "abc123",
+      url: "https://cdn/x.jpg",
+    });
+    expect(new URL(calls[0]!.url).pathname).toBe("/v26.0/act_111/adimages");
+    expect(calls[0]!.body?.get("bytes")).toBe("aGVsbG8=");
+    expect(await client.searchAdLocales("English", "tok")).toEqual([{ key: 1001, name: "English (All)" }]);
+    const search = new URL(calls[1]!.url);
+    expect(search.pathname).toBe("/v26.0/search");
+    expect(search.searchParams.get("type")).toBe("adlocale");
+    expect(search.searchParams.get("q")).toBe("English");
   });
 });

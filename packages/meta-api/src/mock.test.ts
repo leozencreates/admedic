@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createMetaClient } from "./index";
-import { MockMetaClient } from "./mock";
+import { MetaGraphError } from "./http";
+import { MockMetaClient, mockMetaFailures } from "./mock";
+import { buildAdBody, buildAdCreativeBody, buildAdSetBody, buildLeadFormBody, pickLocaleKeys, resolveDelivery } from "./publish";
 
 it("createMetaClient mock=true deterministik mock döner", () => {
   const client = createMetaClient({ mock: true, version: "v26.0" });
@@ -135,5 +137,64 @@ describe("MockMetaClient", () => {
     await expect(
       client.createCampaign({ accountId: "act_mock_001", name: "X", objective: "CONVERSIONS" }, TOKEN),
     ).rejects.toThrow(/objective/);
+  });
+});
+
+describe("MockMetaClient — tam yayın yazma uçları", () => {
+  const client = new MockMetaClient({ version: "v26.0" });
+  const TOKEN = "mock-token";
+  const leadDelivery = resolveDelivery("MAX_CONVERSIONS", "instant_form");
+
+  it("gerçek istemcinin gövde kurallarını uygular ve belirleyici kimlik döndürür", async () => {
+    const body = buildAdSetBody({
+      campaignId: "cmp_1",
+      name: "DE",
+      delivery: leadDelivery,
+      targeting: { countries: ["DE"], localeKeys: [5], ageMin: 25, ageMax: 54 },
+      dailyBudgetCents: 3000,
+      pageId: "page_mock_1",
+    });
+    const a = await client.createAdSet("act_mock_001", body, TOKEN);
+    const b = await client.createAdSet("act_mock_001", body, TOKEN);
+    expect(a.id).toMatch(/^as_mock_pub_\d+$/);
+    expect(a.id).toBe(b.id);
+    await expect(client.createAdSet("act_mock_001", { ...body, status: "ACTIVE" }, TOKEN)).rejects.toThrow(/PAUSED/);
+    const under18 = { ...body, targeting: JSON.stringify({ geo_locations: { countries: ["DE"] }, age_min: 16, age_max: 30 }) };
+    await expect(client.createAdSet("act_mock_001", under18, TOKEN)).rejects.toThrow(/age_min/);
+    const { bid_strategy: _dropped, ...noBid } = body;
+    await expect(client.createAdSet("act_mock_001", noBid, TOKEN)).rejects.toThrow(/bid_strategy/);
+
+    const creative = buildAdCreativeBody({
+      name: "CR", pageId: "page_mock_1", delivery: leadDelivery, imageHash: "h", headline: "H", text: "T", cta: "SIGN_UP", leadFormId: "lf_1",
+    });
+    expect((await client.createAdCreative("act_mock_001", creative, TOKEN)).id).toMatch(/^cr_mock_pub_\d+$/);
+    const noImage = JSON.stringify({ page_id: "p", link_data: { link: "x", message: "m", call_to_action: {} } });
+    await expect(client.createAdCreative("act_mock_001", { ...creative, object_story_spec: noImage }, TOKEN)).rejects.toThrow(/image_hash/);
+
+    const ad = buildAdBody({ name: "AD", adSetId: a.id, creativeId: "cr_1" });
+    expect((await client.createAd("act_mock_001", ad, TOKEN)).id).toMatch(/^ad_mock_pub_\d+$/);
+    await expect(client.createAd("act_mock_001", { ...ad, status: "ACTIVE" }, TOKEN)).rejects.toThrow(/PAUSED/);
+
+    const form = buildLeadFormBody({
+      name: "F", language: "TR", customQuestions: ["Soru"], privacyPolicyUrl: "https://k.example/gizlilik", privacyLinkText: "Gizlilik",
+      consent: { title: "Rıza", body: "Metin", checkboxText: "Onaylıyorum" },
+    });
+    expect((await client.createLeadForm("page_mock_1", form, "mock-page-token")).id).toMatch(/^lf_mock_\d+$/);
+
+    const image = await client.uploadAdImage("act_mock_001", { bytesBase64: "iVBORw0KGgo=", filename: "a.png" }, TOKEN);
+    expect(image.hash).toMatch(/^mockhash[0-9a-f]+$/);
+    expect(pickLocaleKeys("EN", await client.searchAdLocales("English", TOKEN))).toEqual([1001]);
+    expect(pickLocaleKeys("DE", await client.searchAdLocales("German", TOKEN))).toEqual([5]);
+  });
+
+  it("mockMetaFailures ile enjekte edilen hata yalnızca belirtilen sayıda çağrıyı etkiler", async () => {
+    mockMetaFailures.reset();
+    mockMetaFailures.fail("createAd", 1);
+    const ad = buildAdBody({ name: "AD", adSetId: "as_1", creativeId: "cr_1" });
+    await expect(client.createAd("act_mock_001", ad, TOKEN)).rejects.toBeInstanceOf(MetaGraphError);
+    await expect(client.createAd("act_mock_001", ad, TOKEN)).resolves.toMatchObject({ id: expect.stringMatching(/^ad_mock_pub_/) });
+    mockMetaFailures.fail("setStatus", 2);
+    mockMetaFailures.reset();
+    await expect(client.setStatus({ entityType: "ad", entityId: "x", status: "ACTIVE" }, TOKEN)).resolves.toMatchObject({ success: true });
   });
 });

@@ -89,7 +89,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
     const workspaceIds: string[] = [];
 
     beforeAll(async () => {
-      vi.stubEnv("ENCRYPTION_KEY", "82da20c19f1765f384e674dc19d7c4ecdc7dd6475527fa1cf5465f43092e21cf");
+      vi.stubEnv("ENCRYPTION_KEY", randomBytes(32).toString("hex")); // test başına rastgele anahtar (gerçek anahtar repoya girmez)
       vi.stubEnv("META_WEBHOOK_SECRET", webhookSecret);
       const user = await prisma.user.create({
         data: { email: `conn-${suffix}@example.invalid` },

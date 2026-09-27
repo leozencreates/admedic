@@ -9,18 +9,55 @@ import { formatMoney } from "../_lib/format";
 type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
 const STATUS_TONE: Record<string, Tone> = { DRAFT: "gray", IN_REVIEW: "amber", APPROVED: "blue", ACTIVE: "green", PAUSED: "amber", REJECTED: "red", ARCHIVED: "gray", PUBLISHED_PAUSED: "violet" };
 const OBJECTIVE_LABEL: Record<string, string> = { MAX_ROAS: "Maksimum ROAS", MAX_CONVERSIONS: "Maksimum Dönüşüm", MAX_IMPRESSIONS: "Maksimum Görüntüleme" };
+const ROLE_LABEL: Record<string, string> = { OWNER: "Owner", ADMIN: "Admin", MEDIA_BUYER: "Medya satın alma", PATIENT_COORDINATOR: "Hasta koordinatörü", ANALYST: "Analist", VIEWER: "İzleyici" };
 const MARKET_CODES = Object.keys(PLANNER_MARKETS);
 const SETTINGS_ROLES = ["OWNER", "ADMIN"];
+const EDIT_ROLES = ["OWNER", "ADMIN", "MEDIA_BUYER"];
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+/** Tam yayın uzun sürerse sunucu ilerlemeyi kaydedip IN_PROGRESS döner; istemci bu kadar tur devam ettirir. */
+const MAX_PUBLISH_ROUNDS = 20;
+interface ContentSummary { attachedAt: string; landingUrl: string | null; languages: string[]; drafts: { draftId: string; name: string; language: string; headlines: string[]; formQuestions: number }[]; }
+interface Readiness { ready: boolean; reasons: string[]; warnings: string[]; }
+interface PublishProgress { status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETE" | "EXTERNAL"; campaignCreated: boolean; adSets: { total: number; published: number }; ads: { expected: number; published: number }; leadForms: number; creatives: number; lastError: { step: string; message: string; at: string } | null; }
 /** Bütçeler minor unit (cent) gelir; gösterim `formatMoney(cents, currency)` ile yapılır. */
-interface CampaignData { id: string; name: string; status: string; workflowStatus: string; policyRisk: string | null; objective: string; dailyBudget: number | null; budgetCents: number | null; currency: string; adSets: number; createdAt: string; metaCampaignId: string | null; rejectionReason: string | null; }
-interface Plan { name: string; dailyBudgetCents: number; monthlyProjectedCents: number; currency: string; structure: string; strategy: string; rationale: string; targetingRationale: string; blocked: boolean; blockingReasons: string[]; testPlan: { creativeVariations: number; testDurationDays: number; decisionMetric: string }; adSets: PlanAdSet[]; reasons: PlanReasons; languages: string[]; }
-interface OrgSettings { monthlyAdBudgetCapCents: number | null; monthlyAdBudgetCap: number | null; currency: string; }
-interface ActionResult { campaign?: { policyWarning?: string | null; metaReviewStatus?: string } }
+interface CampaignData {
+  id: string; name: string; status: string; workflowStatus: string; policyRisk: string | null; objective: string;
+  dailyBudget: number | null; budgetCents: number | null; currency: string; adSets: number; ads: number; createdAt: string;
+  metaCampaignId: string | null; rejectionReason: string | null; imageHash: string | null; imageUrl: string | null;
+  plan: { conversionMethod?: string; strategy?: string; languages?: string[] } | null;
+  content: ContentSummary | null; readiness: Readiness | null; publish: PublishProgress;
+}
+interface Plan { name: string; dailyBudgetCents: number; monthlyProjectedCents: number; monthlyCommittedCents: number; currency: string; structure: string; strategy: string; rationale: string; targetingRationale: string; blocked: boolean; blockingReasons: string[]; testPlan: { creativeVariations: number; testDurationDays: number; decisionMetric: string }; adSets: PlanAdSet[]; reasons: PlanReasons; languages: string[]; }
+interface OrgSettings { monthlyAdBudgetCapCents: number | null; monthlyAdBudgetCap: number | null; monthlyCommittedCents: number; currency: string; privacyPolicyUrl: string | null; }
+interface Member { userId: string; email: string; name: string | null; role: string; status: string; isSelf: boolean; canApproveSpend: boolean; delegable: boolean; spendGrantedAt: string | null; spendGrantedBy: string | null; }
+interface StudioDraftRow { id: string; name: string; status: string; content: { language?: string; service?: string; variants?: { headline?: string }[] } | null; }
+interface ActionResult {
+  campaign?: { policyWarning?: string | null; metaReviewStatus?: string; warnings?: string[] };
+  publish?: { status: "COMPLETE" | "IN_PROGRESS"; progress: PublishProgress; warnings: string[] };
+}
+interface ContentEditor { campaignId: string; selected: string[]; landingUrl: string; }
+
+function progressText(p: PublishProgress): string {
+  return `ad set ${p.adSets.published}/${p.adSets.total} · reklam ${p.ads.published}/${p.ads.expected}${p.leadForms ? ` · lead formu ${p.leadForms}` : ""}`;
+}
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("Dosya okunamadı."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function CampaignPlannerPage() {
   const [campaigns, setCampaigns] = useState<CampaignData[]>([]);
   const [conns, setConns] = useState<{ id: string; status: string }[]>([]);
   const [role, setRole] = useState<string>("");
+  const [canApproveSpend, setCanApproveSpend] = useState(false);
   const [settings, setSettings] = useState<OrgSettings | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [canManageSpend, setCanManageSpend] = useState(false);
+  const [approvedDrafts, setApprovedDrafts] = useState<StudioDraftRow[]>([]);
   const [capInput, setCapInput] = useState("");
   const [savingCap, setSavingCap] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -35,21 +72,42 @@ export default function CampaignPlannerPage() {
   const [ageMax, setAgeMax] = useState("54");
   const [strategy, setStrategy] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [planDraftIds, setPlanDraftIds] = useState<string[]>([]);
+  const [planLandingUrl, setPlanLandingUrl] = useState("");
   const [planning, setPlanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [warning, setWarning] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [liveProgress, setLiveProgress] = useState<Record<string, PublishProgress>>({});
+  const [editor, setEditor] = useState<ContentEditor | null>(null);
   const currency = settings?.currency ?? plan?.currency ?? campaigns[0]?.currency ?? "EUR";
   async function load() {
     setLoading(true);
     try { const data = await api<{ campaigns: CampaignData[] }>("/api/campaigns"); setCampaigns(data.campaigns); } catch { setCampaigns([]); }
     try { const c = await api<{ connections: { id: string; status: string }[] }>("/api/meta/connections"); setConns(c.connections ?? []); } catch { setConns([]); }
-    try { const s = await api<{ actor: { role: string } | null }>("/api/session"); setRole(s.actor?.role ?? ""); } catch { setRole(""); }
+    let currentRole = "";
+    try {
+      const s = await api<{ actor: { role: string; canApproveSpend?: boolean } | null }>("/api/session");
+      currentRole = s.actor?.role ?? "";
+      setRole(currentRole);
+      setCanApproveSpend(Boolean(s.actor?.canApproveSpend));
+    } catch { setRole(""); setCanApproveSpend(false); }
     try {
       const o = await api<{ settings: OrgSettings }>("/api/org/settings");
       setSettings(o.settings);
       setCapInput(o.settings.monthlyAdBudgetCap == null ? "" : String(o.settings.monthlyAdBudgetCap));
     } catch { setSettings(null); }
+    if (SETTINGS_ROLES.includes(currentRole)) {
+      try {
+        const m = await api<{ members: Member[]; canManageSpendAuthority: boolean }>("/api/org/members");
+        setMembers(m.members); setCanManageSpend(m.canManageSpendAuthority);
+      } catch { setMembers([]); setCanManageSpend(false); }
+    } else { setMembers([]); setCanManageSpend(false); }
+    try {
+      const d = await api<{ drafts: StudioDraftRow[] }>("/api/studio");
+      setApprovedDrafts(d.drafts.filter((x) => x.status === "APPROVED"));
+    } catch { setApprovedDrafts([]); }
     setLoading(false);
   }
   function toggle(list: string[], value: string, set: (v: string[]) => void) {
@@ -64,6 +122,8 @@ export default function CampaignPlannerPage() {
     const parts = [
       w ? `Orta risk uyarısı: ${w}` : "",
       review === "DISAPPROVED" ? "Meta inceleme geri bildirimi: kampanya DISAPPROVED olarak işaretlendi." : "",
+      ...(result?.campaign?.warnings ?? []),
+      ...(result?.publish?.warnings ?? []),
     ].filter(Boolean);
     setWarning(parts.join(" · "));
   }
@@ -77,6 +137,13 @@ export default function CampaignPlannerPage() {
       setCapInput(o.settings.monthlyAdBudgetCap == null ? "" : String(o.settings.monthlyAdBudgetCap));
     } catch (e) { setNotice((e as Error).message || "Aylık üst sınır kaydedilemedi."); }
     setSavingCap(false);
+  }
+  async function setSpendAuthority(member: Member, granted: boolean) {
+    setNotice("");
+    try {
+      await api(`/api/org/members/${member.userId}/spend-authority`, "PUT", { granted });
+      load();
+    } catch (e) { setNotice((e as Error).message || "Harcama yetkisi güncellenemedi."); }
   }
   async function buildPlan() {
     if (!budget || markets.length === 0) { setNotice("Günlük bütçe ve en az bir pazar seçin."); return; }
@@ -115,19 +182,65 @@ export default function CampaignPlannerPage() {
         ageMax: ageMax ? parseInt(ageMax) : undefined,
         strategy: strategy || plan.strategy,
         brief: brief || undefined,
+        contentDraftIds: planDraftIds.length ? planDraftIds : undefined,
+        landingUrl: planDraftIds.length && planLandingUrl.trim() ? planLandingUrl.trim() : undefined,
       });
       showWarning(result);
-      setPlan(null); setName(""); setBrief(""); setBudget(""); setMarkets([]); setLanguages([]);
+      setPlan(null); setName(""); setBrief(""); setBudget(""); setMarkets([]); setLanguages([]); setPlanDraftIds([]); setPlanLandingUrl("");
       load();
     } catch (e) { setNotice((e as Error).message || "Taslak kaydedilemedi (bütçe üst sınırı veya içerik kontrolü)."); }
     setSaving(false);
   }
   async function runAction(id: string, path: string, body?: object) {
+    setBusy(id);
     try {
       const result = await api<ActionResult>(`/api/campaigns/${id}/${path}`, "POST", body ?? {});
       setNotice(""); showWarning(result); load();
     }
     catch (e) { setNotice((e as Error).message || "İşlem tamamlanamadı. Yetki veya içerik kontrolünü kontrol edin."); }
+    setBusy(null);
+  }
+  /** Tam yayın: sunucu süre dolunca ilerlemeyi kaydeder; kalan adımlar için otomatik devam edilir. */
+  async function publish(id: string) {
+    setBusy(id); setNotice(""); setWarning("");
+    try {
+      for (let round = 0; round < MAX_PUBLISH_ROUNDS; round++) {
+        const result = await api<ActionResult>(`/api/campaigns/${id}/publish`, "POST", { action: "PUBLISH" });
+        showWarning(result);
+        if (result.publish) setLiveProgress((prev) => ({ ...prev, [id]: result.publish!.progress }));
+        if (result.publish?.status !== "IN_PROGRESS") break;
+      }
+    } catch (e) { setNotice((e as Error).message || "Yayın tamamlanamadı; tekrar 'Yayınla' ile kaldığı yerden devam edebilirsiniz."); }
+    setBusy(null);
+    load();
+  }
+  async function uploadImage(id: string, file: File | undefined) {
+    if (!file) return;
+    if (!["image/jpeg", "image/png"].includes(file.type)) { setNotice("Yalnızca JPEG veya PNG görsel yüklenebilir."); return; }
+    if (file.size > MAX_IMAGE_BYTES) { setNotice("Görsel en fazla 3 MB olabilir."); return; }
+    setBusy(id); setNotice("");
+    try {
+      const dataBase64 = await readAsDataUrl(file);
+      const result = await api<ActionResult>(`/api/campaigns/${id}/image`, "POST", { filename: file.name, dataBase64 });
+      showWarning(result);
+      load();
+    } catch (e) { setNotice((e as Error).message || "Görsel yüklenemedi."); }
+    setBusy(null);
+  }
+  async function saveContent() {
+    if (!editor) return;
+    if (editor.selected.length === 0) { setNotice("En az bir onaylı taslak seçin."); return; }
+    setBusy(editor.campaignId); setNotice("");
+    try {
+      const result = await api<ActionResult>(`/api/campaigns/${editor.campaignId}/content`, "PUT", {
+        draftIds: editor.selected,
+        landingUrl: editor.landingUrl.trim() ? editor.landingUrl.trim() : null,
+      });
+      showWarning(result);
+      setEditor(null);
+      load();
+    } catch (e) { setNotice((e as Error).message || "İçerik bağlanamadı."); }
+    setBusy(null);
   }
   function rejectWithReason(id: string) {
     const reason = window.prompt("Red gerekçesi (en az 3 karakter):", "");
@@ -136,34 +249,120 @@ export default function CampaignPlannerPage() {
     runAction(id, "reject", { reason: reason.trim() });
   }
   useEffect(() => { load(); }, []);
+  const canEdit = EDIT_ROLES.includes(role);
+  function draftLabel(d: StudioDraftRow) {
+    const lang = d.content?.language ?? "?";
+    return `${d.name} · ${LANG_LABEL[lang] ?? lang}${d.content?.service ? ` · ${d.content.service}` : ""}`;
+  }
+  function draftPicker(selected: string[], onToggle: (id: string) => void, neededLanguages: string[]) {
+    if (approvedDrafts.length === 0)
+      return <p className="text-xs text-slate-500">Onaylı stüdyo taslağı yok. <a href="/studio" className="text-violet-600 hover:underline">Kreatif Stüdyo</a>'da taslak üretip onaylayın.</p>;
+    return (
+      <div className="space-y-1">
+        {neededLanguages.length > 0 && <p className="text-xs text-slate-500">Planın dilleri: {neededLanguages.map((l) => LANG_LABEL[l] ?? l).join(", ")} — her pazar için en az bir dilde içerik gerekir.</p>}
+        <div className="flex flex-wrap gap-1.5">
+          {approvedDrafts.map((d) => {
+            const lang = d.content?.language ?? "";
+            const relevant = neededLanguages.length === 0 || neededLanguages.includes(lang);
+            return (
+              <button key={d.id} type="button" onClick={() => onToggle(d.id)} title={d.content?.variants?.map((v) => v.headline).filter(Boolean).join(" / ")}
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${selected.includes(d.id) ? "border-violet-500 bg-violet-50 text-violet-700" : relevant ? "border-slate-300 text-slate-700 hover:bg-slate-50" : "border-dashed border-slate-200 text-slate-400"}`}>
+                {draftLabel(d)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  function preparation(c: CampaignData) {
+    const editable = ["DRAFT", "REJECTED"].includes(c.workflowStatus) && canEdit;
+    const method = c.plan?.conversionMethod ?? "";
+    const editing = editor?.campaignId === c.id;
+    if (!c.plan || !["DRAFT", "REJECTED", "IN_REVIEW", "APPROVED"].includes(c.workflowStatus)) return null;
+    return (
+      <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-slate-700">İçerik:</span>
+          {c.content ? (
+            <span>{c.content.drafts.map((d) => `${d.name} (${d.language})`).join(", ")}{c.content.landingUrl ? ` · ${c.content.landingUrl}` : ""}</span>
+          ) : <span className="text-rose-600">bağlanmadı</span>}
+          {editable && !editing && (
+            <button type="button" onClick={() => setEditor({ campaignId: c.id, selected: c.content?.drafts.map((d) => d.draftId) ?? [], landingUrl: c.content?.landingUrl ?? "" })} className="text-violet-600 hover:underline">
+              {c.content ? "Değiştir" : "Onaylı içerik seç"}
+            </button>
+          )}
+        </div>
+        {editing && editor && (
+          <div className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+            {draftPicker(editor.selected, (id) => setEditor({ ...editor, selected: editor.selected.includes(id) ? editor.selected.filter((x) => x !== id) : [...editor.selected, id] }), c.plan?.languages ?? [])}
+            {method === "landing_form" && (
+              <input type="url" placeholder="Açılış sayfası (https://…)" value={editor.landingUrl} onChange={(e) => setEditor({ ...editor, landingUrl: e.target.value })} className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs" />
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={saveContent} disabled={busy === c.id} className="primary-button !px-2.5 !py-1 !text-xs disabled:opacity-60">İçeriği bağla</button>
+              <button type="button" onClick={() => setEditor(null)} className="secondary-button !px-2.5 !py-1 !text-xs">Vazgeç</button>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-slate-700">Görsel:</span>
+          {c.imageHash ? (
+            c.imageUrl ? <a href={c.imageUrl} target="_blank" rel="noreferrer" className="text-violet-600 hover:underline">yüklendi (önizle)</a> : <span>yüklendi ({c.imageHash.slice(0, 10)}…)</span>
+          ) : <span className="text-rose-600">yüklenmedi</span>}
+          {editable && (
+            <label className="cursor-pointer text-violet-600 hover:underline">
+              {c.imageHash ? "Değiştir" : "JPEG/PNG yükle (≤3 MB)"}
+              <input type="file" accept="image/jpeg,image/png" className="hidden" disabled={busy === c.id} onChange={(e) => { uploadImage(c.id, e.target.files?.[0]); e.target.value = ""; }} />
+            </label>
+          )}
+          {method && <span className="text-slate-400">· dönüşüm: {METHOD_LABEL[method as keyof typeof METHOD_LABEL] ?? method}</span>}
+        </div>
+        {c.readiness && c.readiness.reasons.length > 0 && (
+          <ul className="list-inside list-disc text-rose-600">{c.readiness.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        )}
+        {c.readiness && c.readiness.warnings.length > 0 && (
+          <ul className="list-inside list-disc text-amber-700">{c.readiness.warnings.map((r) => <li key={r}>{r}</li>)}</ul>
+        )}
+        {c.readiness?.ready && <p className="text-emerald-700">Meta'ya eksiksiz yayına hazır.</p>}
+      </div>
+    );
+  }
   function actionsFor(c: CampaignData) {
     const w = c.workflowStatus;
+    const isBusy = busy === c.id;
+    const progress = liveProgress[c.id] ?? c.publish;
+    const partial = w === "APPROVED" && progress.status === "IN_PROGRESS";
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        {["DRAFT", "REJECTED"].includes(w) && <button onClick={() => runAction(c.id, "submit")} className="rounded-md border border-violet-200 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-50">Onaya Gönder</button>}
+        {["DRAFT", "REJECTED"].includes(w) && <button disabled={isBusy} onClick={() => runAction(c.id, "submit")} className="rounded-md border border-violet-200 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-60">Onaya Gönder</button>}
         {w === "IN_REVIEW" && <>
-          <button onClick={() => runAction(c.id, "approve")} className="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Onayla</button>
-          <button onClick={() => rejectWithReason(c.id)} className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Reddet</button>
+          <button disabled={isBusy} onClick={() => runAction(c.id, "approve")} className="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">Onayla</button>
+          <button disabled={isBusy} onClick={() => rejectWithReason(c.id)} className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">Reddet</button>
         </>}
-        {w === "APPROVED" && <button onClick={() => runAction(c.id, "publish", { action: "PUBLISH" })} className="primary-button !px-2.5 !py-1 !text-xs">Yayınla</button>}
+        {w === "APPROVED" && <button disabled={isBusy} onClick={() => publish(c.id)} className="primary-button !px-2.5 !py-1 !text-xs disabled:opacity-60">{isBusy ? "Yayınlanıyor…" : partial ? "Yayına devam et" : "Yayınla (PAUSED)"}</button>}
+        {partial && !isBusy && <button onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Arşivle</button>}
         {w === "PUBLISHED_PAUSED" && <>
-          <button onClick={() => runAction(c.id, "publish", { action: "ACTIVATE" })} className="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Aktifleştir</button>
-          <button onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Arşivle</button>
+          <button disabled={isBusy || !canApproveSpend} title={canApproveSpend ? "Harcamayı başlatır" : "Harcama yetkisi gerekli (Owner veya yetki verilen üye)"} onClick={() => runAction(c.id, "publish", { action: "ACTIVATE" })} className="rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">Aktifleştir</button>
+          <button disabled={isBusy} onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">Arşivle</button>
         </>}
         {w === "ACTIVE" && <>
-          <button onClick={() => runAction(c.id, "publish", { action: "PAUSE" })} className="rounded-md border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50">Duraklat</button>
-          <button onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Arşivle</button>
+          <button disabled={isBusy} onClick={() => runAction(c.id, "publish", { action: "PAUSE" })} className="rounded-md border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60">Duraklat</button>
+          <button disabled={isBusy} onClick={() => runAction(c.id, "publish", { action: "ARCHIVE" })} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">Arşivle</button>
         </>}
       </div>
     );
   }
   const canEditCap = SETTINGS_ROLES.includes(role);
+  const capCents = settings?.monthlyAdBudgetCapCents ?? null;
+  const committedCents = settings?.monthlyCommittedCents ?? 0;
+  const delegableMembers = members.filter((m) => m.role !== "OWNER");
   return (
     <div className="space-y-8">
       <header className="studio-hero">
         <span className="eyebrow">KAMPANYA PLANLAYICI</span>
         <h1>Kampanya Taslak Oluştur</h1>
-        <p className="text-sm text-slate-500">AI ajan pazarları, dilleri ve stratejiyi planlar; onaylanmadan yayınlanmaz.</p>
+        <p className="text-sm text-slate-500">AI ajan pazarları, dilleri ve stratejiyi planlar; onaylanmadan yayınlanmaz, Meta'da PAUSED kurulur ve yalnızca harcama yetkisi olan kişi etkinleştirir.</p>
       </header>
       {conns.some((c) => c.status === "EXPIRED" || c.status === "REVOKED") && (
         <a href="/meta-connections" className="block rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700 hover:bg-rose-100">
@@ -171,22 +370,51 @@ export default function CampaignPlannerPage() {
         </a>
       )}
       <Card>
-        <SectionHeading title="Aylık üst sınır" description={`Kuruluşun aylık reklam bütçesi üst sınırı (${currency}). Günlük bütçe × 30 bu sınırı aşan taslaklar bloklanır.`} />
+        <SectionHeading title="Aylık üst sınır" description={`Kuruluşun aylık reklam bütçesi üst sınırı (${currency}). Aktif kampanyaların aylık toplamı + yeni/artan bütçe × 30 bu sınırı aşarsa işlem bloklanır.`} />
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-slate-700">
-            Geçerli sınır: <span className="font-semibold">{settings?.monthlyAdBudgetCapCents == null ? "tanımlı değil" : formatMoney(settings.monthlyAdBudgetCapCents, currency)}</span>
+            Geçerli sınır: <span className="font-semibold">{capCents == null ? "tanımlı değil" : formatMoney(capCents, currency)}</span>
+            <span className="ml-3 text-slate-500">Aktif kampanyalar: {formatMoney(committedCents, currency)}/ay</span>
+            {capCents != null && <span className="ml-3 text-slate-500">Kalan: {formatMoney(Math.max(0, capCents - committedCents), currency)}/ay</span>}
           </p>
           {canEditCap ? (
             <>
               <input type="number" min={0} step="0.01" placeholder={`Aylık üst sınır (${currency})`} value={capInput} onChange={(e) => setCapInput(e.target.value)} className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
               <button onClick={saveCap} disabled={savingCap} className="secondary-button disabled:opacity-60">{savingCap ? "Kaydediliyor…" : "Üst sınırı kaydet"}</button>
-              <span className="text-xs text-slate-400">Boş bırakıp kaydederseniz sınır kaldırılır.</span>
+              <span className="text-xs text-slate-400">Düşürme OWNER/ADMIN; yükseltme veya kaldırma (boş bırakıp kaydetme) yalnızca Owner.</span>
             </>
           ) : (
             <span className="text-xs text-slate-400">Yalnızca OWNER/ADMIN düzenleyebilir.</span>
           )}
         </div>
       </Card>
+      {SETTINGS_ROLES.includes(role) && (
+        <Card>
+          <SectionHeading title="Harcama yetkisi" description="Kampanyayı etkinleştirmek ve bütçe artırmak yalnızca Owner'a veya Owner'ın yetki verdiği ADMIN/MEDIA_BUYER üyeye açıktır. Her değişiklik denetim kaydına yazılır." />
+          {delegableMembers.length === 0 ? <EmptyState message="Yetki verilebilecek başka üye yok." /> : (
+            <div className="space-y-2">
+              {delegableMembers.map((m) => (
+                <div key={m.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5 text-sm">
+                  <div>
+                    <span className="font-medium text-slate-800">{m.name ?? m.email}</span>
+                    <span className="ml-2 text-xs text-slate-500">{m.email} · {ROLE_LABEL[m.role] ?? m.role}{m.status !== "ACTIVE" ? ` · ${m.status}` : ""}</span>
+                    {m.canApproveSpend && m.spendGrantedAt && <span className="ml-2 text-xs text-slate-400">yetki {new Date(m.spendGrantedAt).toLocaleDateString("tr-TR")}{m.spendGrantedBy ? ` (${m.spendGrantedBy})` : ""}</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={m.canApproveSpend ? "green" : "gray"}>{m.canApproveSpend ? "Harcama yetkili" : "Yetkisiz"}</Badge>
+                    {canManageSpend && m.delegable && (
+                      <button onClick={() => setSpendAuthority(m, !m.canApproveSpend)} className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                        {m.canApproveSpend ? "Yetkiyi geri al" : "Yetki ver"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!canManageSpend && <p className="mt-2 text-xs text-slate-400">Yetkiyi yalnızca Owner verebilir veya geri alabilir.</p>}
+        </Card>
+      )}
       <Card>
         <SectionHeading title="Hedef ve Kısıtlar" description="Doğal dilde hedef, pazar, dil ve içerik stratejisi." />
         <div className="mt-6 space-y-5">
@@ -281,6 +509,7 @@ export default function CampaignPlannerPage() {
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs font-medium text-slate-500">Öngörülen aylık harcama</p>
                 <p className="mt-1 text-sm font-semibold text-slate-800">{formatMoney(plan.monthlyProjectedCents, plan.currency)}</p>
+                {plan.monthlyCommittedCents > 0 && <p className="mt-1 text-xs text-slate-500">Aktif kampanyalar: {formatMoney(plan.monthlyCommittedCents, plan.currency)}/ay</p>}
                 {settings?.monthlyAdBudgetCapCents != null && <p className="mt-1 text-xs text-slate-500">Kuruluş üst sınırı: {formatMoney(settings.monthlyAdBudgetCapCents, plan.currency)}</p>}
               </div>
               <div className="sm:col-span-2 rounded-lg border border-slate-200 p-3">
@@ -295,6 +524,14 @@ export default function CampaignPlannerPage() {
                     </li>
                   ))}
                 </ul>
+                <p className="mt-2 text-xs text-slate-400">Yayında her ad set, içeriği olan dil başına ayrı Meta ad set'i olarak kurulur (reklam dili = hedeflenen dil).</p>
+              </div>
+              <div className="sm:col-span-2 rounded-lg border border-slate-200 p-3">
+                <p className="mb-1 text-xs font-medium text-slate-500">Reklam içeriği (isteğe bağlı; sonradan da seçilebilir)</p>
+                {draftPicker(planDraftIds, (id) => setPlanDraftIds(planDraftIds.includes(id) ? planDraftIds.filter((x) => x !== id) : [...planDraftIds, id]), plan.languages)}
+                {conversionMethod === "landing_form" && planDraftIds.length > 0 && (
+                  <input type="url" placeholder="Açılış sayfası (https://…)" value={planLandingUrl} onChange={(e) => setPlanLandingUrl(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -305,23 +542,35 @@ export default function CampaignPlannerPage() {
         </Card>
       )}
       <Card>
-        <SectionHeading title="Taslaklar" description="Onaylanmamış kampanyalar." />
+        <SectionHeading title="Kampanyalar" description="Onay → Meta'da PAUSED eksiksiz yayın (kampanya, ad set, kreatif, reklam) → yetkili etkinleştirme." />
         {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : campaigns.length === 0 ? <EmptyState message="Henüz kampanya taslağı yok." /> : (
           <div className="space-y-3">
-            {campaigns.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{c.name}{c.metaCampaignId ? <span className="ml-2 text-xs text-slate-400">Meta: {c.metaCampaignId}</span> : null}</p>
-                  <p className="text-xs text-slate-500">{OBJECTIVE_LABEL[c.objective] ?? c.objective} · {formatMoney(c.budgetCents ?? c.dailyBudget, c.currency)}/gün · {c.adSets} ad set{c.policyRisk ? <span className="ml-2">İçerik riski: {c.policyRisk}</span> : null}</p>
-                  {c.rejectionReason && <p className="text-xs text-red-600">Red gerekçesi: {c.rejectionReason}</p>}
+            {campaigns.map((c) => {
+              const progress = liveProgress[c.id] ?? c.publish;
+              return (
+                <div key={c.id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{c.name}{c.metaCampaignId ? <span className="ml-2 text-xs text-slate-400">Meta: {c.metaCampaignId}</span> : null}</p>
+                      <p className="text-xs text-slate-500">{OBJECTIVE_LABEL[c.objective] ?? c.objective} · {formatMoney(c.budgetCents ?? c.dailyBudget, c.currency)}/gün · {c.adSets} ad set{c.ads ? ` · ${c.ads} reklam` : ""}{c.policyRisk ? <span className="ml-2">İçerik riski: {c.policyRisk}</span> : null}</p>
+                      {c.rejectionReason && <p className="text-xs text-red-600">Red gerekçesi: {c.rejectionReason}</p>}
+                      {(progress.status === "IN_PROGRESS" || (busy === c.id && c.workflowStatus === "APPROVED")) && (
+                        <p className="text-xs text-violet-700">Meta yayını: {progressText(progress)}</p>
+                      )}
+                      {progress.lastError && c.workflowStatus === "APPROVED" && (
+                        <p className="text-xs text-rose-600">Son hata ({progress.lastError.step}): {progress.lastError.message}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {actionsFor(c)}
+                      <Badge tone={STATUS_TONE[c.workflowStatus] ?? "gray"}>{c.workflowStatus}</Badge>
+                      <span className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleDateString("tr-TR")}</span>
+                    </div>
+                  </div>
+                  {preparation(c)}
                 </div>
-                <div className="flex items-center gap-2">
-                  {actionsFor(c)}
-                  <Badge tone={STATUS_TONE[c.workflowStatus] ?? "gray"}>{c.workflowStatus}</Badge>
-                  <span className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleDateString("tr-TR")}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

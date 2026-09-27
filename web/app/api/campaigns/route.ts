@@ -11,6 +11,10 @@ import {
   type CampaignPlan,
 } from "../../_lib/campaign-plan";
 import { clinicPolicyContext } from "../../_lib/campaign-workflow";
+import { HttpsUrlSchema, MAX_CONTENT_DRAFTS, publishReadiness, withDeliveryCheck } from "../../_lib/campaign-content";
+import { attachCampaignContent, summarizeContent } from "../../_lib/campaign-content-attach";
+import { summarizePublishProgress } from "../../_lib/campaign-publish";
+import { checkMonthlyCap, monthlyCapMessage } from "../../_lib/spend-cap";
 export const maxDuration = 15;
 /** Bütçe girdisi major (insan) birimdir; sunucu cent'e çevirir (ADR-0011). */
 const CampaignSchema = z.object({
@@ -24,26 +28,69 @@ const CampaignSchema = z.object({
   ageMax: z.number().int().min(13).max(64).optional(),
   strategy: z.enum(["CBO", "ABO"]).optional(),
   brief: z.string().trim().max(2000).optional(),
-}).strict();
+  /** İsteğe bağlı: onaylı stüdyo taslakları oluştururken bağlanır (sonradan `PUT …/content`). */
+  contentDraftIds: z.array(z.string().trim().min(1).max(64)).min(1).max(MAX_CONTENT_DRAFTS).optional(),
+  landingUrl: HttpsUrlSchema.optional(),
+}).strict().refine((v) => !v.landingUrl || v.contentDraftIds, {
+  message: "Açılış sayfası bağlantısı içerikle (contentDraftIds) birlikte gönderilir.",
+});
+
+const READINESS_STATUSES = ["DRAFT", "REJECTED", "IN_REVIEW", "APPROVED"];
+
 export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
-    const campaigns = await prisma.campaign.findMany({
-      where: { workspaceId: actor.workspaceId },
-      orderBy: { createdAt: "desc" },
-      include: {
-        _count: { select: { adsets: true } },
-        adAccount: { select: { currency: true } },
-      },
-    });
+    const [campaigns, org] = await Promise.all([
+      prisma.campaign.findMany({
+        where: { workspaceId: actor.workspaceId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          adAccount: { select: { currency: true } },
+          adsets: {
+            select: {
+              metaAdSetId: true,
+              targeting: true,
+              _count: { select: { ads: { where: { metaAdId: { not: null } } } } },
+            },
+          },
+        },
+      }),
+      prisma.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { privacyPolicyUrl: true } }),
+    ]);
     return {
-      campaigns: campaigns.map(({ _count, adAccount, ...c }) => ({
-        ...c,
-        adSets: _count.adsets,
-        // dailyBudget minor unit'tir; okunabilirlik için açık adla da döner.
-        budgetCents: c.dailyBudget,
-        currency: adAccount.currency,
-      })),
+      campaigns: campaigns.map(({ adsets, adAccount, content, publishState, ...c }) => {
+        const publishedAds = adsets.reduce((sum, a) => sum + a._count.ads, 0);
+        const readiness =
+          c.plan && READINESS_STATUSES.includes(c.workflowStatus)
+            ? publishReadiness({
+                objective: c.objective,
+                plan: c.plan,
+                content,
+                imageHash: c.imageHash,
+                privacyPolicyUrl: org.privacyPolicyUrl,
+              })
+            : null;
+        return {
+          ...c,
+          adSets: adsets.length,
+          ads: publishedAds,
+          // dailyBudget minor unit'tir; okunabilirlik için açık adla da döner.
+          budgetCents: c.dailyBudget,
+          currency: adAccount.currency,
+          content: summarizeContent(content),
+          readiness: readiness
+            ? { ready: readiness.ready, reasons: readiness.reasons, warnings: readiness.warnings }
+            : null,
+          publish: summarizePublishProgress({
+            metaCampaignId: c.metaCampaignId,
+            workflowStatus: c.workflowStatus,
+            publishState,
+            content,
+            adSets: adsets,
+            publishedAds,
+          }),
+        };
+      }),
     };
   });
 }
@@ -64,13 +111,9 @@ export async function POST(request: Request) {
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
     if (!adAccount) throw new HttpError(400, "Reklam hesabı bulunamadı.");
-    const org = await prisma.organization.findUnique({
-      where: { id: actor.orgId },
-      select: { monthlyAdBudgetCap: true },
-    });
-    // Aylık üst sınır kontrolü: ikisi de minor unit (ADR-0011).
-    if (org?.monthlyAdBudgetCap != null && dailyBudgetCents * 30 > org.monthlyAdBudgetCap)
-      throw new HttpError(422, "Taslak bütçesi kuruluşun aylık üst sınırını aşıyor.");
+    const currency = adAccount.currency ?? "EUR";
+    // Toplam aylık üst sınır: aktif kampanyaların aylık toplamı + bu taslağın günlük bütçesi × 30 (minor unit).
+    const cap = await checkMonthlyCap(prisma, { orgId: actor.orgId, currency, dailyBudgetCents });
     const clinic = await clinicPolicyContext(actor.workspaceId);
     const policyText = [input.name, input.brief ?? ""].filter((s) => s.trim()).join("\n");
     // Taslak yüksek riskle de kaydedilir; onaya gönderim (submit) yüksek riski engeller (spec 3.5).
@@ -78,10 +121,11 @@ export async function POST(request: Request) {
 
     const plan: CampaignPlan | undefined =
       input.markets?.length || input.strategy
-        ? buildCampaignPlan({
+        ? withDeliveryCheck(buildCampaignPlan({
             objective,
             dailyBudgetCents,
-            monthlyCapCents: org?.monthlyAdBudgetCap ?? undefined,
+            monthlyCapCents: cap.capCents ?? undefined,
+            monthlyCommittedCents: cap.committedCents,
             markets: input.markets ?? [],
             ageMin: input.ageMin,
             ageMax: input.ageMax,
@@ -90,12 +134,12 @@ export async function POST(request: Request) {
             strategy: input.strategy,
             brief: input.brief,
             marketLanguageOverrides: clinic.marketLanguages,
-            currency: adAccount.currency,
-          })
+            currency,
+          }))
         : undefined;
 
     if (plan?.blocked) throw new HttpError(422, plan.blockingReasons.join(" "));
-    const currency = adAccount.currency ?? "EUR";
+    if (!plan && cap.exceeds) throw new HttpError(422, monthlyCapMessage(cap));
     return prisma.$transaction(async (tx) => {
     const campaign = await tx.campaign.create({
       data: {
@@ -136,6 +180,11 @@ export async function POST(request: Request) {
       }
     }
 
+    const attached = input.contentDraftIds
+      ? await attachCampaignContent(tx, actor, campaign, { draftIds: input.contentDraftIds, landingUrl: input.landingUrl })
+      : null;
+    const effectivePolicy = attached?.policy ?? policy;
+
     await logAudit({
       actor,
       action: "CAMPAIGN_CREATED",
@@ -146,10 +195,12 @@ export async function POST(request: Request) {
         objective: campaign.objective,
         dailyBudgetCents: campaign.dailyBudget,
         currency,
-        policyRisk: policy.risk,
+        policyRisk: effectivePolicy.risk,
         workflowStatus: "DRAFT",
         strategy: plan?.strategy ?? null,
         adSets: plan?.adSets.length ?? 0,
+        monthlyCommittedCents: cap.committedCents,
+        ...(attached ? { contentDraftIds: attached.content.drafts.map((d) => d.draftId) } : {}),
       },
     }, tx);
     return {
@@ -162,10 +213,12 @@ export async function POST(request: Request) {
         budgetCents: campaign.dailyBudget,
         budget: (campaign.dailyBudget ?? 0) / 100,
         currency,
-        policyRisk: policy.risk,
+        policyRisk: effectivePolicy.risk,
         policyWarning:
-          policy.risk === "MEDIUM" ? policy.findings.map((f) => f.reason).join("; ") : null,
+          effectivePolicy.risk === "MEDIUM" ? effectivePolicy.findings.map((f) => f.reason).join("; ") : null,
         adSets: plan?.adSets.length ?? 0,
+        content: attached ? summarizeContent(attached.content) : null,
+        warnings: attached?.warnings ?? [],
       },
     };
     });

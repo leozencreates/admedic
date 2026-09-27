@@ -53,6 +53,7 @@ type MarketTarget = {
 type OrgSettings = {
   retentionDays: number;
   consentText: string | null;
+  privacyPolicyUrl: string | null;
 };
 
 type ServiceForm = {
@@ -131,7 +132,7 @@ export default function ClinicPage() {
   const [targets, setTargets] = useState<MarketTarget[]>([]);
   const [targetForm, setTargetForm] = useState<TargetForm>(EMPTY_TARGET);
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
-  const [settingsForm, setSettingsForm] = useState({ retentionDays: 365, consentText: "" });
+  const [settingsForm, setSettingsForm] = useState({ retentionDays: 365, consentText: "", privacyPolicyUrl: "" });
 
   const ok = (text: string) => setNotice({ kind: "ok", text });
   const fail = (e: unknown, fallback: string) => setNotice({ kind: "err", text: (e as Error)?.message || fallback });
@@ -150,6 +151,7 @@ export default function ClinicPage() {
       setSettingsForm({
         retentionDays: o.settings?.retentionDays ?? 365,
         consentText: o.settings?.consentText ?? "",
+        privacyPolicyUrl: o.settings?.privacyPolicyUrl ?? "",
       });
     } catch {
       /* organizasyon ayarları yetkisi olmayan roller için sessiz */
@@ -392,6 +394,7 @@ export default function ClinicPage() {
       await api("/api/org/settings", "PATCH", {
         retentionDays: settingsForm.retentionDays,
         consentText: settingsForm.consentText.trim() || null,
+        privacyPolicyUrl: settingsForm.privacyPolicyUrl.trim() || null,
       });
       ok("Organizasyon ayarları kaydedildi.");
       load();
@@ -685,15 +688,20 @@ export default function ClinicPage() {
       )}
 
       <Card>
-        <SectionHeading title="Organizasyon Ayarları" description="Veri saklama süresi ve KVKK aydınlatma metni." />
+        <SectionHeading title="Organizasyon Ayarları" description="Veri saklama süresi, KVKK aydınlatma metni ve Instant Form gizlilik politikası bağlantısı." />
         <form onSubmit={saveSettings} className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
             Lead Saklama Süresi (gün)
             <input type="number" min={30} max={3650} className={inputCls} value={settingsForm.retentionDays} onChange={(e) => setSettingsForm({ ...settingsForm, retentionDays: Number(e.target.value) })} />
           </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Gizlilik Politikası Bağlantısı (https)
+            <input type="url" className={inputCls} value={settingsForm.privacyPolicyUrl} onChange={(e) => setSettingsForm({ ...settingsForm, privacyPolicyUrl: e.target.value })} placeholder="https://klinik.example/gizlilik" />
+            <span className="text-xs text-slate-400">Meta Instant Form (lead formu) yayını için zorunludur.</span>
+          </label>
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             Onay/Aydınlatma Metni
-            <textarea className={inputCls} rows={3} value={settingsForm.consentText} onChange={(e) => setSettingsForm({ ...settingsForm, consentText: e.target.value })} placeholder="KVKK aydınlatma metni… (boşsa varsayılan metin kullanılır)" />
+            <textarea className={inputCls} rows={3} value={settingsForm.consentText} onChange={(e) => setSettingsForm({ ...settingsForm, consentText: e.target.value })} placeholder="KVKK aydınlatma metni… (boşsa varsayılan metin kullanılır; Türkçe Instant Form'larda rıza metni olarak da gösterilir)" />
           </label>
           <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500" type="submit">
             Kaydet

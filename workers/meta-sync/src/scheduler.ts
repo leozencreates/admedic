@@ -436,6 +436,65 @@ async function deliverDisconnectWebhook(
   }
 }
 
+type EntityStatusValue = "ACTIVE" | "PAUSED" | "ARCHIVED" | "DELETED";
+
+/** Meta `status` (ayarlanan durum) → yerel EntityStatus. */
+export function toEntityStatus(status: string): EntityStatusValue {
+  return status === "ACTIVE" || status === "ARCHIVED" || status === "DELETED" ? status : "PAUSED";
+}
+
+type AdSetBudgetTotals = () => Promise<Map<string, { daily: number; lifetime: number }> | null>;
+
+/**
+ * Hesaptaki aktif ad set'lerin kampanya başına bütçe toplamı (ABO kampanyalarda bütçe ad set'tedir).
+ * Tek istekte, gerektiğinde bir kez çekilir; hata bütçe zenginleştirmesini atlatır, senkronu durdurmaz.
+ */
+function lazyAdSetBudgetTotals(meta: MetaClientLike, metaAccountId: string, token: string, accountId: string): AdSetBudgetTotals {
+  let cached: Promise<Map<string, { daily: number; lifetime: number }> | null> | undefined;
+  return () => {
+    cached ??= meta
+      .listAdSets(metaAccountId, token)
+      .then((adSets) => {
+        const totals = new Map<string, { daily: number; lifetime: number }>();
+        for (const adSet of adSets) {
+          if (adSet.status && adSet.status !== "ACTIVE") continue;
+          const row = totals.get(adSet.campaignId) ?? { daily: 0, lifetime: 0 };
+          row.daily += adSet.dailyBudgetCents ?? 0;
+          row.lifetime += adSet.lifetimeBudgetCents ?? 0;
+          totals.set(adSet.campaignId, row);
+        }
+        return totals;
+      })
+      .catch((err: unknown) => {
+        console.warn(`[meta-sync] ad set bütçeleri alınamadı (hesap ${accountId}); bütçe zenginleştirmesi atlandı: ${errorSummary(err)}`);
+        return null;
+      });
+    return cached;
+  };
+}
+
+/**
+ * Meta kampanyasının bütçesi (minor unit; Meta zaten minor unit döner, ADR-0011): CBO'da kampanya
+ * `daily_budget`/`lifetime_budget`, ABO'da aktif ad set'lerin toplamı. Bilinmiyorsa alan yazılmaz.
+ */
+export async function campaignBudget(
+  camp: { id: string; dailyBudgetCents?: number; lifetimeBudgetCents?: number },
+  adSetTotals: AdSetBudgetTotals | null,
+): Promise<{
+  level: "campaign" | "adset" | "none";
+  data: { dailyBudget?: number | null; lifetimeBudget?: number | null; budgetType?: string };
+}> {
+  const daily = (cents: number) => ({ dailyBudget: cents, lifetimeBudget: null, budgetType: "DAILY" });
+  const lifetime = (cents: number) => ({ dailyBudget: null, lifetimeBudget: cents, budgetType: "LIFETIME" });
+  if (camp.dailyBudgetCents && camp.dailyBudgetCents > 0) return { level: "campaign", data: daily(camp.dailyBudgetCents) };
+  if (camp.lifetimeBudgetCents && camp.lifetimeBudgetCents > 0)
+    return { level: "campaign", data: lifetime(camp.lifetimeBudgetCents) };
+  const totals = adSetTotals ? (await adSetTotals())?.get(camp.id) : undefined;
+  if (totals && totals.daily > 0) return { level: "adset", data: daily(totals.daily) };
+  if (totals && totals.lifetime > 0) return { level: "adset", data: lifetime(totals.lifetime) };
+  return { level: "none", data: {} };
+}
+
 /**
  * Kampanya insight'larını günlük satırlar olarak `InsightSnapshot`'a yazar. Tutarlar
  * hesabın para birimine göre minor unit'e çevrilir (ADR-0011; `AdAccount.currency`).
@@ -455,19 +514,40 @@ export async function syncInsights(meta: MetaClientLike, workspace: any): Promis
     if (!token) continue;
     const currency: string = account.currency ?? "EUR";
     try {
-      const campaigns = await meta.listCampaigns(account.metaAccountId.replace(/^act_/, ""), token);
+      const metaAccountId = account.metaAccountId.replace(/^act_/, "");
+      const campaigns = await meta.listCampaigns(metaAccountId, token);
+      const adSetTotals = lazyAdSetBudgetTotals(meta, metaAccountId, token, account.id);
       for (const camp of campaigns) {
-        const localCampaign = await prisma.campaign.upsert({
+        const existing = await prisma.campaign.findUnique({
           where: { adAccountId_metaCampaignId: { adAccountId: account.id, metaCampaignId: camp.id } },
-          create: {
-            adAccountId: account.id, workspaceId: workspace.id, metaCampaignId: camp.id,
-            name: camp.name, objective: camp.objective,
-            status: camp.status === "ACTIVE" ? "ACTIVE" : "PAUSED",
-            workflowStatus: camp.status === "ACTIVE" ? "ACTIVE" : "PUBLISHED_PAUSED",
-            syncedAt: new Date(),
-          },
-          update: { name: camp.name, syncedAt: new Date() },
+          select: { id: true, workflowStatus: true },
         });
+        // Yeni içe aktarılan kampanyada ABO toplamı da okunur; mevcut kayıtta yalnızca kampanya seviyesi (CBO).
+        const budget = await campaignBudget(camp, existing ? null : adSetTotals);
+        // Meta durumu yerel `status`'a yansır (toplam aylık üst sınır aktif kampanyaları buradan sayar);
+        // arşivlenmiş yerel kayıt ve yarım kalan yayın (APPROVED) değiştirilmez.
+        const refreshable = existing && ["ACTIVE", "PUBLISHED_PAUSED"].includes(existing.workflowStatus);
+        const localCampaign = existing
+          ? await prisma.campaign.update({
+              where: { id: existing.id },
+              data: {
+                name: camp.name,
+                syncedAt: new Date(),
+                ...(refreshable && camp.status ? { status: toEntityStatus(camp.status) } : {}),
+                // Kampanya seviyesindeki (CBO) bütçe Meta'dan güncellenir; ABO toplamı yalnızca ilk içe aktarmada yazılır.
+                ...(refreshable && budget.level === "campaign" ? budget.data : {}),
+              },
+            })
+          : await prisma.campaign.create({
+              data: {
+                adAccountId: account.id, workspaceId: workspace.id, metaCampaignId: camp.id,
+                name: camp.name, objective: camp.objective,
+                status: camp.status === "ACTIVE" ? "ACTIVE" : "PAUSED",
+                workflowStatus: camp.status === "ACTIVE" ? "ACTIVE" : "PUBLISHED_PAUSED",
+                ...budget.data,
+                syncedAt: new Date(),
+              },
+            });
         const rows = await meta
           .getInsights({ type: "campaign", id: camp.id }, token, { datePreset: "last_7d", level: "campaign", timeIncrement: 1 });
         for (const row of rows) {

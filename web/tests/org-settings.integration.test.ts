@@ -103,6 +103,35 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("org settings: monthly cap i
     expect(audit?.after).toMatchObject({ monthlyAdBudgetCapCents: 123_456, reportRecipient: "raporlar@example.invalid", retentionDays: 180 });
   });
 
+  it("only the Owner may raise or remove the cap (even a delegated admin may only lower it)", async () => {
+    // Başlangıç: önceki testten 123.456 cent.
+    expect((await patch("ADMIN", { monthlyAdBudgetCap: 2000 })).status).toBe(403);
+    expect((await patch("ADMIN", { monthlyAdBudgetCap: null })).status).toBe(403);
+    await prisma.membership.updateMany({ where: { orgId, role: "ADMIN" }, data: { canApproveSpend: true } });
+    const denied = await patch("ADMIN", { monthlyAdBudgetCap: 2000 });
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error).toMatch(/Owner/);
+    await prisma.membership.updateMany({ where: { orgId, role: "ADMIN" }, data: { canApproveSpend: false } });
+    expect((await patch("ADMIN", { monthlyAdBudgetCap: 1000 })).status).toBe(200);
+    expect((await patch("OWNER", { monthlyAdBudgetCap: 2000 })).status).toBe(200);
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).monthlyAdBudgetCap).toBe(200_000);
+  });
+
+  it("stores an https privacy policy link for Instant Forms and reports active commitments", async () => {
+    for (const bad of ["http://klinik.example/gizlilik", "gizlilik", "javascript:alert(1)"])
+      expect((await patch("ADMIN", { privacyPolicyUrl: bad })).status).toBe(400);
+    const ok = await patch("ADMIN", { privacyPolicyUrl: "https://klinik.example/gizlilik" });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).settings).toMatchObject({ privacyPolicyUrl: "https://klinik.example/gizlilik", monthlyCommittedCents: 0 });
+    const audit = await prisma.auditLog.findFirst({ where: { orgId, action: "ORG_SETTINGS_UPDATED" }, orderBy: { createdAt: "desc" } });
+    expect(audit?.after).toMatchObject({ privacyPolicyUrl: "https://klinik.example/gizlilik" });
+    const account = await prisma.adAccount.findFirstOrThrow({ where: { orgId } });
+    await prisma.campaign.create({ data: { adAccountId: account.id, name: "Aktif", dailyBudget: 1_000, status: "ACTIVE", workflowStatus: "ACTIVE" } });
+    expect((await get("VIEWER")).monthlyCommittedCents).toBe(30_000);
+    await prisma.campaign.deleteMany({ where: { adAccountId: account.id, name: "Aktif" } });
+    expect((await patch("OWNER", { privacyPolicyUrl: null })).status).toBe(200);
+  });
+
   it("the cap is enforced in cents on campaign drafts and null removes it", async () => {
     expect((await patch("OWNER", { monthlyAdBudgetCap: 300 })).status).toBe(200); // 30.000 cent
     cookieJar.set(SESSION_COOKIE, tokens["OWNER"]);

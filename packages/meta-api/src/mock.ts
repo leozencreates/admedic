@@ -1,8 +1,13 @@
 import { mulberry32, seedFromString } from "@admedic/shared";
 import { toMetaObjective } from "./client";
-import { getGraphVersion } from "./http";
+import { getGraphVersion, MetaGraphError } from "./http";
+import type { GraphBody } from "./publish";
 
 import type {
+  AdImageUpload,
+  MetaAdImage,
+  MetaAdLocale,
+  MetaCreatedObject,
   CreateCampaignInput,
   DatePreset,
   InsightDateRange,
@@ -23,6 +28,84 @@ import type {
 /** Mock ad account sabitleri (mock moddayken kullanılır). */
 export const MOCK_AD_ACCOUNT_ID = "act_mock_001";
 export const MOCK_CURRENCY = "EUR";
+
+/** Hata enjekte edilebilen mock yazma işlemleri. */
+export type MockMetaOperation =
+  | "createCampaign"
+  | "createAdSet"
+  | "createAdCreative"
+  | "createAd"
+  | "createLeadForm"
+  | "uploadAdImage"
+  | "setStatus"
+  | "updateBudget";
+
+const pendingFailures = new Map<MockMetaOperation, number>();
+
+/**
+ * Test yardımcısı: mock istemcide sonraki `times` çağrıda işlemi Meta hatasıyla başarısız kılar
+ * (yarım kalan yayının kaldığı yerden sürmesini ve hata yollarını sınamak için). Gerçek istemciyi etkilemez.
+ */
+export const mockMetaFailures = {
+  fail(operation: MockMetaOperation, times = 1): void {
+    pendingFailures.set(operation, (pendingFailures.get(operation) ?? 0) + times);
+  },
+  reset(): void {
+    pendingFailures.clear();
+  },
+};
+
+function consumeMockFailure(operation: MockMetaOperation): void {
+  const remaining = pendingFailures.get(operation) ?? 0;
+  if (remaining <= 0) return;
+  pendingFailures.set(operation, remaining - 1);
+  throw new MetaGraphError({ code: 2, message: `Mock Meta geçici hatası (${operation}).` });
+}
+
+/** Gerçek API'nin reddedeceği gövdelerde Meta benzeri 100 hatası (mock–gerçek davranış eşliği). */
+function invalidParam(message: string): never {
+  throw new MetaGraphError({ code: 100, message: `(#100) ${message}` });
+}
+
+function parseJsonField(body: GraphBody, field: string): Record<string, unknown> {
+  const raw = body[field];
+  if (typeof raw !== "string") invalidParam(`${field} gerekli`);
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object") invalidParam(`${field} nesne olmalı`);
+    return value as Record<string, unknown>;
+  } catch {
+    return invalidParam(`${field} geçerli JSON değil`);
+  }
+}
+
+function mockId(prefix: string, seed: string): string {
+  return `${prefix}_${(seedFromString(seed) % 900_000) + 100_000}`;
+}
+
+/** Mock locale kataloğu (gerçek anahtarlar yerine sabit, belirleyici değerler; "(All)" yalnızca İngilizce/Fransızca'da). */
+const MOCK_AD_LOCALES: Record<string, MetaAdLocale[]> = {
+  english: [
+    { key: 1001, name: "English (All)" },
+    { key: 6, name: "English (US)" },
+    { key: 24, name: "English (UK)" },
+    { key: 51, name: "English (Upside Down)" },
+  ],
+  french: [
+    { key: 1002, name: "French (All)" },
+    { key: 9, name: "French (France)" },
+    { key: 44, name: "French (Canada)" },
+  ],
+  turkish: [{ key: 19, name: "Turkish" }],
+  german: [{ key: 5, name: "German" }],
+  russian: [{ key: 17, name: "Russian" }],
+  arabic: [{ key: 28, name: "Arabic" }],
+  dutch: [
+    { key: 14, name: "Dutch" },
+    { key: 34, name: "Dutch (België)" },
+  ],
+  polish: [{ key: 15, name: "Polish" }],
+};
 
 interface MockAdSeed {
   adId: string;
@@ -306,6 +389,7 @@ export class MockMetaClient {
     input: UpdateBudgetInput,
     _token: string,
   ): Promise<MetaUpdateResult> {
+    consumeMockFailure("updateBudget");
     return {
       success: true,
       entityType: input.entityType,
@@ -318,6 +402,7 @@ export class MockMetaClient {
     input: SetStatusInput,
     _token: string,
   ): Promise<MetaUpdateResult> {
+    consumeMockFailure("setStatus");
     return {
       success: true,
       entityType: input.entityType,
@@ -332,6 +417,7 @@ export class MockMetaClient {
   ): Promise<MetaCreateCampaignResult> {
     // Gerçek istemciyle aynı doğrulama: bilinmeyen objective fail-closed.
     const objective = toMetaObjective(input.objective);
+    consumeMockFailure("createCampaign");
     const id = `cmp_mock_pub_${(seedFromString(input.name) % 9000) + 1000}`;
     const isRejected = input.name.toLowerCase().includes("rejected");
     const sendBudget =
@@ -347,11 +433,71 @@ export class MockMetaClient {
         status: "PAUSED",
         objective,
         special_ad_categories: [],
-        ...(sendBudget ? { daily_budget: Math.round(input.dailyBudgetCents!) } : {}),
+        ...(sendBudget
+          ? { daily_budget: Math.round(input.dailyBudgetCents!), bid_strategy: "LOWEST_COST_WITHOUT_CAP" }
+          : { is_adset_budget_sharing_enabled: false }),
       },
       reviewFeedbackGlobal: isRejected ? { personal_health: "İçerik sağlık iddiaları içeriyor." } : {},
       reviewFeedbackPlacements: {},
     };
+  }
+
+  async createAdSet(accountId: string, body: GraphBody, _token: string): Promise<MetaCreatedObject> {
+    if (body.status !== "PAUSED") invalidParam("mock: ad set yalnızca PAUSED oluşturulur");
+    if (!body.campaign_id) invalidParam("campaign_id gerekli");
+    if (!body.optimization_goal || !body.billing_event) invalidParam("optimization_goal ve billing_event gerekli");
+    const targeting = parseJsonField(body, "targeting");
+    const countries = (targeting.geo_locations as { countries?: unknown } | undefined)?.countries;
+    if (!Array.isArray(countries) || countries.length === 0) invalidParam("targeting.geo_locations.countries gerekli");
+    if (typeof targeting.age_min !== "number" || targeting.age_min < 18) invalidParam("age_min en az 18 olmalı");
+    if (body.daily_budget !== undefined && !body.bid_strategy) invalidParam("ad set bütçesinde bid_strategy gerekli");
+    if (body.promoted_object !== undefined && !parseJsonField(body, "promoted_object").page_id)
+      invalidParam("promoted_object.page_id gerekli");
+    consumeMockFailure("createAdSet");
+    const id = mockId("as_mock_pub", `${accountId}:${String(body.campaign_id)}:${String(body.name)}`);
+    return { id, metaResponse: { id, success: true } };
+  }
+
+  async createAdCreative(accountId: string, body: GraphBody, _token: string): Promise<MetaCreatedObject> {
+    const spec = parseJsonField(body, "object_story_spec");
+    const linkData = spec.link_data as Record<string, unknown> | undefined;
+    if (!spec.page_id) invalidParam("object_story_spec.page_id gerekli");
+    if (!linkData?.image_hash) invalidParam("link_data.image_hash gerekli");
+    if (!linkData.link || !linkData.message || !linkData.call_to_action) invalidParam("link_data eksik");
+    consumeMockFailure("createAdCreative");
+    const id = mockId("cr_mock_pub", `${accountId}:${String(body.name)}:${String(body.object_story_spec)}`);
+    return { id, metaResponse: { id } };
+  }
+
+  async createAd(accountId: string, body: GraphBody, _token: string): Promise<MetaCreatedObject> {
+    if (body.status !== "PAUSED") invalidParam("mock: reklam yalnızca PAUSED oluşturulur");
+    if (!body.adset_id) invalidParam("adset_id gerekli");
+    if (!parseJsonField(body, "creative").creative_id) invalidParam("creative.creative_id gerekli");
+    consumeMockFailure("createAd");
+    const id = mockId("ad_mock_pub", `${accountId}:${String(body.adset_id)}:${String(body.name)}`);
+    return { id, metaResponse: { id, success: true } };
+  }
+
+  async createLeadForm(pageId: string, body: GraphBody, _pageToken: string): Promise<MetaCreatedObject> {
+    if (!pageId) invalidParam("page_id gerekli");
+    const questions = JSON.parse(String(body.questions ?? "[]")) as unknown;
+    if (!Array.isArray(questions) || questions.length === 0) invalidParam("questions gerekli");
+    if (!parseJsonField(body, "privacy_policy").url) invalidParam("privacy_policy.url gerekli");
+    consumeMockFailure("createLeadForm");
+    const id = mockId("lf_mock", `${pageId}:${String(body.name)}`);
+    return { id, metaResponse: { id } };
+  }
+
+  async uploadAdImage(accountId: string, image: AdImageUpload, _token: string): Promise<MetaAdImage> {
+    if (!image.bytesBase64) invalidParam("bytes gerekli");
+    consumeMockFailure("uploadAdImage");
+    const seed = `${accountId}:${image.bytesBase64.length}:${image.bytesBase64.slice(0, 256)}:${image.bytesBase64.slice(-256)}`;
+    return { hash: `mockhash${seedFromString(seed).toString(16)}` };
+  }
+
+  async searchAdLocales(query: string, _token: string): Promise<MetaAdLocale[]> {
+    const q = query.trim().toLowerCase();
+    return MOCK_AD_LOCALES[q] ?? [];
   }
 
   private selectTargets(ref: {
