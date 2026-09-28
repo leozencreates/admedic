@@ -6,8 +6,8 @@
  */
 import { prisma } from "@admedic/database";
 
-/** Kampanyanın işlendiği yer: planlayıcı, ilgili kampanya odakta. */
-export const campaignHref = (id: string) => `/campaign-planner?focus=${encodeURIComponent(id)}`;
+/** Kampanya sayfası (ADR-0020): onay, Meta'ya yükleme, etkinleştirme ve performans burada. */
+export const campaignHref = (id: string) => `/campaigns/${encodeURIComponent(id)}`;
 /** Reklam içeriği (stüdyo taslağı): onay ve düzeltme stüdyoda verilir. */
 export const studioDraftHref = (id: string) => `/studio?id=${encodeURIComponent(id)}`;
 export const leadHref = (id: string) => `/leads/${encodeURIComponent(id)}`;

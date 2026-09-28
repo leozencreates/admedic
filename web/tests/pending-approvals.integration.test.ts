@@ -204,7 +204,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("onay işi ve kayıt referan
       detail: "Günlük bütçe: €50 · İçerik kontrolü: düşük risk",
       submittedBy: "Onaya Gönderen",
       actors: "Hesap sahibi veya Yönetici",
-      href: `/campaign-planner?focus=${own.reviewCampaign}`,
+      href: `/campaigns/${own.reviewCampaign}`,
     });
     expect(items.ACTIVATION[0]).toMatchObject({
       id: own.pausedCampaign,
@@ -212,7 +212,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("onay işi ve kayıt referan
       submittedBy: "Onaya Gönderen",
       submittedByLabel: "Meta'ya yükleyen",
       actors: "Harcama yetkisi olanlar",
-      href: `/campaign-planner?focus=${own.pausedCampaign}`,
+      href: `/campaigns/${own.pausedCampaign}`,
     });
     expect(items.RECOMMENDATION).toHaveLength(1);
     expect(items.RECOMMENDATION[0]).toMatchObject({
@@ -243,9 +243,9 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("onay işi ve kayıt referan
       { id: "missing", entityType: "CAMPAIGN", entityId: "cmp_4" },
     ]);
     expect(Object.fromEntries(links)).toEqual({
-      ad: `/campaign-planner?focus=${own.pausedCampaign}`,
-      adset: `/campaign-planner?focus=${own.pausedCampaign}`,
-      campaign: `/campaign-planner?focus=${own.reviewCampaign}`,
+      ad: `/campaigns/${own.pausedCampaign}`,
+      adset: `/campaigns/${own.pausedCampaign}`,
+      campaign: `/campaigns/${own.reviewCampaign}`,
       experiment: `/tests/${own.experiment}`,
       conversation: `/leads/${own.lead}`,
     });

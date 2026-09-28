@@ -136,7 +136,7 @@ describe("listPendingApprovals", () => {
       submittedBy: "Ayşe Yılmaz",
       waitingSince: at(3),
       actors: "Hesap sahibi veya Yönetici",
-      href: "/campaign-planner?focus=c1",
+      href: "/campaigns/c1",
     });
 
     expect(items.ACTIVATION.map((i) => i.id)).toEqual(["c3", "c2"]);
@@ -146,7 +146,7 @@ describe("listPendingApprovals", () => {
       waitingSince: at(4),
       detail: "Etkinleştirilince günlük €120 harcama başlar.",
       actors: "Harcama yetkisi olanlar",
-      href: "/campaign-planner?focus=c2",
+      href: "/campaigns/c2",
     });
     expect(items.ACTIVATION[0]).toMatchObject({
       submittedBy: null,
@@ -207,9 +207,9 @@ describe("alertRecordLinks", () => {
       { id: "a10", entityType: "CAMPAIGN", entityId: "cForeign" },
     ]);
     expect(Object.fromEntries(links)).toEqual({
-      a1: "/campaign-planner?focus=c1",
-      a3: "/campaign-planner?focus=c9",
-      a4: "/campaign-planner?focus=c8",
+      a1: "/campaigns/c1",
+      a3: "/campaigns/c9",
+      a4: "/campaigns/c8",
       a5: "/tests/e1",
       a6: "/leads/L1",
       a7: "/meta-connections",

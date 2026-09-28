@@ -542,7 +542,7 @@ export default function LeadDetailPage() {
                 <dd className="min-w-0 text-right">
                   {source?.campaign ? (
                     <Link
-                      href={`/campaign-planner?focus=${encodeURIComponent(source.campaign.id)}`}
+                      href={`/campaigns/${encodeURIComponent(source.campaign.id)}`}
                       className="font-medium text-violet-700 hover:underline"
                     >
                       {source.campaign.name}

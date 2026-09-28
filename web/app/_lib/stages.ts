@@ -31,10 +31,27 @@ export const LEAD_STAGE_NAMES = ["Yeni", "Görüşme", "Nitelikli", "Konsültasy
 /** Kampanya iş akışı → aşama. `publishIncomplete`: onaylı ama Meta'ya yüklemesi yarım kalmış. */
 export function campaignStage(
   workflowStatus: string | null | undefined,
-  options: { publishIncomplete?: boolean; metaPaused?: boolean } = {},
+  options: {
+    publishIncomplete?: boolean;
+    metaPaused?: boolean;
+    /** Meta'da oluşturulmuş (bu akıştan geçmemiş) kampanya: iş akışı aşamaları uygulanmaz; Meta durumu gösterilir. */
+    external?: boolean;
+    /** Kampanyanın Meta'daki durumu (EntityStatus): ACTIVE / PAUSED / ARCHIVED … */
+    metaStatus?: string | null;
+  } = {},
 ): StageInfo {
   const style = campaignWorkflowStyle(workflowStatus, options);
   const base = { total: CAMPAIGN_STAGE_NAMES.length, names: CAMPAIGN_STAGE_NAMES, label: style.label, tone: style.tone };
+  if (options.external) {
+    const active = options.metaStatus === "ACTIVE";
+    return {
+      ...base,
+      index: 4,
+      state: active ? "done" : "idle",
+      label: active ? "Meta'da yayında" : options.metaStatus === "PAUSED" ? "Meta'da duraklatıldı" : "Meta'da yönetiliyor",
+      tone: active ? "green" : "gray",
+    };
+  }
   switch (workflowStatus) {
     case "IN_REVIEW":
       return { ...base, index: 1, state: "human" };
@@ -67,4 +84,12 @@ export function leadStage(status: string | null | undefined): StageInfo {
 /** Ekran okuyucu cümlesi: "Aşama 4/5 (Etkinleştirme): Etkinleştirme bekliyor". */
 export function stageSentence(stage: StageInfo): string {
   return `Aşama ${stage.index + 1}/${stage.total} (${stage.names[stage.index]}): ${stage.label}`;
+}
+
+/**
+ * Meta'da oluşturulmuş (Admedic onay akışına hiç girmemiş) kampanya: Meta kimliği var, yayın durumu EXTERNAL ve
+ * iş akışı hâlâ taslak. Akışa girmiş (onaya gönderilmiş, yüklenmiş, etkinleştirilmiş) kampanya dış sayılmaz.
+ */
+export function isExternalCampaign(c: { workflowStatus: string; publish: { status: string } }): boolean {
+  return c.publish.status === "EXTERNAL" && c.workflowStatus === "DRAFT";
 }

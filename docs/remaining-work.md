@@ -1,6 +1,6 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-28 (lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
+Son güncelleme: 2026-09-28 (kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve

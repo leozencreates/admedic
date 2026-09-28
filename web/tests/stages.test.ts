@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { campaignStage, leadStage, stageSentence } from "../app/_lib/stages";
+import { campaignStage, isExternalCampaign, leadStage, stageSentence } from "../app/_lib/stages";
 
 describe("aşama şeridi (K8-C)", () => {
   it("kampanya: 5 aşama; insan bekleyen aşamalar amber, düzeltme kırmızı, yayında tamam", () => {
@@ -23,5 +23,14 @@ describe("aşama şeridi (K8-C)", () => {
 
   it("ekran okuyucu cümlesi aşama numarası, adı ve etiketi içerir", () => {
     expect(stageSentence(campaignStage("PUBLISHED_PAUSED"))).toBe("Aşama 4/5 (Etkinleştirme): Etkinleştirme bekliyor");
+  });
+
+  it("Meta'da oluşturulmuş kampanya iş akışı aşamalarını değil Meta durumunu gösterir (ADR-0020)", () => {
+    expect(campaignStage("DRAFT", { external: true, metaStatus: "ACTIVE" })).toMatchObject({ index: 4, state: "done", label: "Meta'da yayında" });
+    expect(campaignStage("DRAFT", { external: true, metaStatus: "PAUSED" })).toMatchObject({ state: "idle", label: "Meta'da duraklatıldı" });
+    expect(isExternalCampaign({ workflowStatus: "DRAFT", publish: { status: "EXTERNAL" } })).toBe(true);
+    // Akışa girmiş kampanya (yayın durumu kaydı olmasa da) dış sayılmaz.
+    expect(isExternalCampaign({ workflowStatus: "PUBLISHED_PAUSED", publish: { status: "EXTERNAL" } })).toBe(false);
+    expect(isExternalCampaign({ workflowStatus: "DRAFT", publish: { status: "NOT_STARTED" } })).toBe(false);
   });
 });

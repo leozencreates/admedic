@@ -19,6 +19,7 @@ import {
 import { alertRecordLinks, campaignHref, leadHref } from "./record-refs";
 import { hasSpendAuthority } from "./spend-authority";
 import { activeMonthlyCommitmentCents } from "./spend-cap";
+import { campaignMetrics, roas, sinceDays } from "./campaign-metrics";
 
 export type QueueTone = "problem" | "human";
 
@@ -320,37 +321,7 @@ export async function setupSteps(actor: Actor): Promise<SetupStep[]> {
 
 /** Analist / izleyici: son 7 günün en iyi ve en zayıf kampanyaları (reklam getirisine göre). */
 export async function campaignExtremes(actor: Actor): Promise<{ best: CampaignRow[]; worst: CampaignRow[] }> {
-  const since = new Date();
-  since.setUTCHours(0, 0, 0, 0);
-  since.setUTCDate(since.getUTCDate() - 6);
-  // Anlık görüntüler reklam, reklam seti ya da kampanya düzeyinde olabilir; hepsi kampanyaya toplanır.
-  const sums = await prisma.insightSnapshot.groupBy({
-    by: ["campaignId", "adSetId", "adId"],
-    where: { workspaceId: actor.workspaceId, date: { gte: since } },
-    _sum: { spend: true, conversionValue: true, leads: true },
-  });
-  const adIds = [...new Set(sums.filter((s) => !s.campaignId && s.adId).map((s) => s.adId!))];
-  const adSetIds = [...new Set(sums.filter((s) => !s.campaignId && !s.adId && s.adSetId).map((s) => s.adSetId!))];
-  const [ads, adSets] = await Promise.all([
-    adIds.length
-      ? prisma.ad.findMany({ where: { workspaceId: actor.workspaceId, id: { in: adIds } }, select: { id: true, adSet: { select: { campaignId: true } } } })
-      : [],
-    adSetIds.length
-      ? prisma.adSet.findMany({ where: { workspaceId: actor.workspaceId, id: { in: adSetIds } }, select: { id: true, campaignId: true } })
-      : [],
-  ]);
-  const adCampaign = new Map(ads.map((a) => [a.id, a.adSet.campaignId]));
-  const adSetCampaign = new Map(adSets.map((a) => [a.id, a.campaignId]));
-  const totals = new Map<string, { spend: number; value: number; leads: number }>();
-  for (const s of sums) {
-    const campaignId = s.campaignId ?? (s.adId ? adCampaign.get(s.adId) : s.adSetId ? adSetCampaign.get(s.adSetId) : undefined);
-    if (!campaignId) continue;
-    const t = totals.get(campaignId) ?? { spend: 0, value: 0, leads: 0 };
-    t.spend += s._sum.spend ?? 0;
-    t.value += s._sum.conversionValue ?? 0;
-    t.leads += s._sum.leads ?? 0;
-    totals.set(campaignId, t);
-  }
+  const totals = await campaignMetrics(actor.workspaceId, sinceDays(7));
   const withSpend = [...totals.entries()].filter(([, t]) => t.spend > 0);
   if (!withSpend.length) return { best: [], worst: [] };
   const campaigns = await prisma.campaign.findMany({
@@ -362,14 +333,7 @@ export async function campaignExtremes(actor: Actor): Promise<{ best: CampaignRo
     .filter(([id]) => byId.has(id))
     .map(([id, t]) => {
       const c = byId.get(id)!;
-      return {
-        id: c.id,
-        name: c.name,
-        currency: c.adAccount.currency || "EUR",
-        spend: t.spend,
-        leads: t.leads,
-        roas: t.spend > 0 ? t.value / t.spend : null,
-      };
+      return { id: c.id, name: c.name, currency: c.adAccount.currency || "EUR", spend: t.spend, leads: t.leads, roas: roas(t) };
     })
     .sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0));
   return { best: rows.slice(0, 3), worst: rows.length > 3 ? rows.slice(-3).reverse() : [] };

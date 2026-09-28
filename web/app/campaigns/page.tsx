@@ -1,233 +1,190 @@
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
 import { connection } from "next/server";
+import { Plus } from "lucide-react";
 
-import { Badge, Card, PageHeader, SectionHeading, Td, Th } from "../_components/ui";
-import { daysAgoUTC, getPrimaryWorkspace, prisma } from "../_lib/db";
-import { formatMoney, formatNumber, formatRoas } from "../_lib/format";
-import { entityStatusStyle } from "../_lib/labels";
-import { campaignStage } from "../_lib/stages";
+import { EmptyState, IntroPanel, PageHeader, Td, Th } from "../_components/ui";
 import { StageBar } from "../_components/stage-bar";
+import { EDIT_ROLES, requirePageActor } from "../_lib/auth";
+import { EMPTY_METRICS, campaignMetrics, cpl, roas, sinceDays, type Metrics } from "../_lib/campaign-metrics";
+import { loadCampaignViews, type CampaignView } from "../_lib/campaign-view";
+import { formatMoney, formatNumber, formatRoas } from "../_lib/format";
+import { campaignHref } from "../_lib/record-refs";
+import { campaignStage, isExternalCampaign, type StageInfo } from "../_lib/stages";
 
-const LINK_CLASS =
-  "underline decoration-slate-300 underline-offset-2 hover:text-violet-700 hover:decoration-violet-600";
+/**
+ * Kampanyalar (ADR-0020 · K5-C): tek kampanya listesi. Her satır aşama şeridi ve son 7 günün harcaması, lead
+ * sayısı, lead başı maliyeti ve reklam getirisiyle kampanya sayfasına (`/campaigns/<id>`) götürür.
+ * Önce bir insandan eylem bekleyenler, sonra son 7 günde en çok harcayanlar. Yeni kampanya planlayıcıda oluşturulur.
+ */
+type Filter = "all" | "action" | "live" | "archived";
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "Tümü" },
+  { key: "action", label: "Eylem bekleyen" },
+  { key: "live", label: "Yayında" },
+  { key: "archived", label: "Arşiv" },
+];
 
-/** Kampanyanın onay/yayın işlemlerinin yapıldığı satır (planlayıcı `?focus=` ile satırı vurgular). */
-function plannerHref(campaignId: string) {
-  return `/campaign-planner?focus=${encodeURIComponent(campaignId)}`;
+interface Row {
+  c: CampaignView;
+  stage: StageInfo;
+  m: Metrics;
 }
 
-function Skeleton({ label }: { label: string }) {
-  return <div role="status" aria-label={label} className="h-64 animate-pulse rounded-xl bg-slate-200/60" />;
-}
-
-/** Yatay kayan tablo: klavyeyle odaklanıp ok tuşlarıyla kaydırılır, ekran okuyucuya adıyla duyurulur. */
-function ScrollRegion({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={label}>
-      {children}
-    </div>
-  );
-}
-
-/** Boş durum: ne olduğunu ve sıradaki adımı söyler. */
-function EmptyWithAction({ message, href, action }: { message: string; href: string; action: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-muted">
-      {message}{" "}
-      <Link href={href} className="font-medium text-violet-700 underline-offset-2 hover:underline">
-        {action}
-      </Link>
-    </div>
-  );
-}
-
-async function Campaigns() {
-  await connection();
-  const workspace = await getPrimaryWorkspace();
-  if (!workspace) return <EmptyWithAction message="Çalışma alanı bulunamadı." href="/" action="Bugün sayfasına dönün." />;
-
-  const since = daysAgoUTC(6);
-  const [campaigns, grouped, policy] = await Promise.all([
-    prisma.campaign.findMany({
-      where: { workspaceId: workspace.id },
-      include: {
-        adAccount: { select: { name: true, currency: true } },
-        _count: { select: { adsets: true } },
-      },
-      orderBy: { name: "asc" },
-    }),
-    prisma.insightSnapshot.groupBy({
-      by: ["campaignId"],
-      where: { workspaceId: workspace.id, date: { gte: since }, campaignId: { not: null } },
-      _sum: { spend: true, conversionValue: true, purchases: true },
-    }),
-    prisma.optimizationPolicy.findUnique({ where: { workspaceId: workspace.id } }),
-  ]);
-
-  const byCampaign = new Map(grouped.map((g) => [g.campaignId, g._sum]));
-  const targetRoas = policy?.targetRoas ?? null;
-
-  return (
-    <Card>
-      <SectionHeading
-        title="Kampanyalar"
-        description="Son 7 günün harcaması, cirosu ve reklam getirisi (ROAS). Kampanya adı, onay ve yayın işlemlerinin yapıldığı Kampanya planlayıcı satırını açar."
-      />
-      {campaigns.length === 0 ? (
-        <EmptyWithAction
-          message="Henüz kampanya yok."
-          href="/campaign-planner"
-          action="Kampanya planlayıcı'da ilk kampanyanızı oluşturun."
-        />
-      ) : (
-        <ScrollRegion label="Kampanyalar tablosu">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr>
-                <Th>Kampanya</Th>
-                <Th>Hesap</Th>
-                <Th>Durum</Th>
-                <Th align="right">Günlük bütçe</Th>
-                <Th align="right">Reklam seti</Th>
-                <Th align="right">Son 7 gün harcama</Th>
-                <Th align="right">Son 7 gün ciro</Th>
-                <Th align="right">Satın alma</Th>
-                <Th align="right">ROAS</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {campaigns.map((c) => {
-                const sum = byCampaign.get(c.id);
-                const spend = sum?.spend ?? 0;
-                const revenue = sum?.conversionValue ?? 0;
-                const roas = spend > 0 ? revenue / spend : null;
-                // Meta'ya hiç yüklenmemiş kampanyanın Meta durumu yoktur; onay akışındaki yeri gösterilir.
-                // Yüklenmemiş kampanyada aşama şeridi (K8-C) iş akışı etiketini kendisi çizer.
-                const status = c.metaCampaignId ? entityStatusStyle(c.status) : null;
-                // Tüm tutarlar minor unit; para birimi reklam hesabından (ADR-0011).
-                const currency = c.adAccount.currency || "EUR";
-                return (
-                  <tr key={c.id}>
-                    <Td className="font-medium text-slate-900">
-                      <Link href={plannerHref(c.id)} className={LINK_CLASS}>
-                        {c.name}
-                      </Link>
-                    </Td>
-                    <Td className="text-muted">
-                      {c.adAccount.name} · {currency}
-                    </Td>
-                    <Td className="relative">
-                      {status ? <Badge tone={status.tone}>{status.label}</Badge> : <StageBar stage={campaignStage(c.workflowStatus)} />}
-                    </Td>
-                    <Td align="right">{formatMoney(c.dailyBudget, currency)}</Td>
-                    <Td align="right">{formatNumber(c._count.adsets)}</Td>
-                    <Td align="right">{formatMoney(spend, currency)}</Td>
-                    <Td align="right">{formatMoney(revenue, currency)}</Td>
-                    <Td align="right">{formatNumber(sum?.purchases ?? 0)}</Td>
-                    <Td align="right">
-                      <span
-                        className={
-                          roas != null && targetRoas != null && roas >= targetRoas
-                            ? "font-semibold text-emerald-700"
-                            : "font-semibold text-slate-700"
-                        }
-                      >
-                        {formatRoas(roas)}
-                      </span>
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollRegion>
-      )}
-    </Card>
-  );
-}
-
-async function AdSets() {
-  await connection();
-  const workspace = await getPrimaryWorkspace();
-  if (!workspace) return null;
-
-  const adsets = await prisma.adSet.findMany({
-    where: { workspaceId: workspace.id },
-    include: {
-      campaign: { select: { id: true, name: true, adAccount: { select: { currency: true } } } },
-      _count: { select: { ads: true } },
-    },
-    orderBy: [{ campaignId: "asc" }, { name: "asc" }],
+function stageOf(c: CampaignView): StageInfo {
+  return campaignStage(c.workflowStatus, {
+    publishIncomplete: c.workflowStatus === "APPROVED" && c.publish.status === "IN_PROGRESS",
+    metaPaused: c.workflowStatus === "ACTIVE" && c.status === "PAUSED",
+    external: isExternalCampaign(c),
+    metaStatus: c.status,
   });
-
-  return (
-    <Card>
-      <SectionHeading title="Reklam setleri" description="Bütçe ve durum; optimizasyonun en küçük birimi." />
-      {adsets.length === 0 ? (
-        <EmptyWithAction
-          message="Henüz reklam seti yok. Reklam setleri, Kampanya planlayıcı'da kampanya oluşturulduğunda burada listelenir."
-          href="/campaign-planner"
-          action="Kampanya planlayıcı'yı açın."
-        />
-      ) : (
-        <ScrollRegion label="Reklam setleri tablosu">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr>
-                <Th>Reklam seti</Th>
-                <Th>Kampanya</Th>
-                <Th>Durum</Th>
-                <Th align="right">Günlük bütçe</Th>
-                <Th align="right">Reklam</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {adsets.map((a) => {
-                // Meta'ya yüklenmemiş reklam seti taslaktır (yerel PAUSED değeri "Duraklatıldı" diye okunmasın).
-                const status = entityStatusStyle(a.metaAdSetId ? a.status : "DRAFT");
-                return (
-                  <tr key={a.id}>
-                    <Td className="font-medium text-slate-900">{a.name}</Td>
-                    <Td className="text-muted">
-                      <Link href={plannerHref(a.campaign.id)} className={LINK_CLASS}>
-                        {a.campaign.name}
-                      </Link>
-                    </Td>
-                    <Td>
-                      <Badge tone={status.tone}>{status.label}</Badge>
-                    </Td>
-                    <Td align="right">{formatMoney(a.dailyBudget, a.campaign.adAccount.currency || "EUR")}</Td>
-                    <Td align="right">{formatNumber(a._count.ads)}</Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollRegion>
-      )}
-    </Card>
-  );
 }
 
-export default function Page() {
+function matches(row: Row, filter: Filter): boolean {
+  if (filter === "all") return row.c.workflowStatus !== "ARCHIVED";
+  if (filter === "archived") return row.c.workflowStatus === "ARCHIVED";
+  if (filter === "action") return row.stage.state === "human" || row.stage.state === "problem";
+  return row.stage.state === "done";
+}
+
+export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
+  await connection();
+  const actor = await requirePageActor("/campaigns");
+  const requested = (await searchParams).filter;
+  const filter: Filter = FILTERS.some((f) => f.key === requested) ? (requested as Filter) : "all";
+  const [campaigns, week] = await Promise.all([loadCampaignViews(actor), campaignMetrics(actor.workspaceId, sinceDays(7))]);
+  const rows: Row[] = campaigns.map((c) => ({ c, stage: stageOf(c), m: week.get(c.id) ?? EMPTY_METRICS }));
+  const urgent = (r: Row) => (r.stage.state === "problem" ? 0 : r.stage.state === "human" ? 1 : 2);
+  rows.sort((a, b) => urgent(a) - urgent(b) || b.m.spend - a.m.spend || a.c.name.localeCompare(b.c.name, "tr"));
+  const visible = rows.filter((r) => matches(r, filter));
+  const counts = Object.fromEntries(FILTERS.map((f) => [f.key, rows.filter((r) => matches(r, f.key)).length])) as Record<Filter, number>;
+  const canCreate = EDIT_ROLES.includes(actor.role);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Kampanyalar"
-        description="Kampanya ve reklam seti envanteri; onay, Meta'ya yükleme ve yayına alma Kampanya planlayıcı'da yapılır."
+        description="Her kampanyanın akıştaki yeri ve son 7 günün sonuçları; ayrıntı ve işlemler kampanya sayfasında."
         actions={
-          <Link href="/campaign-planner" className="primary-button">
-            Kampanya planla
-          </Link>
+          canCreate ? (
+            <Link href="/campaign-planner" className="primary-button">
+              <Plus size={16} strokeWidth={2} aria-hidden="true" />
+              Yeni kampanya
+            </Link>
+          ) : undefined
         }
       />
-      <Suspense fallback={<Skeleton label="Kampanyalar yükleniyor" />}>
-        <Campaigns />
-      </Suspense>
-      <Suspense fallback={<Skeleton label="Reklam setleri yükleniyor" />}>
-        <AdSets />
-      </Suspense>
+
+      {rows.length === 0 ? (
+        <IntroPanel
+          title="Henüz kampanya yok"
+          action={
+            canCreate ? (
+              <Link href="/campaign-planner" className="primary-button">
+                Yeni kampanya
+              </Link>
+            ) : undefined
+          }
+        >
+          Planlayıcı hedefinize göre pazar, dil ve bütçe önerir. Kampanya onaydan geçer, Meta&apos;ya kapalı yüklenir ve
+          harcamayı yalnızca harcama yetkisi olan kişi başlatır.
+        </IntroPanel>
+      ) : (
+        <section aria-labelledby="kampanya-listesi" className="studio-card !p-0">
+          <h2 id="kampanya-listesi" className="sr-only">
+            Kampanya listesi
+          </h2>
+          <nav aria-label="Kampanyaları süz" className="flex flex-wrap gap-2 border-b border-line p-3">
+            {FILTERS.map((f) => {
+              const selected = f.key === filter;
+              return (
+                <Link
+                  key={f.key}
+                  href={f.key === "all" ? "/campaigns" : `/campaigns?filter=${f.key}`}
+                  aria-current={selected ? "page" : undefined}
+                  className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium max-sm:min-h-11 ${
+                    selected ? "border-brand-200 bg-brand-50 text-brand-700" : "border-btn-line bg-surface text-neutral hover:bg-subtle"
+                  }`}
+                >
+                  {f.label}
+                  <span className={`tabular-nums ${f.key === "action" && counts.action > 0 ? "rounded-full bg-warn-badge px-1.5 text-warn" : "text-ink-3"}`}>
+                    {counts[f.key]}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          {visible.length === 0 ? (
+            <div className="p-4">
+              <EmptyState message="Bu süzgeçte kampanya yok." />
+            </div>
+          ) : (
+            <>
+              {/* Masaüstü: tablo */}
+              <div className="overflow-x-auto max-md:hidden" tabIndex={0} role="region" aria-label="Kampanyalar tablosu">
+                <table className="w-full min-w-[860px]">
+                  <thead className="bg-subtle">
+                    <tr>
+                      <Th>Kampanya</Th>
+                      <Th align="right">Günlük bütçe</Th>
+                      <Th align="right">Harcama (7 gün)</Th>
+                      <Th align="right">Lead</Th>
+                      <Th align="right">Lead başı maliyet</Th>
+                      <Th align="right">Reklam getirisi (ROAS)</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line-soft">
+                    {visible.map(({ c, stage, m }) => {
+                      const currency = c.currency || "EUR";
+                      const unit = cpl(m);
+                      return (
+                        <tr key={c.id} className="hover:bg-subtle">
+                          <td className="px-3 py-3 align-top">
+                            <Link href={campaignHref(c.id)} className="font-medium text-ink hover:underline">
+                              {c.name}
+                            </Link>
+                            <div className="mt-1">
+                              <StageBar stage={stage} />
+                            </div>
+                          </td>
+                          <Td align="right">{formatMoney(c.dailyBudget, currency)}</Td>
+                          <Td align="right">{formatMoney(m.spend, currency)}</Td>
+                          <Td align="right">{formatNumber(m.leads)}</Td>
+                          <Td align="right">{unit != null ? formatMoney(unit, currency, { precise: true }) : "—"}</Td>
+                          <Td align="right">{formatRoas(roas(m))}</Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Telefon: kartlar (kartın tamamı bağlantı) */}
+              <ul className="divide-y divide-line-soft md:hidden">
+                {visible.map(({ c, stage, m }) => {
+                  const currency = c.currency || "EUR";
+                  const unit = cpl(m);
+                  return (
+                    <li key={c.id}>
+                      <Link href={campaignHref(c.id)} className="block min-h-[72px] px-4 py-3 hover:bg-subtle">
+                        <span className="block font-medium text-ink">{c.name}</span>
+                        <span className="mt-1 block">
+                          <StageBar stage={stage} />
+                        </span>
+                        <span className="mt-1.5 block text-xs text-ink-2">
+                          7 gün: {formatMoney(m.spend, currency)} · {formatNumber(m.leads)} lead
+                          {unit != null ? ` · lead başı ${formatMoney(unit, currency, { precise: true })}` : ""}
+                          {" · "}ROAS {formatRoas(roas(m))}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

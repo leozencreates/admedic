@@ -48,7 +48,7 @@ describe("menü ağacı (ADR-0017 · K2-A)", () => {
     expect(activeNavHref("/campaigns")).toBe("/campaigns");
     expect(activeNavHref("/tests/x")).toBe("/tests");
     expect(activeNavHref("/login")).toBeNull();
-    expect(navContext("/campaign-planner", "tr")).toEqual({ group: "Kampanyalar", page: "Kampanya planlayıcı", href: "/campaign-planner" });
+    expect(navContext("/campaign-planner", "tr")).toEqual({ group: "Kampanyalar", page: "Yeni kampanya", href: "/campaign-planner" });
     expect(navContext("/approvals", "tr").group).toBeNull();
   });
 
