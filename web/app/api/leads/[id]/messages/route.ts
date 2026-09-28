@@ -19,6 +19,7 @@ import { resolveWhatsAppTransport } from "../../../../_lib/whatsapp-tenant";
 import { sendMessengerMessage } from "../../../../_lib/messenger";
 import { logAudit } from "../../../../_lib/audit";
 import { asRecord } from "../../../../_lib/lead-view";
+import { claimHandoff, resolveHandoffAlerts, userDisplayName } from "../../../../_lib/conversation-claim";
 export const maxDuration = 15;
 
 const MESSAGE_CHANNELS = ["WHATSAPP", "INSTAGRAM", "MESSENGER", "SMS"] as const;
@@ -115,7 +116,7 @@ export async function GET(
     if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
     const messages = await prisma.message.findMany({
       where: { conversationId: conversation.id },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: 100,
     });
     return {
@@ -150,6 +151,8 @@ export async function POST(
       throw new HttpError(409, "Kapalı konuşmaya mesaj gönderilemez.");
     // Devralınmış konuşmada yalnızca OWNER/ADMIN/PATIENT_COORDINATOR yazabilir.
     if (conversation.status === "ESCALATED") requireRole(actor, ESCALATION_ROLES);
+    // Asistanın devrettiği, henüz sahipsiz konuşmaya yazan ekip üyesi konuşmayı devralmış olur.
+    const claim = conversation.status === "ESCALATED" && !conversation.escalatedTo;
 
     const channel = input.channel ?? conversation.channel;
     if (channel !== conversation.channel)
@@ -173,7 +176,7 @@ export async function POST(
     if (channel === "WHATSAPP" && !isTemplate && !withinWindow)
       throw new HttpError(
         400,
-        "24 saatlik mesajlaşma penceresi dışındasınız; serbest metin gönderilemez. Şablon mesajı (templateName) kullanın.",
+        "24 saatlik mesajlaşma penceresi dışındasınız; serbest metin gönderilemez. Meta'da onaylı bir şablonla gönderin.",
       );
 
     const lead = conversation.lead;
@@ -204,6 +207,7 @@ export async function POST(
 
     const now = new Date();
     const takeover = conversation.status === "ACTIVE";
+    const displayName = claim ? await userDisplayName(actor.userId) : "";
     const metadata: Prisma.InputJsonObject =
       channel === "WHATSAPP"
         ? {
@@ -216,6 +220,16 @@ export async function POST(
             humanAgentTag: !withinWindow,
           };
     const result = await prisma.$transaction(async (tx) => {
+      // Devralma notu mesajdan önce yazılır (panelde "X devraldı" → X'in yanıtı sırası). Mesaj
+      // sağlayıcıya zaten gitti: başka biri bu arada devraldıysa mesaj yine kaydedilir, devralma yazılmaz.
+      const claimed = claim
+        ? await claimHandoff(tx, {
+            actor,
+            conversation: { id: conversation.id, workspaceId: conversation.workspaceId, channel: conversation.channel },
+            displayName,
+            via: "message",
+          })
+        : false;
       const message = await tx.message.create({
         data: {
           conversationId: conversation.id,
@@ -243,13 +257,15 @@ export async function POST(
             })
           : { status: conversation.status, escalatedTo: conversation.escalatedTo };
       if (takeover) {
+        // Asistanın açtığı devir uyarıları (ör. "yanıt üretemedi") ekip yanıtladığı için çözülür.
+        const resolvedAlertIds = await resolveHandoffAlerts(tx, conversation.workspaceId, conversation.id, now);
         await logAudit({
           actor,
           action: "CONVERSATION_ESCALATED",
           entityType: "CONVERSATION",
           entityId: conversation.id,
           before: { status: "ACTIVE" },
-          after: { status: "ESCALATED", auto: true, messageId: message.id },
+          after: { status: "ESCALATED", auto: true, messageId: message.id, resolvedAlertIds },
         }, tx);
       }
       await logAudit({
@@ -264,7 +280,12 @@ export async function POST(
           humanAgentTag: channel !== "WHATSAPP" && !withinWindow,
         },
       }, tx);
-      return { message, status: updated.status, escalatedTo: updated.escalatedTo };
+      return {
+        message,
+        status: updated.status,
+        escalatedTo: claimed ? actor.userId : updated.escalatedTo,
+        claimed,
+      };
     });
     return {
       message: {
@@ -280,6 +301,7 @@ export async function POST(
         status: result.status,
         escalatedTo: result.escalatedTo,
         takenOver: takeover,
+        claimed: result.claimed,
       },
     };
   });

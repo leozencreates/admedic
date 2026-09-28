@@ -1,23 +1,41 @@
 import { prisma } from "@admedic/database";
-import { requireActor, requireRole, CARE_ROLES } from "../../../../_lib/auth";
+import { requireActor, requireRole, CARE_ROLES, ESCALATION_ROLES, type Actor } from "../../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { logAudit } from "../../../../_lib/audit";
+import {
+  claimHandoff,
+  memberDisplayNames,
+  resolveHandoffAlerts,
+  userDisplayName,
+} from "../../../../_lib/conversation-claim";
 import { z } from "zod";
 export const maxDuration = 10;
 const EscalateSchema = z.object({ note: z.string().max(1000).optional() }).strict();
 
-/** Sistem notunda kullanıcı kimliği yerine görünen ad (yoksa e-postanın yerel kısmı) yazılır. */
-async function actorDisplayName(userId: string): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true, email: true },
-  });
-  const name = user?.name?.trim();
-  if (name) return name;
-  const local = user?.email?.split("@")[0]?.trim();
-  return local || "ekip üyesi";
+/** Devralınamayan konuşma için 409: kapalı ya da zaten bir ekip üyesinde. */
+async function conflict(
+  actor: Actor,
+  conversation: { status: string; escalatedTo: string | null } | null,
+): Promise<HttpError> {
+  if (!conversation) return new HttpError(404, "Konuşma bulunamadı.");
+  if (conversation.status === "CLOSED") return new HttpError(409, "Kapalı konuşma devralınamaz.");
+  if (conversation.status === "ESCALATED" && conversation.escalatedTo) {
+    if (conversation.escalatedTo === actor.userId) return new HttpError(409, "Konuşmayı zaten siz devraldınız.");
+    const names = await memberDisplayNames(actor.orgId, [conversation.escalatedTo]);
+    const name = names.get(conversation.escalatedTo) ?? "bir ekip üyesi";
+    return new HttpError(409, `Konuşma zaten ${name} tarafından devralındı.`);
+  }
+  return new HttpError(409, "Konuşma bu sırada değişti; sayfayı yenileyip tekrar deneyin.");
 }
 
+/**
+ * Konuşmayı devral (spec 3.8):
+ * - ACTIVE → ESCALATED: asistan yanıtlarken ekip konuşmayı üstlenir (CARE_ROLES).
+ * - ESCALATED ve sahipsiz (asistan devretti): konuşma devralan kişiye yazılır, sistem notu ve denetim
+ *   kaydı eklenir, açık devir uyarıları çözülür. Devralınmış konuşmada yalnızca ESCALATION_ROLES
+ *   yazabildiği için devralma da bu rollere açıktır (reklam uzmanı devralamaz).
+ * - Zaten devralınmış ya da kapalı konuşma: 409.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     sameOrigin(request);
@@ -29,35 +47,60 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       where: { id, lead: { workspaceId: actor.workspaceId } },
     });
     if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
-    if (conversation.status === "ESCALATED") throw new HttpError(409, "Zaten eskalasyon altındadır.");
-    if (conversation.status === "CLOSED") throw new HttpError(409, "Kapalı konuşma devralınamaz.");
-    const displayName = await actorDisplayName(actor.userId);
-    const note = input.note?.trim();
-    await prisma.$transaction(async (tx) => {
-      await tx.conversation.update({
-        where: { id },
-        data: { status: "ESCALATED", escalatedTo: actor.userId, escalatedAt: new Date() },
+    const claim = conversation.status === "ESCALATED";
+    if (conversation.status === "CLOSED" || (claim && conversation.escalatedTo)) throw await conflict(actor, conversation);
+    if (claim) requireRole(actor, ESCALATION_ROLES);
+    const displayName = await userDisplayName(actor.userId);
+    const note = input.note?.trim() || undefined;
+    const done = await prisma.$transaction(async (tx) => {
+      if (claim) {
+        return claimHandoff(tx, {
+          actor,
+          conversation: { id: conversation.id, workspaceId: conversation.workspaceId, channel: conversation.channel },
+          displayName,
+          via: "button",
+          note,
+        });
+      }
+      const now = new Date();
+      // Koşullu geçiş: asistan bu arada devrettiyse ya da başka biri devraldıysa yazılmaz (409).
+      const updated = await tx.conversation.updateMany({
+        where: { id, status: "ACTIVE" },
+        data: { status: "ESCALATED", escalatedTo: actor.userId, escalatedAt: now },
       });
+      if (updated.count === 0) return false;
       // Sistem notu: dış kanala gönderilmez, yalnızca panelde görünür.
       await tx.message.create({
         data: {
           conversationId: conversation.id,
           direction: "OUTGOING",
           channel: conversation.channel,
-          content: `⚠ Konuşma ${displayName} tarafından devralındı; asistan susturuldu.${note ? ` Not: ${note}` : ""}`,
+          content: `Konuşma ${displayName} tarafından devralındı; asistan susturuldu.${note ? ` Not: ${note}` : ""}`,
           sender: "system",
           metadata: { type: "ESCALATION" },
         },
       });
+      // Asistanın açtığı "yanıt üretemedi" gibi devir uyarıları artık bir sahibi olduğu için çözülür.
+      const resolvedAlertIds = await resolveHandoffAlerts(tx, conversation.workspaceId, conversation.id, now);
       await logAudit({
         actor,
         action: "CONVERSATION_ESCALATED",
         entityType: "CONVERSATION",
         entityId: conversation.id,
         before: { status: conversation.status },
-        after: { status: "ESCALATED", hasNote: Boolean(note) },
+        after: { status: "ESCALATED", hasNote: Boolean(note), resolvedAlertIds },
       }, tx);
+      return true;
     });
-    return { conversation: { id, status: "ESCALATED" } };
+    if (!done) {
+      const current = await prisma.conversation.findUnique({
+        where: { id },
+        select: { status: true, escalatedTo: true },
+      });
+      throw await conflict(actor, current);
+    }
+    return {
+      conversation: { id, status: "ESCALATED", escalatedTo: actor.userId, claimed: claim },
+    };
   });
 }

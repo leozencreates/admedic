@@ -81,9 +81,9 @@ describe("yayın hazırlığı (publishReadiness)", () => {
     expect(publishReadiness({ ...ready, plan: landing, content: { ...content, landingUrl: "https://klinik.example" } }).ready).toBe(true);
   });
   it("Meta'da yayınlanamayan hedef × yöntem birleşimlerini reddeder", () => {
-    expect(publishReadiness({ ...ready, objective: "MAX_ROAS" }).reasons.join()).toMatch(/Instant Form/);
+    expect(publishReadiness({ ...ready, objective: "MAX_ROAS" }).reasons.join()).toMatch(/Anında Form/);
     expect(deliveryBlockingReason("MAX_IMPRESSIONS", "whatsapp")).toMatch(/WhatsApp/);
-    expect(deliveryBlockingReason("MAX_CONVERSIONS", "instagram_dm")).toMatch(/Instagram DM/);
+    expect(deliveryBlockingReason("MAX_CONVERSIONS", "instagram_dm")).toMatch(/Instagram mesajına/);
     expect(deliveryBlockingReason("MAX_ROAS", "landing_form")).toBeNull();
     const blocked = withDeliveryCheck({ objective: "MAX_ROAS", conversionMethod: "instant_form", blocked: false, blockingReasons: [] });
     expect(blocked.blocked).toBe(true);
@@ -212,11 +212,24 @@ describe("reklam görseli", () => {
   });
 });
 
-describe("Instant Form rıza metinleri", () => {
-  it("Türkçe formda kuruluş metni kullanılır; diğer dillerde yerel genel metin; başlıklar Meta sınırında", () => {
-    expect(leadFormTexts("TR", "Kurum aydınlatma metni").body).toBe("Kurum aydınlatma metni");
-    expect(leadFormTexts("DE", "Kurum aydınlatma metni").body).toMatch(/Datenschutzerklärung/);
-    for (const lang of ["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"] as const)
-      expect(leadFormTexts(lang).title.length).toBeLessThanOrEqual(60);
+describe("Instant Form metinleri (KVKK İlke Kararı 2026/347)", () => {
+  const LANGS = ["TR", "EN", "DE", "RU", "AR", "FR", "NL", "PL"] as const;
+  it("Türkçe formda kuruluşun açık rıza metni kullanılır; diğer dillerde yerel genel metin", () => {
+    expect(leadFormTexts("TR", "Kurum açık rıza metni").body).toBe("Kurum açık rıza metni");
+    expect(leadFormTexts("DE", "Kurum açık rıza metni").body).toMatch(/Datenschutzhinweise/);
+  });
+  it("aydınlatma ve açık rıza ayrı başlık ve ayrı beyanla sunulur; Meta sınırları korunur", () => {
+    for (const lang of LANGS) {
+      const texts = leadFormTexts(lang);
+      expect(texts.title.length).toBeLessThanOrEqual(60);
+      expect(texts.checkbox.length).toBeLessThanOrEqual(200);
+      expect(texts.privacyLink.length).toBeLessThanOrEqual(70);
+      // Rıza bölümünün başlığı aydınlatma bağlantısıyla aynı değildir; gövde aydınlatmaya yalnızca atıf yapar.
+      expect(texts.title).not.toBe(texts.privacyLink);
+      expect(texts.body).toContain(texts.privacyLink.slice(0, 7));
+    }
+    expect(leadFormTexts("TR").title).toBe("Açık rıza");
+    expect(leadFormTexts("TR").privacyLink).toBe("Aydınlatma metni");
+    expect(leadFormTexts("TR").checkbox).toMatch(/açık rıza veriyorum/);
   });
 });

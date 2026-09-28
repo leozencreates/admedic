@@ -60,7 +60,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead CRM and messaging", ()
       data: {
         name: "Messaging fixture",
         slug: `msgfix-${suffix}`,
-        consentText: "Özel aydınlatma metni",
+        consentText: "Özel açık rıza metni",
         workspaces: { create: { name: "Ws", slug: "ws-msg" } },
       },
       include: { workspaces: true },
@@ -340,20 +340,28 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead CRM and messaging", ()
     as("PATIENT_COORDINATOR");
     const lead = await createLead({ firstName: "Consent", lastName: "Case", email: "consent@example.invalid" });
     const patch = (payload: unknown) => leadPatch(req(`/api/leads/${lead.id}`, "PATCH", payload), ctx(lead.id));
-    expect((await patch({ consentGiven: true })).status).toBe(200);
+    const evidence = { basis: "WRITTEN_MESSAGE", obtainedAt: "2026-09-27", note: "WhatsApp mesajıyla onayladı" };
+    // Kanıtsız açık rıza kaydı açılmaz (KVKK İlke Kararı 2026/347 — ispat yükü veri sorumlusunda).
+    expect((await patch({ consentGiven: true })).status).toBe(422);
+    expect((await patch({ consentGiven: true, consentEvidence: { ...evidence, obtainedAt: "2999-01-01" } })).status).toBe(422);
+    expect((await patch({ consentGiven: false, consentEvidence: evidence })).status).toBe(422);
+    expect(await prisma.consentRecord.count({ where: { leadId: lead.id } })).toBe(0);
+    expect((await patch({ consentGiven: true, consentEvidence: evidence })).status).toBe(200);
     let records = await prisma.consentRecord.findMany({ where: { leadId: lead.id }, orderBy: { createdAt: "asc" } });
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ status: "GRANTED", consentText: "Özel aydınlatma metni", type: "MARKETING" });
+    expect(records[0]).toMatchObject({ status: "GRANTED", consentText: "Özel açık rıza metni", type: "MARKETING", source: "PANEL" });
+    expect(records[0].evidence).toMatchObject({ basis: "WRITTEN_MESSAGE", note: "WhatsApp mesajıyla onayladı" });
+    expect(records[0].acceptedAt?.toISOString()).toBe("2026-09-27T09:00:00.000Z");
     expect((await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).consentGiven).toBe(true);
     // Tekrar true: yeni kayıt açılmaz.
-    expect((await patch({ consentGiven: true })).status).toBe(200);
+    expect((await patch({ consentGiven: true, consentEvidence: evidence })).status).toBe(200);
     expect(await prisma.consentRecord.count({ where: { leadId: lead.id } })).toBe(1);
     expect((await patch({ consentGiven: false })).status).toBe(200);
     records = await prisma.consentRecord.findMany({ where: { leadId: lead.id } });
     expect(records[0].status).toBe("WITHDRAWN");
     expect(records[0].withdrawnAt).not.toBeNull();
     expect((await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).consentGiven).toBe(false);
-    expect((await patch({ consentGiven: true })).status).toBe(200);
+    expect((await patch({ consentGiven: true, consentEvidence: { basis: "SIGNED_FORM", obtainedAt: "2026-09-28" } })).status).toBe(200);
     expect(await prisma.consentRecord.count({ where: { leadId: lead.id, status: "GRANTED" } })).toBe(1);
     expect(await prisma.consentRecord.count({ where: { leadId: lead.id } })).toBe(2);
   });

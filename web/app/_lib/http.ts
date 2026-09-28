@@ -48,7 +48,7 @@ export async function body<T>(
   } catch {
     throw new HttpError(
       400,
-      "Alanları kontrol edin; boş, fazla uzun veya geçersiz değerler var.",
+      "Formdaki bazı değerler eksik, çok uzun ya da geçersiz. Alanları düzeltip tekrar deneyin.",
     );
   }
 }
@@ -67,7 +67,7 @@ export function errorToHttp(error: unknown): { status: number; message: string }
     return { status: 409, message: "İşlem eşzamanlı bir değişiklikle çakıştı; tekrar deneyin." };
   return {
     status: 503,
-    message: "İşlem tamamlanamadı. Veritabanı bağlantısını kontrol edip tekrar deneyin.",
+    message: "İşlem tamamlanamadı. Birkaç dakika sonra tekrar deneyin; sorun sürerse yöneticinize bildirin.",
   };
 }
 export async function respond(action: () => Promise<unknown>) {

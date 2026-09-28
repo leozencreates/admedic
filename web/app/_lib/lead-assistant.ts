@@ -19,6 +19,7 @@ import { sendMessengerMessage } from "./messenger";
 import { withLlmLog } from "./llm-log";
 import { HttpError } from "./http";
 import { asRecord } from "./lead-view";
+import { channelLabel } from "./labels";
 
 /**
  * AI karşılama ve nitelendirme asistanı (spec 3.8): ACTIVE konuşmadaki son gelen mesaja
@@ -187,16 +188,17 @@ async function escalate(
       },
       select: { id: true },
     });
+    // Devredilen konuşma bir insanın eylemini bekler: acil durum Kritik, diğer devirler Önemli (Faz 1).
     await tx.alert.create({
       data: {
         workspaceId: conversation.workspaceId,
         type: HANDOFF_ALERT_TYPE,
-        severity: reason === "emergency" ? AlertSeverity.CRITICAL : AlertSeverity.INFO,
+        severity: reason === "emergency" ? AlertSeverity.CRITICAL : AlertSeverity.WARNING,
         title:
           reason === "emergency"
             ? "Acil durum: asistan konuşmayı devretti"
             : "Asistan konuşmayı koordinatöre devretti",
-        message: `Otomatik asistan ${conversation.channel} konuşmasını durdurdu (${HANDOFF_LABEL[reason]}). Bir hasta koordinatörü devralmalı.`,
+        message: `Otomatik asistan ${channelLabel(conversation.channel)} konuşmasını durdurdu (${HANDOFF_LABEL[reason]}). Bir hasta koordinatörü devralmalı.`,
         entityType: "CONVERSATION",
         entityId: conversation.id,
       },

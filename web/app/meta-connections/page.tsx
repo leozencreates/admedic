@@ -1,23 +1,20 @@
 "use client";
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
+import { formatDay } from "../_lib/format";
+import { entityStatusStyle, metaConnectionStyle } from "../_lib/labels";
 import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { ConfirmDialog } from "../_components/dialog";
 import { isRequiredScope, optionalScopesMissing, scopeLabel } from "../_lib/meta-scopes";
 
-type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
-const STATUS_TONE: Record<string, Tone> = {
-  CONNECTED: "green",
-  EXPIRED: "amber",
-  REVOKED: "red",
-  DEGRADED: "amber",
-};
+/** Meta bağlantı türü (K9-C: Meta'nın Türkçe arayüzündeki adlar). */
 const TYPE_LABEL: Record<string, string> = {
-  BUSINESS_MANAGER: "Business Manager",
-  AD_ACCOUNT: "Reklam Hesabı",
-  PAGE: "Sayfa",
-  INSTAGRAM: "Instagram",
-  PIXEL: "Pixel",
-  WHATSAPP_BUSINESS: "WhatsApp Business",
+  BUSINESS_MANAGER: "İşletme portföyü",
+  AD_ACCOUNT: "Reklam hesabı",
+  PAGE: "Facebook Sayfası",
+  INSTAGRAM: "Instagram hesabı",
+  PIXEL: "Meta Pikseli",
+  WHATSAPP_BUSINESS: "WhatsApp Business hesabı",
 };
 interface Conn {
   id: string;
@@ -53,12 +50,38 @@ type IdForm = {
   pageId: string;
   instaId: string;
 };
-const ID_FIELDS: Array<{ key: keyof IdForm; label: string; hint: string }> = [
-  { key: "pixelId", label: "Pixel / Dataset ID", hint: "Conversions API hedefi" },
-  { key: "whatsappPhoneNumberId", label: "WhatsApp phone_number_id", hint: "Cloud API webhook yönlendirmesi" },
-  { key: "whatsappBusinessId", label: "WhatsApp Business Account ID", hint: "WABA kimliği" },
-  { key: "pageId", label: "Facebook Sayfa ID", hint: "Messenger / Lead Ads webhook eşlemesi" },
-  { key: "instaId", label: "Instagram Hesap ID", hint: "Instagram DM webhook eşlemesi" },
+/** Kimlik numaraları ham alan adıyla değil, açıklamasıyla ve katlanır bölümde gösterilir (K9-C #5). */
+const ID_FIELDS: Array<{ key: keyof IdForm; label: string; short: string; hint: string }> = [
+  {
+    key: "pixelId",
+    label: "Meta Pikseli (veri kümesi) kimliği",
+    short: "Meta Pikseli",
+    hint: "Meta'ya dönüşüm bildirimi bu piksele gönderilir.",
+  },
+  {
+    key: "whatsappPhoneNumberId",
+    label: "WhatsApp telefon numarası kimliği",
+    short: "WhatsApp telefon numarası",
+    hint: "Gelen WhatsApp mesajları bu numarayla eşleşir.",
+  },
+  {
+    key: "whatsappBusinessId",
+    label: "WhatsApp Business hesap kimliği",
+    short: "WhatsApp Business hesabı",
+    hint: "Telefon numarasının bağlı olduğu WhatsApp Business hesabı.",
+  },
+  {
+    key: "pageId",
+    label: "Facebook Sayfası kimliği",
+    short: "Facebook Sayfası",
+    hint: "Messenger mesajları ve Anında Form lead'leri bu sayfayla eşleşir.",
+  },
+  {
+    key: "instaId",
+    label: "Instagram hesap kimliği",
+    short: "Instagram hesabı",
+    hint: "Instagram DM mesajları bu hesapla eşleşir.",
+  },
 ];
 
 /** Callback yönlendirmesinden gelen sonuç (`?status=connected|error&missing=&optional=&reason=`). */
@@ -87,33 +110,59 @@ function readCallbackNotice(search: string): CallbackNotice | null {
   };
 }
 
+/** Yükleme hatası boş liste gibi gösterilmez (İÇ-3): ne olduğu + "Tekrar dene". */
+function LoadError({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+      <p className="font-medium">{title}</p>
+      {message && <p className="mt-1">{message}</p>}
+      <button type="button" className="secondary-button mt-3" onClick={onRetry}>
+        Tekrar dene
+      </button>
+    </div>
+  );
+}
+
 export default function MetaConnectionsPage() {
   const [conns, setConns] = useState<Conn[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connsError, setConnsError] = useState<string | null>(null);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [notice, setNotice] = useState<CallbackNotice | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [idForm, setIdForm] = useState<IdForm>({ pixelId: "", whatsappPhoneNumberId: "", whatsappBusinessId: "", pageId: "", instaId: "" });
   const [saving, setSaving] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<Conn | null>(null);
+  const [disconnectBusy, setDisconnectBusy] = useState(false);
+  const [disconnectError, setDisconnectError] = useState("");
 
   async function load() {
     setLoading(true);
+    setConnsError(null);
+    setAccountsError(null);
     try {
       const data = await api<{ connections: Conn[] }>("/api/meta/connections");
       setConns(data.connections ?? []);
-    } catch { setConns([]); }
+    } catch (e) {
+      setConnsError(e instanceof Error ? e.message : "");
+    }
     try {
       const a = await api<{ accounts: Account[] }>("/api/platforms/accounts");
       setAccounts(a.accounts ?? []);
-    } catch { setAccounts([]); }
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : "");
+    }
     setLoading(false);
   }
   async function connect() {
     try {
       const data = await api<{ authUrl: string }>("/api/meta/oauth");
       window.location.href = data.authUrl;
-    } catch (e: any) { setMsg({ kind: "err", text: e?.message ?? "OAuth başlatma başarısız." }); }
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Meta bağlantısı başlatılamadı. Birkaç dakika sonra tekrar deneyin." });
+    }
   }
   async function refresh(id: string) {
     try {
@@ -122,9 +171,9 @@ export default function MetaConnectionsPage() {
         "POST",
         {},
       );
-      setMsg({ kind: "ok", text: `Yenileme başarılı: ${r.connection.status}` });
-    } catch (e: any) {
-      setMsg({ kind: "err", text: e?.message ?? "Yenileme başarısız." });
+      setMsg({ kind: "ok", text: `Meta bağlantısı yenilendi. Durum: ${metaConnectionStyle(r.connection.status).label}.` });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Meta bağlantısı yenilenemedi. Tekrar deneyin." });
     }
     load();
   }
@@ -135,24 +184,38 @@ export default function MetaConnectionsPage() {
         "PATCH",
         { isDefault: true },
       );
-      setMsg({ kind: "ok", text: "Varsayılan hesap güncellendi." });
-    } catch (e: any) {
-      setMsg({ kind: "err", text: e?.message ?? "İşlem başarısız." });
+      setMsg({ kind: "ok", text: "Varsayılan reklam hesabı güncellendi." });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Varsayılan hesap değiştirilemedi. Tekrar deneyin." });
     }
     load();
   }
-  async function disconnect(id: string) {
-    if (!window.confirm("Bağlantı kesilecek ve ilgili reklam hesapları duraklatılacak. Emin misiniz?")) return;
+  function askDisconnect(c: Conn) {
+    setDisconnectError("");
+    setDisconnecting(c);
+  }
+  async function disconnect() {
+    if (!disconnecting) return;
+    setDisconnectBusy(true);
+    setDisconnectError("");
     try {
       const r = await api<{ connection: { id: string; status: string; adAccountsPaused: number } }>(
-        "/api/meta/connections/" + id,
+        "/api/meta/connections/" + disconnecting.id,
         "DELETE",
       );
-      setMsg({ kind: "ok", text: `Bağlantı kesildi (${r.connection.adAccountsPaused} reklam hesabı duraklatıldı).` });
-    } catch (e: any) {
-      setMsg({ kind: "err", text: e?.message ?? "Bağlantı kesilemedi." });
+      const paused = r.connection.adAccountsPaused;
+      setDisconnecting(null);
+      setMsg({
+        kind: "ok",
+        text: paused > 0 ? `Meta bağlantısı kesildi. ${paused} reklam hesabı duraklatıldı.` : "Meta bağlantısı kesildi.",
+      });
+      load();
+    } catch (e) {
+      // Hata diyaloğun içinde gösterilir; kullanıcı tekrar deneyebilir ya da vazgeçebilir.
+      setDisconnectError(e instanceof Error ? e.message : "Meta bağlantısı kesilemedi. Tekrar deneyin.");
+    } finally {
+      setDisconnectBusy(false);
     }
-    load();
   }
   function startEdit(c: Conn) {
     setEditing(c.id);
@@ -180,11 +243,22 @@ export default function MetaConnectionsPage() {
           instaId: idForm.instaId.trim() || null,
         },
       );
-      setMsg({ kind: "ok", text: r.changed.length > 0 ? `Kimlikler güncellendi (${r.changed.join(", ")}).` : "Değişiklik yok." });
+      const names = r.changed
+        .map((key) => ID_FIELDS.find((f) => f.key === key)?.short)
+        .filter((name): name is string => Boolean(name));
+      setMsg({
+        kind: "ok",
+        text:
+          r.changed.length === 0
+            ? "Değişiklik yapılmadı."
+            : names.length > 0
+              ? `Kimlik numaraları güncellendi: ${names.join(", ")}.`
+              : "Kimlik numaraları güncellendi.",
+      });
       setEditing(null);
       load();
-    } catch (err: any) {
-      setMsg({ kind: "err", text: err?.message ?? "Kimlikler kaydedilemedi." });
+    } catch (err) {
+      setMsg({ kind: "err", text: err instanceof Error ? err.message : "Kimlik numaraları kaydedilemedi. Tekrar deneyin." });
     }
     setSaving(false);
   }
@@ -206,55 +280,71 @@ export default function MetaConnectionsPage() {
     }
   }, []);
 
+  const noticeReason = notice?.reason ? notice.reason.replace(/[.\s]+$/, "") : null;
+
   return (
     <div className="space-y-8">
       <header className="studio-hero">
         <span className="eyebrow">META BAĞLANTILARI</span>
-        <h1>Meta Hesap Bağlantısı</h1>
-        <p className="text-sm text-slate-500">Business Manager, reklam hesapları, sayfalar, Instagram ve WhatsApp hesaplarınızı bağlayın.</p>
-        <div className="mt-6"><button onClick={connect} className="primary-button">Meta ile Bağlantı Kur</button></div>
+        <h1>Meta hesap bağlantısı</h1>
+        <p>İşletme portföyünüzü, reklam hesaplarınızı, Facebook sayfalarınızı, Instagram ve WhatsApp Business hesaplarınızı bağlayın.</p>
+        <div className="mt-6">
+          <button type="button" onClick={connect} className="primary-button">Meta ile bağlantı kur</button>
+        </div>
       </header>
       {notice && (
         <div
-          role="alert"
-          className={`rounded-xl border p-3 text-sm ${notice.status === "connected" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}
+          role={notice.status === "connected" ? "status" : "alert"}
+          className={`rounded-xl border p-3 text-sm ${notice.status === "connected" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
         >
           {notice.status === "connected" ? (
             <div className="space-y-1">
               <p className="font-medium">
                 Meta bağlantısı kuruldu.
                 {notice.pages !== null && notice.pages > 0 ? ` ${notice.pages} sayfa bağlandı.` : ""}
-                {notice.accounts !== null && notice.accounts > 0 ? ` ${notice.accounts} reklam hesabı keşfedildi.` : ""}
+                {notice.accounts !== null && notice.accounts > 0 ? ` ${notice.accounts} reklam hesabı bulundu.` : ""}
               </p>
               {notice.missing.length > 0 && (
                 <p className="text-rose-700">
-                  Eksik ZORUNLU izinler: {notice.missing.map(scopeLabel).join(", ")}. Kampanya ve lead işlemleri için Meta'da yeniden yetkilendirin.
+                  Eksik zorunlu izinler: {notice.missing.map(scopeLabel).join(", ")}. Kampanya ve lead işlemleri için Meta ile yeniden bağlanıp bu izinleri verin.
                 </p>
               )}
               {notice.optional.length > 0 && (
-                <p className="text-amber-700">
-                  Eksik opsiyonel izinler: {notice.optional.map(scopeLabel).join(", ")} (mesajlaşma/Instagram/WhatsApp özellikleri sınırlı).
+                <p className="text-amber-800">
+                  Eksik isteğe bağlı izinler: {notice.optional.map(scopeLabel).join(", ")}. Bu izinler olmadan mesajlaşma, Instagram ve WhatsApp özellikleri sınırlı çalışır.
                 </p>
               )}
             </div>
           ) : (
-            <p>Meta bağlantısı kurulamadı{notice.reason ? `: ${notice.reason}` : "."}</p>
+            <p>
+              Meta bağlantısı kurulamadı{noticeReason ? `: ${noticeReason}` : ""}. Tekrar denemek için “Meta ile bağlantı kur” düğmesini kullanın.
+            </p>
           )}
         </div>
       )}
       {msg && (
-        <div role="alert" className={`rounded-xl border p-3 text-sm ${msg.kind === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
+        <div
+          role={msg.kind === "ok" ? "status" : "alert"}
+          className={`rounded-xl border p-3 text-sm ${msg.kind === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+        >
           {msg.text}
         </div>
       )}
       <Card>
-        <SectionHeading title="Bağlantılar" description="Bağlı Meta hesapları, izin durumu ve son kullanma tarihi." />
-        {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : conns.length === 0 ? <EmptyState message="Henüz Meta hesabı bağlı değil." /> : (
+        <SectionHeading title="Bağlantılar" description="Bağlı Meta hesapları, izinleri ve bağlantıların geçerlilik süresi." />
+        {loading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+        ) : connsError !== null ? (
+          <LoadError title="Meta bağlantıları yüklenemedi." message={connsError} onRetry={() => void load()} />
+        ) : conns.length === 0 ? (
+          <EmptyState message="Henüz Meta bağlantısı yok. Başlamak için “Meta ile bağlantı kur” düğmesini kullanın." />
+        ) : (
           <div className="space-y-3">
             {conns.map((c) => {
-              const expired = c.status === "EXPIRED" || c.status === "REVOKED";
+              const broken = c.status === "EXPIRED" || c.status === "REVOKED";
               const left = daysLeft(c.expiresAt);
-              const soon = !expired && left !== null && left <= 3;
+              const soon = !broken && left !== null && left <= 3;
+              const status = metaConnectionStyle(c.status);
               // missingPermissions yalnızca zorunlu izinleri taşır; opsiyoneller verilen izin listesinden türetilir.
               const requiredMissing = c.missingPermissions.filter(isRequiredScope);
               const optionalMissing = c.scopes.length > 0
@@ -262,74 +352,94 @@ export default function MetaConnectionsPage() {
                 : c.missingPermissions.filter((s) => !isRequiredScope(s));
               const isEditing = editing === c.id;
               return (
-                <div key={c.id} className={`rounded-lg border p-3 ${expired ? "border-rose-300 bg-rose-50/40" : soon ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">{TYPE_LABEL[c.type] ?? c.type}</p>
-                      <p className="text-xs text-slate-500">{c.name ?? c.metaAccountId ?? c.pageId ?? "-"}</p>
+                <div key={c.id} className={`rounded-lg border p-3 ${broken ? "border-rose-300 bg-rose-50/40" : soon ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900">{TYPE_LABEL[c.type] ?? "Meta bağlantısı"}</p>
+                      <p className="break-all text-xs text-muted">{c.name ?? c.metaAccountId ?? c.pageId ?? "—"}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge tone={STATUS_TONE[c.status] ?? "gray"}>{c.status}</Badge>
-                      <span className="text-xs text-slate-400">{new Date(c.createdAt).toLocaleDateString("tr-TR")}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                      <span className="text-xs text-muted">Bağlandı: {formatDay(c.createdAt)}</span>
                     </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    {c.expiresAt ? (
-                      <span className={soon || expired ? "text-amber-700" : "text-slate-500"}>
-                        Son kullanma: {new Date(c.expiresAt).toLocaleDateString("tr-TR")} ({left} gün)
-                      </span>
+                  <p className={`mt-2 text-xs ${broken ? "text-rose-700" : soon ? "text-amber-800" : "text-muted"}`}>
+                    {broken
+                      ? "Bu bağlantı kullanılamıyor. Meta ile yeniden bağlanın."
+                      : c.expiresAt
+                        ? `Geçerlilik: ${formatDay(c.expiresAt)} tarihine kadar (${left} gün kaldı).`
+                        : "Süre sınırı yok (Meta'da erişim kaldırılana kadar geçerli)."}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {broken ? (
+                      <button type="button" onClick={connect} className="primary-button">Meta ile yeniden bağlan</button>
                     ) : (
-                      <span className="text-slate-500">Son kullanma: süresiz (Meta iptal edene kadar)</span>
+                      <button type="button" onClick={() => refresh(c.id)} className={soon ? "primary-button" : "secondary-button"}>
+                        Bağlantıyı yenile
+                      </button>
                     )}
-                    {!expired && (
-                      <button onClick={() => refresh(c.id)} className={`rounded px-2 py-0.5 text-white ${soon ? "bg-amber-600 hover:bg-amber-700" : "bg-slate-700 hover:bg-slate-800"}`}>Yenile</button>
-                    )}
-                    {!expired && (
-                      <button onClick={() => disconnect(c.id)} className="rounded bg-rose-600 px-2 py-0.5 text-white hover:bg-rose-700">Bağlantıyı Kes</button>
-                    )}
-                    {expired && (
-                      <button onClick={connect} className="rounded bg-slate-800 px-2 py-0.5 text-white hover:bg-slate-900">Yeniden Bağlan</button>
-                    )}
-                    <button onClick={() => (isEditing ? setEditing(null) : startEdit(c))} className="rounded border border-slate-300 px-2 py-0.5 text-slate-700 hover:bg-slate-100">
-                      {isEditing ? "Vazgeç" : "Kimlikleri Düzenle"}
+                    <button
+                      type="button"
+                      onClick={() => (isEditing ? setEditing(null) : startEdit(c))}
+                      className="secondary-button"
+                      aria-expanded={isEditing}
+                    >
+                      {isEditing ? "Vazgeç" : "Kimlik numaralarını düzenle"}
                     </button>
+                    {!broken && (
+                      <button type="button" onClick={() => askDisconnect(c)} className="secondary-button text-rose-700 hover:bg-rose-50">
+                        Bağlantıyı kes
+                      </button>
+                    )}
                   </div>
-                  <div className="mt-2 grid gap-x-4 gap-y-0.5 text-xs text-slate-500 sm:grid-cols-2">
-                    <span>Pixel/Dataset: {c.pixelId ?? "-"}</span>
-                    <span>WhatsApp phone_number_id: {c.whatsappPhoneNumberId ?? "-"}</span>
-                    <span>WABA: {c.whatsappBusinessId ?? "-"}</span>
-                    <span>Sayfa: {c.pageId ?? "-"} · Instagram: {c.instaId ?? "-"}</span>
-                  </div>
+                  <details className="mt-3 text-xs">
+                    <summary className="cursor-pointer font-medium text-slate-700">Kimlik numaraları</summary>
+                    <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                      {ID_FIELDS.map((f) => (
+                        <div key={f.key} className="flex min-w-0 gap-1">
+                          <dt className="shrink-0 text-muted">{f.short}:</dt>
+                          <dd className="min-w-0 break-all text-slate-700">{c[f.key] ?? "—"}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
                   {requiredMissing.length > 0 && (
-                    <div className="mt-1 text-xs text-rose-700">
+                    <p className="mt-2 text-xs text-rose-700">
                       Eksik zorunlu izinler: {requiredMissing.map(scopeLabel).join(", ")}
-                    </div>
+                    </p>
                   )}
                   {optionalMissing.length > 0 && (
-                    <div className="mt-1 text-xs text-amber-700">
-                      Eksik opsiyonel izinler: {optionalMissing.map(scopeLabel).join(", ")}
-                    </div>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Eksik isteğe bağlı izinler: {optionalMissing.map(scopeLabel).join(", ")}
+                    </p>
                   )}
-                  {c.lastError && <div className="mt-1 text-xs text-rose-600">Hata: {c.lastError}</div>}
+                  {c.lastError && <p className="mt-1 text-xs text-rose-700">Son hata: {c.lastError}</p>}
                   {isEditing && (
-                    <form onSubmit={saveIds} className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
-                      <p className="text-xs text-slate-500 sm:col-span-2">
-                        Meta App Review tamamlanana kadar kimlikler elle eşlenir. Boş bırakılan alan temizlenir.
+                    <form onSubmit={saveIds} className="mt-3 grid gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
+                      <p className="text-xs text-muted sm:col-span-2">
+                        Otomatik eşleme açılana kadar bu kimlik numaralarını elle girin. Boş bıraktığınız alan temizlenir.
                       </p>
-                      {ID_FIELDS.map((f) => (
-                        <label key={f.key} className="flex flex-col gap-1 text-xs text-slate-700">
-                          {f.label} <span className="text-slate-400">({f.hint})</span>
-                          <input
-                            className="rounded border border-slate-300 px-2 py-1 text-sm"
-                            value={idForm[f.key]}
-                            onChange={(e) => setIdForm({ ...idForm, [f.key]: e.target.value })}
-                            placeholder="-"
-                          />
-                        </label>
-                      ))}
+                      {ID_FIELDS.map((f) => {
+                        const hintId = `${c.id}-${f.key}-hint`;
+                        return (
+                          <div key={f.key} className="space-y-1">
+                            <label className="field">
+                              {f.label}
+                              <input
+                                value={idForm[f.key]}
+                                onChange={(e) => setIdForm({ ...idForm, [f.key]: e.target.value })}
+                                aria-describedby={hintId}
+                                autoComplete="off"
+                                spellCheck={false}
+                              />
+                            </label>
+                            <p id={hintId} className="text-xs text-muted">{f.hint}</p>
+                          </div>
+                        );
+                      })}
                       <div className="sm:col-span-2">
-                        <button type="submit" disabled={saving} className="rounded bg-violet-600 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-60">
-                          {saving ? "Kaydediliyor…" : "Kimlikleri Kaydet"}
+                        <button type="submit" disabled={saving} className="primary-button">
+                          {saving ? "Kaydediliyor…" : "Kimlik numaralarını kaydet"}
                         </button>
                       </div>
                     </form>
@@ -341,24 +451,64 @@ export default function MetaConnectionsPage() {
         )}
       </Card>
       <Card>
-        <SectionHeading title="Reklam Hesapları" description="Varsayılan hesap Meta operasyonları için kullanılır." />
-        {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : accounts.length === 0 ? <EmptyState message="Henüz reklam hesabı bağlı değil." /> : (
+        <SectionHeading title="Reklam hesapları" description="Meta işlemlerinde varsayılan hesap kullanılır." />
+        {loading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+        ) : accountsError !== null ? (
+          <LoadError title="Reklam hesapları yüklenemedi." message={accountsError} onRetry={() => void load()} />
+        ) : accounts.length === 0 ? (
+          <EmptyState message="Henüz reklam hesabı yok. Meta ile bağlandığınızda reklam hesaplarınız burada listelenir." />
+        ) : (
           <div className="space-y-3">
-            {accounts.map((a) => (
-              <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{a.name} {a.isDefault ? "(varsayılan)" : ""}</p>
-                  <p className="text-xs text-slate-500">{a.metaAccountId ?? "-"} · {a.currency} · {a.status}</p>
-                  <p className="text-xs text-slate-400">Bağlantı: {a.connection?.status ?? "-"}</p>
+            {accounts.map((a) => {
+              const status = entityStatusStyle(a.status);
+              return (
+                <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-medium text-slate-900">
+                      {a.name}
+                      {a.isDefault && <span className="ml-2 text-xs font-normal text-muted">Varsayılan hesap</span>}
+                    </p>
+                    <p className="text-xs text-muted">
+                      Meta hesap kimliği: {a.metaAccountId ?? "—"} · Para birimi: {a.currency}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {a.connection ? `Meta bağlantısı: ${metaConnectionStyle(a.connection.status).label}` : "Meta bağlantısı yok"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={status.tone}>{status.label}</Badge>
+                    {!a.isDefault && (
+                      <button type="button" onClick={() => setDefault(a.id)} className="secondary-button">Varsayılan yap</button>
+                    )}
+                  </div>
                 </div>
-                {!a.isDefault && (
-                  <button onClick={() => setDefault(a.id)} className="rounded bg-slate-800 px-2 py-0.5 text-white text-xs hover:bg-slate-900">Varsayılan Yap</button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
+      <ConfirmDialog
+        open={disconnecting !== null}
+        title="Meta bağlantısı kesilsin mi?"
+        description={
+          <>
+            <p>Meta bağlantısı kesilecek ve bağlı reklam hesapları duraklatılacak.</p>
+            {disconnecting && (
+              <p className="mt-2 text-muted">
+                Bağlantı: {disconnecting.name ?? disconnecting.metaAccountId ?? "—"} ({TYPE_LABEL[disconnecting.type] ?? "Meta bağlantısı"}). Yeniden kullanmak için Meta ile yeniden bağlanmanız gerekir.
+              </p>
+            )}
+          </>
+        }
+        confirmLabel="Bağlantıyı kes"
+        busyLabel="Bağlantı kesiliyor…"
+        tone="danger"
+        busy={disconnectBusy}
+        error={disconnectError || undefined}
+        onConfirm={() => void disconnect()}
+        onCancel={() => setDisconnecting(null)}
+      />
     </div>
   );
 }

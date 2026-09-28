@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { homePathForRole } from "../../_lib/navigation";
 import { prisma } from "@admedic/database";
 import { currentActor, quota, SESSION_COOKIE } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
@@ -88,7 +89,12 @@ export async function POST(request: Request) {
       path: "/",
       expires: expiresAt,
     });
-    return { ok: true };
+    // Girişten sonra rolün ana sayfası (koordinatör → Lead CRM), ADR-0016.
+    const member = await prisma.membership.findUnique({
+      where: { orgId_userId: { orgId: workspace.orgId, userId: user.id } },
+      select: { role: true },
+    });
+    return { ok: true, home: homePathForRole(member?.role) };
   });
 }
 export async function DELETE(request: Request) {

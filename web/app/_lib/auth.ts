@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma, type Role } from "@admedic/database";
 import { tokenHash } from "./password";
 import { HttpError } from "./http";
+import { loginPath } from "./navigation";
 
 export const SESSION_COOKIE = "studio-session";
 export type Actor = {
@@ -39,9 +40,10 @@ export async function requireActor() {
   if (!actor) throw new HttpError(401, "Oturum açmanız gerekiyor.");
   return actor;
 }
-export async function requirePageActor() {
+/** Sayfa koruması: oturum yoksa girişe yönlendirir; `from` verilirse girişten sonra oraya dönülür. */
+export async function requirePageActor(from?: string) {
   const actor = await currentActor();
-  if (!actor) redirect("/login");
+  if (!actor) redirect(loginPath(from));
   return actor;
 }
 export function requireRole(actor: Actor, roles: Role[]) {

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BriefSchema,
   DraftSchema,
@@ -14,9 +14,12 @@ import {
   type Brief,
 } from "@admedic/llm";
 import { checkPolicy } from "@admedic/policy";
-import { api, labels } from "../_lib/client-api";
+import { api, defaultAccountCurrency, UNREACHABLE_MESSAGE } from "../_lib/client-api";
 import { rtlFor } from "../_lib/creative-lang";
+import { formatMoneyUnits } from "../_lib/format";
+import { languageName, policyRiskStyle, studioStatusStyle, type StatusStyle } from "../_lib/labels";
 import type { StudioPolicy } from "../_lib/studio-service";
+import { Badge } from "./ui";
 
 type Saved = {
   id: string;
@@ -33,20 +36,27 @@ type PatchResult = {
 };
 /** PATCH yanıtının gövdesi (422 `policyWarning` dahil) okunabilsin diye `api()` yerine doğrudan fetch. */
 async function patchDraft(id: string, payload: unknown): Promise<PatchResult> {
-  const response = await fetch(`/api/studio/${id}`, {
-    method: "PATCH",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/studio/${id}`, {
+      method: "PATCH",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error(UNREACHABLE_MESSAGE);
+  }
   const data = (await response.json().catch(() => ({}))) as PatchResult["data"];
   return { ok: response.ok, status: response.status, data };
 }
+/** İşlem sunucudan hata metni gelmeden başarısız olduğunda. */
+const FAILED = "İşlem tamamlanamadı. Tekrar deneyin.";
 const RISK_HEADING: Record<string, string> = {
-  HIGH: "Düzeltilmesi gereken ifadeler var",
+  HIGH: "Yüksek risk: düzeltilmesi gereken ifadeler var",
   MEDIUM: "Orta risk: uyarıyla onaya gönderilebilir",
-  LOW: "Kural kontrolünde eşleşme yok",
+  LOW: "Düşük risk: kurallarla eşleşen ifade yok",
 };
 export function Studio({
   initial,
@@ -77,6 +87,11 @@ export function Studio({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  /** Bütçe ve test tutarları varsayılan reklam hesabının para biriminde (yoksa EUR). */
+  const [currency, setCurrency] = useState("EUR");
+  useEffect(() => {
+    void defaultAccountCurrency().then(setCurrency);
+  }, []);
   const canEdit = ["OWNER", "ADMIN", "MEDIA_BUYER"].includes(role);
   const canApprove = ["OWNER", "ADMIN"].includes(role);
   // Kaydedilmemiş metin için yalnızca anlık ön tarama (varsayılan kurallar); karar sunucu sonucudur.
@@ -100,7 +115,7 @@ export function Studio({
     try {
       await action();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "İşlem başarısız.");
+      setError(e instanceof Error ? e.message : FAILED);
     } finally {
       setBusy(false);
     }
@@ -114,7 +129,8 @@ export function Studio({
       budget: Number(form.get("budget")),
       duration: Number(form.get("duration")),
     });
-    if (!parsed.success) throw new Error("Lütfen brif alanlarını kontrol edin.");
+    if (!parsed.success)
+      throw new Error("Brif alanlarını kontrol edin: tüm alanlar dolu olmalı; bütçe ve süre geçerli bir sayı olmalı.");
     return parsed.data;
   }
   async function generate(form: FormData) {
@@ -143,7 +159,7 @@ export function Studio({
       setPolicy(null);
       setDirty(true);
       setNotice(
-        "Manuel taslak açıldı. Her varyantın başlığını, metnini ve CTA alanını doldurun.",
+        "Boş taslak açıldı. Her varyantın başlığını, reklam metnini ve eylem düğmesini doldurun.",
       );
     });
   }
@@ -158,7 +174,7 @@ export function Studio({
       const parsed = DraftSchema.safeParse(draft);
       if (!parsed.success)
         throw new Error(
-          "Başlık, metin ve CTA alanlarını doldurun; uzunluk sınırlarını kontrol edin.",
+          "Her varyantın başlık, reklam metni ve eylem düğmesi alanlarını doldurun; uzunluk sınırlarını aşmayın.",
         );
       if (saved) {
         const result = await patchDraft(saved.id, {
@@ -166,7 +182,7 @@ export function Studio({
           version: saved.version,
           content: parsed.data,
         });
-        if (!result.ok) throw new Error(result.data.error ?? "İşlem başarısız.");
+        if (!result.ok) throw new Error(result.data.error ?? FAILED);
         await refresh(saved.id, saved.experimentId);
       } else {
         const result = await api<{ draft: Saved }>("/api/studio", "POST", {
@@ -178,7 +194,7 @@ export function Studio({
       }
       setAckWarning(false);
       setDirty(false);
-      setNotice("Taslak klinik kütüphanesine kaydedildi; içerik kontrolü sunucuda yenilendi.");
+      setNotice("Taslak reklam kütüphanesine kaydedildi; içerik kontrolü yenilendi.");
     });
   }
   async function transition(
@@ -193,7 +209,7 @@ export function Studio({
       });
       if (!result.ok) {
         if (result.data.policyWarning) setPolicy(result.data.policyWarning);
-        throw new Error(result.data.error ?? "İşlem başarısız.");
+        throw new Error(result.data.error ?? FAILED);
       }
       if (result.data.experimentId) {
         router.push(`/tests/${result.data.experimentId}`);
@@ -224,13 +240,20 @@ export function Studio({
       setPolicy(null);
       setDirty(true);
       setNotice(
-        "Eski yerel taslak açıldı. Klinik kütüphanesine kaydetmek için Kaydet'e basın.",
+        "Bu tarayıcıdaki eski taslak açıldı. Reklam kütüphanesine kaydetmek için Kaydet'e basın.",
       );
     } catch {
       setError("Bu tarayıcıda geçerli eski taslak bulunamadı.");
     }
   }
   const submitBlocked = busy || policy?.risk === "HIGH" || (policy?.risk === "MEDIUM" && !ackWarning);
+  // Önizleme başlığındaki durum: kaydedilmemiş değişiklik bir eylem bekler (amber).
+  const headerStatus: StatusStyle = dirty
+    ? { label: "Kaydedilmemiş değişiklikler", tone: "amber" }
+    : saved
+      ? studioStatusStyle(saved.status)
+      : { label: "Taslak", tone: "gray" };
+  const contentLang = draft ? draft.language.toLowerCase() : undefined;
   return (
     <div className="space-y-7">
       <header className="studio-hero">
@@ -242,14 +265,13 @@ export function Studio({
         </p>
         <div className="hero-tags">
           <span>{BRIEF_LANGUAGES.join(" · ")}</span>
-          <span>Claude ile üretim</span>
-          <span>{saved ? labels[saved.status] : "Yeni taslak"}</span>
+          <span>{saved ? studioStatusStyle(saved.status).label : "Yeni taslak"}</span>
         </div>
       </header>
       <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
         <section className="studio-card self-start">
-          <div className="section-kicker">01 — REKLAM BRİFİ</div>
-          <h2>Ne tanıtıyoruz?</h2>
+          <div className="section-kicker">Adım 1 — Reklam brifi</div>
+          <h2>Ne tanıtmak istiyorsunuz?</h2>
           <form action={generate} className="mt-6 space-y-4">
             <fieldset disabled={busy || !canEdit} className="space-y-4">
               <label className="field">
@@ -305,7 +327,7 @@ export function Studio({
                     }
                   >
                     {BRIEF_LANGUAGES.map((code) => (
-                      <option key={code} value={code}>
+                      <option key={code} value={code} lang={code.toLowerCase()}>
                         {LANGUAGE_LABELS[code]}
                       </option>
                     ))}
@@ -314,7 +336,7 @@ export function Studio({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="field">
-                  Toplam bütçe (€)
+                  Toplam bütçe ({currency})
                   <input
                     name="budget"
                     type="number"
@@ -351,7 +373,7 @@ export function Studio({
                 type="submit"
                 formAction={startManual}
               >
-                Metinleri kendim yazacağım
+                Boş taslakla başla
               </button>
               <button
                 className="secondary-button w-full"
@@ -362,10 +384,9 @@ export function Studio({
               </button>
             </fieldset>
           </form>
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            Brif değişiklikleri üretim düğmesine bastığınızda uygulanır. AI
-            çağrısı sunucudaki sağlayıcı anahtarını kullanır. Hasta bilgisi
-            girmeyin.
+          <p className="mt-4 text-xs leading-5 text-muted">
+            Brif değişiklikleri üretim düğmesine bastığınızda uygulanır. Hasta
+            bilgisi girmeyin.
           </p>
           <Link href="/library" className="mt-5 block text-sm text-violet-600">
             ← Reklam kütüphanesi
@@ -374,18 +395,12 @@ export function Studio({
         <section className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="section-kicker">02 — REKLAM ÖNİZLEMESİ</div>
+              <div className="section-kicker">Adım 2 — Reklam önizlemesi</div>
               <h2 className="text-xl font-semibold">
                 Aynı hedef. İki farklı başlık.
               </h2>
             </div>
-            <span className="status-pill">
-              {dirty
-                ? "Kaydedilmemiş değişiklikler"
-                : saved
-                  ? labels[saved.status]
-                  : "Taslak"}
-            </span>
+            <Badge tone={headerStatus.tone}>{headerStatus.label}</Badge>
           </div>
           {busy && (
             <div role="status" className="studio-card animate-pulse">
@@ -405,8 +420,8 @@ export function Studio({
               <div className="mb-5 rounded-2xl bg-violet-50 p-5 text-3xl text-violet-600">
                 ✦
               </div>
-              <h2>Bir sonraki kampanyanız burada başlıyor</h2>
-              <p className="mt-3 max-w-sm text-sm leading-6 text-slate-500">
+              <h2>Bir sonraki reklamınız burada başlıyor</h2>
+              <p className="mt-3 max-w-sm text-sm leading-6 text-muted">
                 Brifi doldurun. AI'ın ürettiği iki düzenlenebilir reklam kartı
                 burada görünecek.
               </p>
@@ -420,7 +435,7 @@ export function Studio({
                       <span className="variant-marker">{i ? "B" : "A"}</span>
                       <div>
                         <p className="font-semibold">{draft.clinic}</p>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-muted">
                           Sponsorlu · Önizleme
                         </p>
                       </div>
@@ -430,7 +445,7 @@ export function Studio({
                       className={`ad-art ${i ? "ad-art-b" : ""}`}
                     >
                       <span>
-                        {draft.market} · {draft.language}
+                        {draft.market} · {languageName(draft.language)}
                       </span>
                       <strong>{draft.service}</strong>
                       <small>Görsel yer tutucu</small>
@@ -442,10 +457,11 @@ export function Studio({
                             ? "Başlık"
                             : key === "text"
                               ? "Reklam metni"
-                              : "Link açıklaması"}
+                              : "Bağlantı açıklaması"}
                           <textarea
                             disabled={busy || !canEdit}
                             dir={rtlFor(draft.language)}
+                            lang={contentLang}
                             rows={key === "text" ? 4 : 2}
                             maxLength={key === "text" ? 2000 : key === "description" ? 500 : 150}
                             value={v[key] ?? ""}
@@ -464,7 +480,7 @@ export function Studio({
                         </label>
                       ))}
                       <label className="field">
-                        CTA (Meta düğmesi)
+                        Eylem düğmesi
                         <select
                           disabled={busy || !canEdit}
                           value={v.cta}
@@ -485,7 +501,7 @@ export function Studio({
                           )}
                           {META_CTA_TYPES.map((cta) => (
                             <option key={cta} value={cta}>
-                              {CTA_LABELS[cta]} · {cta}
+                              {CTA_LABELS[cta]}
                             </option>
                           ))}
                         </select>
@@ -496,19 +512,20 @@ export function Studio({
               </div>
               {(draft.instantForm || draft.whatsapp) && (
                 <div className="studio-card">
-                  <div className="section-kicker">LEAD TOPLAMA UZANTILARI</div>
+                  <div className="section-kicker">Lead toplama</div>
                   {draft.instantForm && (
                     <div className="mt-3 rounded-xl bg-slate-50 p-4 text-sm">
-                      <strong dir={rtlFor(draft.language)}>Instant Form</strong>
-                      <p className="mt-1" dir={rtlFor(draft.language)}>
-                        Sorular: {draft.instantForm.questions.join(" · ")}
+                      <strong dir={rtlFor(draft.language)}>Anında Form</strong>
+                      <p className="mt-1">
+                        Sorular:{" "}
+                        <span dir={rtlFor(draft.language)} lang={contentLang}>{draft.instantForm.questions.join(" · ")}</span>
                       </p>
                     </div>
                   )}
                   {draft.whatsapp && (
                     <div className="mt-3 rounded-xl bg-emerald-50 p-4 text-sm">
-                      <strong dir={rtlFor(draft.language)}>WhatsApp karşılama</strong>
-                      <p className="mt-1" dir={rtlFor(draft.language)}>
+                      <strong dir={rtlFor(draft.language)}>WhatsApp karşılama mesajı</strong>
+                      <p className="mt-1" dir={rtlFor(draft.language)} lang={contentLang}>
                         {draft.whatsapp.welcome}
                       </p>
                     </div>
@@ -516,13 +533,11 @@ export function Studio({
                 </div>
               )}
               <div className="studio-card">
-                <div className="section-kicker">
-                  İÇERİK KONTROLÜ{policy ? ` · ${policy.version}` : ""}
-                </div>
+                <div className="section-kicker">İçerik kontrolü</div>
                 <h2>
                   {policy
-                    ? RISK_HEADING[policy.risk] ?? policy.risk
-                    : "Sunucu kontrolü için taslağı kaydedin"}
+                    ? RISK_HEADING[policy.risk] ?? policyRiskStyle(policy.risk).label
+                    : "İçerik kontrolü için taslağı kaydedin"}
                 </h2>
                 {policy?.findings.map((f) => (
                   <div
@@ -540,22 +555,26 @@ export function Studio({
                     {llmAssessment ? (
                       <>
                         <p>
-                          <strong>AI değerlendirmesi:</strong> risk {llmAssessment.risk} — {llmAssessment.reason}
+                          <strong>AI değerlendirmesi:</strong> {policyRiskStyle(llmAssessment.risk).label} — {llmAssessment.reason}
                         </p>
                         {llmAssessment.correctedCopy && (
                           <p className="mt-2 text-slate-700" dir={rtlFor(draft.language)}>
-                            <span className="font-medium">Düzeltilmiş öneri:</span> {llmAssessment.correctedCopy}
+                            <span className="font-medium">Düzeltilmiş öneri:</span>{" "}
+                            <span lang={contentLang}>{llmAssessment.correctedCopy}</span>
                           </p>
                         )}
                       </>
                     ) : llm && "error" in llm ? (
                       <p className="text-amber-700">
-                        AI değerlendirmesi bu sefer yapılamadı; karar kural kontrolüne göre verildi
-                        {policy.ruleRisk ? ` (kural riski: ${policy.ruleRisk})` : ""}.
+                        {`AI değerlendirmesi bu sefer yapılamadı; karar kural kontrolüne göre verildi${
+                          policy.ruleRisk
+                            ? ` (kural kontrolü: ${policyRiskStyle(policy.ruleRisk).label.toLocaleLowerCase("tr")})`
+                            : ""
+                        }.`}
                       </p>
                     ) : (
-                      <p className="text-slate-500">
-                        AI değerlendirmesi yapılandırılmamış; karar kural kontrolüne göre verildi.
+                      <p className="text-muted">
+                        AI değerlendirmesi kullanılmıyor; karar kural kontrolüne göre verildi.
                       </p>
                     )}
                   </div>
@@ -580,23 +599,23 @@ export function Studio({
                 {preview && preview.risk !== "LOW" && (
                   <div className="mt-3 rounded-xl border border-dashed border-amber-300 p-3 text-xs text-amber-800">
                     Ön tarama (kaydedilmemiş metin): {preview.findings.map((f) => f.reason).join(" · ")} —
-                    kaydettiğinizde sunucu kontrolü esas alınır.
+                    kaydettiğinizde tam içerik kontrolü esas alınır.
                   </div>
                 )}
-                <p className="mt-3 text-xs leading-5 text-slate-500">
+                <p className="mt-3 text-xs leading-5 text-muted">
                   Otomatik kontrol sınırlı bir ifade taramasıdır; Meta onayını
                   garanti etmez. İçerik değişiklikleri önceki onayı sıfırlar.
                 </p>
               </div>
               <div className="studio-card">
-                <div className="section-kicker">TEST PLANI & ONAY</div>
+                <div className="section-kicker">Test planı ve onay</div>
                 <h2>%50 A / %50 B bütçe dağılımı</h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  {draft.duration} gün · Toplam €{draft.budget.toFixed(2)} ·
-                  Varyant başına günlük €
-                  {(draft.budget / draft.duration / 2).toFixed(2)}
+                <p className="mt-2 text-sm text-muted">
+                  {draft.duration} gün · Toplam{" "}
+                  {formatMoneyUnits(draft.budget, currency)} · Varyant başına günlük{" "}
+                  {formatMoneyUnits(draft.budget / draft.duration / 2, currency, { precise: true })}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-muted">
                   18+ hedefleme, ayrık rastgele kitleler ve tek değişken:
                   başlık. İçerik onayı Meta yayını değildir.
                 </p>

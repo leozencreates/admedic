@@ -1,16 +1,15 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { connection } from "next/server";
 
 import { Badge, Card, EmptyState, SectionHeading, StatCard } from "../_components/ui";
-import type { Tone } from "../_components/ui";
 import { CARE_ROLES, requirePageActor } from "../_lib/auth";
 import { prisma } from "../_lib/db";
 import { formatDate, formatNumber } from "../_lib/format";
-import { severityStyle } from "../_lib/status";
-import { alertStatusLabel, alertTypeLabel } from "../_lib/alert-labels";
+import { alertStatusStyle, severityStyle } from "../_lib/labels";
+import { alertTypeLabel } from "../_lib/alert-labels";
+import { alertRecordLinks } from "../_lib/record-refs";
 import { AlertActions } from "./alert-actions";
-
-const STATUS_TONE: Record<string, Tone> = { OPEN: "amber", ACKED: "blue", RESOLVED: "gray" };
 
 function Skeleton() {
   return <div className="h-48 animate-pulse rounded-xl bg-slate-200/60" />;
@@ -28,10 +27,10 @@ async function AlertSummary() {
   ]);
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <StatCard label="Açık uyarı" value={formatNumber(open)} />
       <StatCard label="Görüldü" value={formatNumber(acked)} />
-      <StatCard label="Kritik (çözülmemiş)" value={formatNumber(critical)} />
+      <StatCard label="Kritik, çözülmemiş" value={formatNumber(critical)} />
     </div>
   );
 }
@@ -46,12 +45,14 @@ async function Alerts() {
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     take: 60,
   });
+  // Ham referans (AD:cmuk…) gösterilmez; kayıt bulunursa bağlantı verilir.
+  const links = await alertRecordLinks(actor.workspaceId, alerts);
 
   return (
     <Card>
       <SectionHeading
         title="Uyarılar"
-        description="ROAS düşüşü, harcama sıçraması, yüksek CPL, kreatif yorgunluğu ve bağlantı sorunları."
+        description="Reklam getirisi (ROAS) düşüşü, beklenmedik harcama artışı, yüksek lead başı maliyet, reklam yorgunluğu ve Meta bağlantı sorunları."
       />
       {alerts.length === 0 ? (
         <EmptyState message="Uyarı yok." />
@@ -59,23 +60,25 @@ async function Alerts() {
         <ul className="space-y-3">
           {alerts.map((a) => {
             const severity = severityStyle(a.severity);
+            const status = alertStatusStyle(a.status);
+            const href = links.get(a.id);
             return (
               <li key={a.id} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={severity.tone}>{severity.label}</Badge>
-                  <Badge tone={STATUS_TONE[a.status] ?? "gray"}>{alertStatusLabel(a.status)}</Badge>
-                  <Badge tone="violet">{alertTypeLabel(a.type)}</Badge>
-                  <span className="text-xs text-slate-400">{formatDate(a.createdAt)}</span>
-                  {a.resolvedAt ? (
-                    <span className="text-xs text-slate-400">· Çözüldü: {formatDate(a.resolvedAt)}</span>
-                  ) : null}
+                  <Badge tone={status.tone}>{status.label}</Badge>
+                  <Badge tone="gray">{alertTypeLabel(a.type)}</Badge>
+                  <span className="text-xs text-muted">
+                    {formatDate(a.createdAt)}
+                    {a.resolvedAt ? ` · Çözüldü: ${formatDate(a.resolvedAt)}` : null}
+                  </span>
                 </div>
-                <p className="mt-2 text-sm font-medium text-slate-900">{a.title}</p>
-                <p className="mt-1 text-sm text-slate-600">{a.message}</p>
-                {a.entityType ? (
-                  <p className="mt-2 font-mono text-xs text-slate-400">
-                    {a.entityType}:{a.entityId ?? "—"}
-                  </p>
+                <p className="mt-2 break-words text-sm font-medium text-slate-900">{a.title}</p>
+                <p className="mt-1 break-words text-sm text-slate-600">{a.message}</p>
+                {href ? (
+                  <Link href={href} className="mt-2 inline-block text-sm font-medium text-brand-strong hover:underline">
+                    İlgili kaydı aç<span className="sr-only">: {a.title}</span>
+                  </Link>
                 ) : null}
                 {canManage ? <AlertActions id={a.id} status={a.status} /> : null}
               </li>
@@ -92,7 +95,9 @@ export default function Page() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Uyarılar</h1>
-        <p className="text-sm text-slate-500">Anomali ve eşik ihlalleri; &quot;Görüldü&quot; ile işaretleyin, çözülünce kapatın.</p>
+        <p className="text-sm text-muted">
+          Performans ve bağlantı sorunları. Gördüğünüz uyarıyı işaretleyin, sorun giderilince kapatın.
+        </p>
       </header>
       <Suspense fallback={<Skeleton />}>
         <AlertSummary />

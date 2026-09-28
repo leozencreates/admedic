@@ -61,6 +61,16 @@ const HANDOFF_LABEL: Record<HandoffReason, string> = {
   out_of_scope: "kapsam dışı soru (fiyat / tıbbi uygunluk)",
 };
 
+/** Uyarı metinlerinde ham kanal kodu görünmez (web/app/_lib/labels.ts ile aynı adlar). */
+const CHANNEL_LABEL: Record<string, string> = {
+  WHATSAPP: "WhatsApp",
+  MESSENGER: "Messenger",
+  INSTAGRAM: "Instagram",
+  EMAIL: "E-posta",
+  SMS: "SMS",
+};
+const channelName = (channel: string) => CHANNEL_LABEL[channel] ?? channel;
+
 const llmLogSink: LlmLogSink = async (entry) => {
   await prisma.llmCallLog.create({
     data: {
@@ -232,12 +242,12 @@ async function claimReply(
         data: {
           workspaceId: conversation.workspaceId,
           type: HANDOFF_ALERT_TYPE,
-          severity: escalation.reason === "emergency" ? AlertSeverity.CRITICAL : AlertSeverity.INFO,
+          severity: escalation.reason === "emergency" ? AlertSeverity.CRITICAL : AlertSeverity.WARNING,
           title:
             escalation.reason === "emergency"
               ? "Acil durum: asistan konuşmayı devretti"
               : "Asistan konuşmayı koordinatöre devretti",
-          message: `Otomatik asistan ${conversation.channel} konuşmasını durdurdu (${HANDOFF_LABEL[escalation.reason]}). Bir hasta koordinatörü devralmalı.`,
+          message: `Karşılama asistanı ${channelName(conversation.channel)} konuşmasını durdurdu (${HANDOFF_LABEL[escalation.reason]}). Bir hasta koordinatörü devralmalı.`,
           entityType: "CONVERSATION",
           entityId: conversation.id,
         },
@@ -283,9 +293,9 @@ async function recordFailure(conversation: Candidate, inbound: Candidate["messag
     data: {
       workspaceId: conversation.workspaceId,
       type: HANDOFF_ALERT_TYPE,
-      severity: AlertSeverity.INFO,
+      severity: AlertSeverity.WARNING,
       title: "Asistan yanıt üretemedi",
-      message: `Otomatik asistan ${conversation.channel} konuşmasındaki son mesaja ${attempts} denemede yanıt üretemedi; koordinatör yanıtlamalı.`,
+      message: `Karşılama asistanı ${channelName(conversation.channel)} konuşmasındaki son mesaja ${attempts} denemede yanıt üretemedi; koordinatör yanıtlamalı.`,
       entityType: "CONVERSATION",
       entityId: conversation.id,
     },

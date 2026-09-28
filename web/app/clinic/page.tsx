@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { Card, EmptyState, SectionHeading, Badge } from "../_components/ui";
-import { LANG_LABEL, BRIEF_LANGUAGES } from "../_lib/creative-lang";
+import { ConfirmDialog } from "../_components/dialog";
+import { BRIEF_LANGUAGES } from "../_lib/creative-lang";
+import { countryName, entityStatusStyle, languageName } from "../_lib/labels";
 import { slugify } from "../_lib/slug";
 
 type Clinic = {
@@ -53,6 +55,7 @@ type MarketTarget = {
 type OrgSettings = {
   retentionDays: number;
   consentText: string | null;
+  privacyNoticeText: string | null;
   privacyPolicyUrl: string | null;
 };
 
@@ -132,7 +135,16 @@ export default function ClinicPage() {
   const [targets, setTargets] = useState<MarketTarget[]>([]);
   const [targetForm, setTargetForm] = useState<TargetForm>(EMPTY_TARGET);
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
-  const [settingsForm, setSettingsForm] = useState({ retentionDays: 365, consentText: "", privacyPolicyUrl: "" });
+  const [settingsForm, setSettingsForm] = useState({
+    retentionDays: 365,
+    consentText: "",
+    privacyNoticeText: "",
+    privacyPolicyUrl: "",
+  });
+  /** Geri alınamayan işlemler için onay (tarayıcının confirm penceresi yerine). */
+  const [pendingConfirm, setPendingConfirm] = useState<
+    { kind: "archiveService"; id: string; name: string } | { kind: "deleteTarget"; country: string } | null
+  >(null);
 
   const ok = (text: string) => setNotice({ kind: "ok", text });
   const fail = (e: unknown, fallback: string) => setNotice({ kind: "err", text: (e as Error)?.message || fallback });
@@ -151,6 +163,7 @@ export default function ClinicPage() {
       setSettingsForm({
         retentionDays: o.settings?.retentionDays ?? 365,
         consentText: o.settings?.consentText ?? "",
+        privacyNoticeText: o.settings?.privacyNoticeText ?? "",
         privacyPolicyUrl: o.settings?.privacyPolicyUrl ?? "",
       });
     } catch {
@@ -319,7 +332,7 @@ export default function ClinicPage() {
   }
 
   async function archiveService(id: string) {
-    if (!window.confirm("Hizmet arşivlenecek. Emin misiniz?")) return;
+    setPendingConfirm(null);
     setNotice(null);
     try {
       await api(`/api/services/${id}`, "DELETE");
@@ -372,7 +385,8 @@ export default function ClinicPage() {
   }
 
   async function deleteTarget(country: string) {
-    if (!selectedId || !window.confirm(`${country} pazar hedefi silinecek. Emin misiniz?`)) return;
+    setPendingConfirm(null);
+    if (!selectedId) return;
     setNotice(null);
     try {
       await api(`/api/clinics/${selectedId}/targets/${encodeURIComponent(country)}`, "DELETE");
@@ -394,9 +408,10 @@ export default function ClinicPage() {
       await api("/api/org/settings", "PATCH", {
         retentionDays: settingsForm.retentionDays,
         consentText: settingsForm.consentText.trim() || null,
+        privacyNoticeText: settingsForm.privacyNoticeText.trim() || null,
         privacyPolicyUrl: settingsForm.privacyPolicyUrl.trim() || null,
       });
-      ok("Organizasyon ayarları kaydedildi.");
+      ok("Çalışma alanı ayarları kaydedildi.");
       load();
     } catch (e) {
       fail(e, "Kaydedilemedi.");
@@ -404,57 +419,62 @@ export default function ClinicPage() {
   }
 
   const selected = clinics.find((c) => c.id === selectedId) ?? null;
-  const inputCls = "rounded bg-slate-900/60 px-3 py-2 text-sm";
+  const inputCls = "input";
 
   return (
     <div className="space-y-6">
-      <section>
-        <SectionHeading
-          title="Klinik Profili & Marka Kılavuzu"
-          description="Diller, hedef pazar ve yasaklı ifadeler üretime ve politika kontrolüne beslenir."
-          action={
-            <button type="button" onClick={() => setShowCreate((v) => !v)} className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">
-              {showCreate ? "Formu Gizle" : "+ Yeni Klinik"}
-            </button>
-          }
-        />
-        {notice && (
-          <p role="alert" className={`mt-2 text-sm ${notice.kind === "ok" ? "text-emerald-400" : "text-rose-400"}`}>{notice.text}</p>
-        )}
-      </section>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Klinik ve marka</h1>
+          <p className="mt-1 text-sm text-muted">
+            Diller, hedef pazar ve yasaklı ifadeler reklam üretimine ve içerik kontrolüne beslenir.
+          </p>
+        </div>
+        <button type="button" onClick={() => setShowCreate((v) => !v)} className="secondary-button" aria-expanded={showCreate}>
+          {showCreate ? "Formu gizle" : "+ Yeni klinik"}
+        </button>
+      </header>
+      {notice && (
+        <p
+          role={notice.kind === "ok" ? "status" : "alert"}
+          className={`rounded-lg border p-3 text-sm ${notice.kind === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+        >
+          {notice.text}
+        </p>
+      )}
 
       {showCreate && (
         <Card>
-          <SectionHeading title="Klinik Oluştur" description="Ad ve kategori yeterlidir; slug addan türetilir, diğer alanlar sonra düzenlenir." />
+          <SectionHeading title="Klinik oluştur" description="Ad ve kategori yeterlidir; web adresindeki kısa ad addan türetilir, diğer alanlar sonra düzenlenir." />
           <form onSubmit={createClinic} className="grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <label className="field sm:col-span-2">
               Klinik adı
               <input required className={inputCls} value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="örn. Özen Diş Kliniği" />
-              {createForm.name.trim() && <span className="text-xs text-slate-500">slug: {slugify(createForm.name)}</span>}
+              {createForm.name.trim() && <span className="text-xs text-muted">Kısa ad (web adresinde): {slugify(createForm.name)}</span>}
             </label>
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="field">
               Kategori
               <select className={inputCls} value={createForm.category} onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}>
                 {Object.entries(CATEGORY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="field">
               Şehir
               <input className={inputCls} value={createForm.city} onChange={(e) => setCreateForm({ ...createForm, city: e.target.value })} placeholder="Antalya" />
             </label>
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="field">
               Adres
               <input className={inputCls} value={createForm.address} onChange={(e) => setCreateForm({ ...createForm, address: e.target.value })} placeholder="Mahalle, cadde, no" />
             </label>
-            <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 sm:col-span-4" type="submit">
-              Kliniği Oluştur
+            <button className="primary-button sm:col-span-4" type="submit">
+              Kliniği oluştur
             </button>
           </form>
         </Card>
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-400">Yükleniyor…</p>
+        <p role="status" className="text-sm text-muted">Yükleniyor…</p>
       ) : clinics.length === 0 ? (
         <EmptyState message="Henüz klinik profili yok. Yukarıdaki formdan ilk kliniğinizi oluşturun." />
       ) : (
@@ -462,105 +482,110 @@ export default function ClinicPage() {
           <div className="flex flex-wrap gap-2">
             {clinics.map((c) => (
               <button
+                type="button"
                 key={c.id}
                 onClick={() => select(c.id)}
-                className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                aria-pressed={selectedId === c.id}
+                className={`min-h-10 rounded-lg px-3 py-2 text-sm font-medium ${
                   selectedId === c.id
-                    ? "bg-violet-500/20 text-violet-200 ring-1 ring-violet-400/30"
-                    : "bg-white/5 text-slate-300 hover:bg-white/10"
+                    ? "bg-violet-50 text-violet-900 ring-1 ring-violet-300"
+                    : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
                 }`}
               >
                 {c.name}
-                {c.category !== "MEDICAL" && <span className="ml-1 text-xs text-slate-500">({CATEGORY_LABEL[c.category] ?? c.category})</span>}
+                {c.category !== "MEDICAL" && <span className="ml-1 text-xs text-muted">({CATEGORY_LABEL[c.category] ?? c.category})</span>}
               </button>
             ))}
           </div>
-          {!selected && <p className="mt-3 text-xs text-slate-500">Düzenlemek için bir klinik seçin.</p>}
+          {!selected && <p className="mt-3 text-xs text-muted">Düzenlemek için bir klinik seçin.</p>}
 
           {selected && (
             <form onSubmit={saveBrand} className="mt-6 grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Klinik adı
                 <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Lisans/Ruhsat No (Sağlık Bakanlığı)
+              <label className="field">
+                Uluslararası Sağlık Turizmi Yetki Belgesi No
                 <input className={inputCls} value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder="örn. SB-2024-12345" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Akreditasyonlar (virgülle)
                 <input className={inputCls} value={form.accreditations} onChange={(e) => setForm({ ...form, accreditations: e.target.value })} placeholder="ISO 9001, JCI" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Şehir
                 <input className={inputCls} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Antalya" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Adres
                 <input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Mahalle, cadde, no…" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Telefon
                 <input className={inputCls} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+90…" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 E-posta
                 <input className={inputCls} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="info@klinik.com" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
+              <label className="field">
                 Web sitesi
                 <input className={inputCls} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://…" />
               </label>
-              <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-                Tarif
+              <label className="field sm:col-span-2">
+                Açıklama
                 <textarea className={inputCls} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Kuruluş, uzmanlıklar…" />
               </label>
               <div className="flex flex-col gap-1 text-sm sm:col-span-2">
-                <span>Desteklenen Diller</span>
-                <div className="flex flex-wrap gap-2">
-                  {BRIEF_LANGUAGES.map((l) => (
-                    <button
-                      type="button"
-                      key={l}
-                      onClick={() => toggleLanguage(l)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                        form.languages.includes(l)
-                          ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                          : "bg-slate-900/60 text-slate-400 hover:bg-slate-800"
-                      }`}
-                    >
-                      {LANG_LABEL[l]}
-                    </button>
-                  ))}
+                <span id="klinik-dilleri">Desteklenen diller</span>
+                <div className="flex flex-wrap gap-2" role="group" aria-labelledby="klinik-dilleri">
+                  {BRIEF_LANGUAGES.map((l) => {
+                    const on = form.languages.includes(l);
+                    return (
+                      <button
+                        type="button"
+                        key={l}
+                        onClick={() => toggleLanguage(l)}
+                        aria-pressed={on}
+                        className={`inline-flex min-h-9 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium ${
+                          on ? "bg-violet-50 text-violet-900 ring-1 ring-violet-300" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {on ? <span aria-hidden="true">✓</span> : null}
+                        {languageName(l)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <label className="flex flex-col gap-1 text-sm">
-                Hedef Pazar
+              <label className="field">
+                Hedef pazar
                 <select className={inputCls} value={form.targetMarket} onChange={(e) => setForm({ ...form, targetMarket: e.target.value })}>
                   {Object.entries(TARGET_MARKET_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Marka Logosu URL
+              <label className="field">
+                Marka logosu bağlantısı
                 <input className={inputCls} value={form.brandLogo} onChange={(e) => setForm({ ...form, brandLogo: e.target.value })} placeholder="https://…" />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Marka Renkleri (hex, virgülle)
+              <label className="field">
+                Marka renkleri (hex, virgülle)
                 <input className={inputCls} value={form.brandColors} onChange={(e) => setForm({ ...form, brandColors: e.target.value })} placeholder="#1e3a8a, #f59e0b" />
               </label>
-              <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-                Marka Ton/Vibe Kılavuzu
+              <label className="field sm:col-span-2">
+                Marka dili ve tonu
                 <textarea className={inputCls} rows={2} value={form.brandTone} onChange={(e) => setForm({ ...form, brandTone: e.target.value })} placeholder="Güven verici, tıbbi iddia içermeyen, hasta odaklı…" />
               </label>
-              <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+              <label className="field sm:col-span-2">
                 <span className="flex items-center gap-2">
-                  Yasaklı İfadeler (virgülle)
-                  <Badge tone="red">politika kontrolüne gider</Badge>
+                  Yasaklı ifadeler (virgülle)
+                  <Badge tone="gray">içerik kontrolüne gider</Badge>
                 </span>
                 <textarea className={inputCls} rows={2} value={form.brandBannedPhrases} onChange={(e) => setForm({ ...form, brandBannedPhrases: e.target.value })} placeholder="garanti sonuç, %100 başarı, ağrısız tedavi" />
               </label>
-              <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 sm:col-span-2" type="submit">
-                Profil & Marka Kılavuzunu Kaydet
+              <button className="primary-button sm:col-span-2" type="submit">
+                Profili ve marka bilgilerini kaydet
               </button>
             </form>
           )}
@@ -570,28 +595,52 @@ export default function ClinicPage() {
       {selected && (
         <>
           <Card>
-            <SectionHeading title="Hizmet Kataloğu" description="Başlangıç fiyatları üretime ve reklam metnine gerçek veri olarak beslenir." />
+            <SectionHeading title="Hizmet kataloğu" description="Başlangıç fiyatları reklam üretimine ve metnine gerçek veri olarak beslenir." />
             <form onSubmit={submitService} className="mt-4 grid gap-3 sm:grid-cols-6">
-              <input required className={`${inputCls} sm:col-span-2`} value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} placeholder="Hizmet adı" />
-              <input className={inputCls} value={serviceForm.slug} onChange={(e) => setServiceForm({ ...serviceForm, slug: e.target.value })} placeholder={serviceForm.name.trim() ? slugify(serviceForm.name) : "slug (otomatik)"} />
-              <select className={inputCls} value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })}>
-                {Object.keys(CATEGORY_LABEL).map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
-              </select>
-              <input type="number" step="0.01" min="0" className={inputCls} value={serviceForm.price} onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })} placeholder="Başlangıç fiyatı" />
-              <input className={inputCls} maxLength={3} value={serviceForm.currency} onChange={(e) => setServiceForm({ ...serviceForm, currency: e.target.value })} placeholder="EUR" />
-              <input type="number" min="1" className={inputCls} value={serviceForm.durationDays} onChange={(e) => setServiceForm({ ...serviceForm, durationDays: e.target.value })} placeholder="Süre (gün)" />
-              <input className={`${inputCls} sm:col-span-3`} value={serviceForm.packageIncludes} onChange={(e) => setServiceForm({ ...serviceForm, packageIncludes: e.target.value })} placeholder="Paket kapsamı (virgülle): otel, transfer, tercüman" />
-              <input className={`${inputCls} sm:col-span-2`} value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} placeholder="Kısa açıklama" />
+              <label className="field sm:col-span-2">
+                Hizmet adı
+                <input required value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} placeholder="Saç ekimi" />
+              </label>
+              <label className="field">
+                Kısa ad (isteğe bağlı)
+                <input value={serviceForm.slug} onChange={(e) => setServiceForm({ ...serviceForm, slug: e.target.value })} placeholder={serviceForm.name.trim() ? slugify(serviceForm.name) : "otomatik"} />
+              </label>
+              <label className="field">
+                Kategori
+                <select value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })}>
+                  {Object.keys(CATEGORY_LABEL).map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                Başlangıç fiyatı
+                <input type="number" step="0.01" min="0" value={serviceForm.price} onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })} />
+              </label>
+              <label className="field">
+                Para birimi
+                <input maxLength={3} value={serviceForm.currency} onChange={(e) => setServiceForm({ ...serviceForm, currency: e.target.value })} placeholder="EUR" />
+              </label>
+              <label className="field">
+                Süre (gün)
+                <input type="number" min="1" value={serviceForm.durationDays} onChange={(e) => setServiceForm({ ...serviceForm, durationDays: e.target.value })} />
+              </label>
+              <label className="field sm:col-span-3">
+                Paket kapsamı (virgülle)
+                <input value={serviceForm.packageIncludes} onChange={(e) => setServiceForm({ ...serviceForm, packageIncludes: e.target.value })} placeholder="otel, transfer, tercüman" />
+              </label>
+              <label className="field sm:col-span-2">
+                Kısa açıklama
+                <input value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} />
+              </label>
               <label className="flex items-center gap-2 text-sm sm:col-span-4">
                 <input type="checkbox" checked={serviceForm.showStartingPrice} onChange={(e) => setServiceForm({ ...serviceForm, showStartingPrice: e.target.checked })} />
                 &quot;Başlangıç fiyatı&quot; reklam metninde gösterilsin
               </label>
               <div className="flex gap-2 sm:col-span-2">
-                <button className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700" type="submit">
-                  {editingService ? "Güncelle" : "Ekle"}
+                <button className="secondary-button" type="submit">
+                  {editingService ? "Hizmeti güncelle" : "Hizmet ekle"}
                 </button>
                 {editingService && (
-                  <button type="button" onClick={() => { setEditingService(null); setServiceForm(EMPTY_SERVICE); }} className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                  <button type="button" onClick={() => { setEditingService(null); setServiceForm(EMPTY_SERVICE); }} className="secondary-button">
                     Vazgeç
                   </button>
                 )}
@@ -600,12 +649,12 @@ export default function ClinicPage() {
             {services.length === 0 ? <EmptyState message="Henüz hizmet yok." /> : (
               <div className="mt-4 space-y-2">
                 {services.map((s) => (
-                  <div key={s.id} className={`flex items-center justify-between rounded-lg border border-slate-200/60 p-2.5 ${editingService === s.id ? "ring-1 ring-violet-400/40" : ""}`}>
+                  <div key={s.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 ${editingService === s.id ? "ring-2 ring-violet-300" : ""}`}>
                     <div>
-                      <p className="text-sm font-medium text-slate-200">
-                        {s.name} {s.status !== "ACTIVE" && <span className="text-xs text-slate-500">({s.status})</span>}
+                      <p className="text-sm font-medium text-slate-900">
+                        {s.name} {s.status !== "ACTIVE" && <span className="text-xs text-muted">({entityStatusStyle(s.status).label})</span>}
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted">
                         {CATEGORY_LABEL[s.category] ?? s.category}
                         {s.priceCents ? ` · ${s.showStartingPrice ? "Başlangıç " : ""}${money(s.priceCents, s.currency || "EUR")}` : ""}
                         {s.priceCents && !s.showStartingPrice ? " (fiyat reklamda gizli)" : ""}
@@ -613,20 +662,20 @@ export default function ClinicPage() {
                         {s.packageIncludes.length > 0 ? ` · ${s.packageIncludes.join(", ")}` : ""}
                       </p>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-2">
                       {s.status !== "ARCHIVED" && (
-                        <button onClick={() => { setEditingService(s.id); setServiceForm(serviceToForm(s)); }} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">Düzenle</button>
+                        <button type="button" onClick={() => { setEditingService(s.id); setServiceForm(serviceToForm(s)); }} className="secondary-button">Düzenle</button>
                       )}
                       {s.status === "ACTIVE" && (
-                        <button onClick={() => setServiceStatus(s.id, "PAUSED")} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">Duraklat</button>
+                        <button type="button" onClick={() => setServiceStatus(s.id, "PAUSED")} className="secondary-button">Duraklat</button>
                       )}
                       {s.status === "PAUSED" && (
-                        <button onClick={() => setServiceStatus(s.id, "ACTIVE")} className="rounded bg-emerald-700 px-2 py-1 text-xs text-white hover:bg-emerald-600">Etkinleştir</button>
+                        <button type="button" onClick={() => setServiceStatus(s.id, "ACTIVE")} className="secondary-button">Etkinleştir</button>
                       )}
                       {s.status === "ARCHIVED" ? (
-                        <button onClick={() => setServiceStatus(s.id, "ACTIVE")} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700">Geri Al</button>
+                        <button type="button" onClick={() => setServiceStatus(s.id, "ACTIVE")} className="secondary-button">Arşivden çıkar</button>
                       ) : (
-                        <button onClick={() => archiveService(s.id)} className="rounded bg-rose-700 px-2 py-1 text-xs text-white hover:bg-rose-600">Arşivle</button>
+                        <button type="button" onClick={() => setPendingConfirm({ kind: "archiveService", id: s.id, name: s.name })} className="secondary-button">Arşivle</button>
                       )}
                     </div>
                   </div>
@@ -636,28 +685,42 @@ export default function ClinicPage() {
           </Card>
 
           <Card>
-            <SectionHeading title="Pazar Hedefleri" description="Ülke + dil + para birimi; kampanya planlamasına beslenir." />
+            <SectionHeading title="Pazar hedefleri" description="Ülke, dil ve para birimi kampanya planlamasına beslenir." />
             <form onSubmit={submitTarget} className="mt-4 grid gap-3 sm:grid-cols-6">
-              <input
-                className={inputCls}
-                value={editingTarget ?? targetForm.country}
-                disabled={editingTarget !== null}
-                onChange={(e) => setTargetForm({ ...targetForm, country: e.target.value })}
-                placeholder="Ülke kodu (DE)"
-                maxLength={3}
-              />
-              <input className={inputCls} value={targetForm.region} onChange={(e) => setTargetForm({ ...targetForm, region: e.target.value })} placeholder="Bölge (opsiyonel)" />
-              <select className={inputCls} value={targetForm.language} onChange={(e) => setTargetForm({ ...targetForm, language: e.target.value })}>
-                {BRIEF_LANGUAGES.map((l) => <option key={l} value={l}>{LANG_LABEL[l]}</option>)}
-              </select>
-              <input className={inputCls} maxLength={3} value={targetForm.currency} onChange={(e) => setTargetForm({ ...targetForm, currency: e.target.value })} placeholder="Para birimi (EUR)" />
-              <input type="number" min="0" step="0.1" className={inputCls} value={targetForm.demand} onChange={(e) => setTargetForm({ ...targetForm, demand: e.target.value })} placeholder="Talep skoru" />
-              <div className="flex gap-2">
-                <button className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700" type="submit">
-                  {editingTarget ? "Güncelle" : "Ekle"}
+              <label className="field">
+                Ülke kodu
+                <input
+                  value={editingTarget ?? targetForm.country}
+                  disabled={editingTarget !== null}
+                  onChange={(e) => setTargetForm({ ...targetForm, country: e.target.value })}
+                  placeholder="DE"
+                  maxLength={3}
+                />
+              </label>
+              <label className="field">
+                Bölge (isteğe bağlı)
+                <input value={targetForm.region} onChange={(e) => setTargetForm({ ...targetForm, region: e.target.value })} />
+              </label>
+              <label className="field">
+                Dil
+                <select value={targetForm.language} onChange={(e) => setTargetForm({ ...targetForm, language: e.target.value })}>
+                  {BRIEF_LANGUAGES.map((l) => <option key={l} value={l}>{languageName(l)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                Para birimi
+                <input maxLength={3} value={targetForm.currency} onChange={(e) => setTargetForm({ ...targetForm, currency: e.target.value })} placeholder="EUR" />
+              </label>
+              <label className="field">
+                Talep puanı
+                <input type="number" min="0" step="0.1" value={targetForm.demand} onChange={(e) => setTargetForm({ ...targetForm, demand: e.target.value })} />
+              </label>
+              <div className="flex items-end gap-2">
+                <button className="secondary-button" type="submit">
+                  {editingTarget ? "Hedefi güncelle" : "Hedef ekle"}
                 </button>
                 {editingTarget && (
-                  <button type="button" onClick={() => { setEditingTarget(null); setTargetForm(EMPTY_TARGET); }} className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">
+                  <button type="button" onClick={() => { setEditingTarget(null); setTargetForm(EMPTY_TARGET); }} className="secondary-button">
                     Vazgeç
                   </button>
                 )}
@@ -666,19 +729,27 @@ export default function ClinicPage() {
             {targets.length === 0 ? <EmptyState message="Henüz pazar hedefi yok." /> : (
               <div className="mt-4 flex flex-wrap gap-2">
                 {targets.map((t) => (
-                  <span key={t.id} className={`flex items-center gap-2 rounded-full border border-slate-200/60 px-3 py-1 text-xs text-slate-300 ${editingTarget === t.country ? "ring-1 ring-violet-400/40" : ""}`}>
-                    {t.country}{t.region ? `/${t.region}` : ""} · {LANG_LABEL[t.language] ?? t.language} · {t.currency}{t.demand > 0 ? ` · talep ${t.demand}` : ""}
+                  <span key={t.id} className={`flex items-center gap-3 rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-700 ${editingTarget === t.country ? "ring-2 ring-violet-300" : ""}`}>
+                    {countryName(t.country)}{t.region ? ` / ${t.region}` : ""} · {languageName(t.language)} · {t.currency}{t.demand > 0 ? ` · talep ${t.demand}` : ""}
                     <button
                       type="button"
                       onClick={() => {
                         setEditingTarget(t.country);
                         setTargetForm({ country: t.country, region: t.region ?? "", language: t.language, currency: t.currency, demand: t.demand > 0 ? String(t.demand) : "" });
                       }}
-                      className="text-violet-300 hover:underline"
+                      className="min-h-8 font-medium text-brand-strong hover:underline"
+                      aria-label={`Düzenle: ${countryName(t.country)}`}
                     >
                       Düzenle
                     </button>
-                    <button type="button" onClick={() => deleteTarget(t.country)} className="text-rose-300 hover:underline">Sil</button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingConfirm({ kind: "deleteTarget", country: t.country })}
+                      className="min-h-8 font-medium text-rose-700 hover:underline"
+                      aria-label={`Sil: ${countryName(t.country)}`}
+                    >
+                      Sil
+                    </button>
                   </span>
                 ))}
               </div>
@@ -688,26 +759,71 @@ export default function ClinicPage() {
       )}
 
       <Card>
-        <SectionHeading title="Organizasyon Ayarları" description="Veri saklama süresi, KVKK aydınlatma metni ve Instant Form gizlilik politikası bağlantısı." />
-        <form onSubmit={saveSettings} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            Lead Saklama Süresi (gün)
-            <input type="number" min={30} max={3650} className={inputCls} value={settingsForm.retentionDays} onChange={(e) => setSettingsForm({ ...settingsForm, retentionDays: Number(e.target.value) })} />
+        <SectionHeading
+          title="Çalışma alanı ayarları"
+          description="Lead saklama süresi ve KVKK metinleri. Aydınlatma metni ile açık rıza metni ayrı tutulur (KVKK Kurulu İlke Kararı 2026/347)."
+        />
+        <form onSubmit={saveSettings} className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="field">
+            Lead saklama süresi (gün)
+            <input type="number" min={30} max={3650} value={settingsForm.retentionDays} onChange={(e) => setSettingsForm({ ...settingsForm, retentionDays: Number(e.target.value) })} />
+            <span className="text-xs font-normal text-muted">Süresi dolan lead&apos;ler anonimleştirilir.</span>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Gizlilik Politikası Bağlantısı (https)
-            <input type="url" className={inputCls} value={settingsForm.privacyPolicyUrl} onChange={(e) => setSettingsForm({ ...settingsForm, privacyPolicyUrl: e.target.value })} placeholder="https://klinik.example/gizlilik" />
-            <span className="text-xs text-slate-400">Meta Instant Form (lead formu) yayını için zorunludur.</span>
+          <label className="field">
+            Aydınlatma metni bağlantısı (https)
+            <input type="url" value={settingsForm.privacyPolicyUrl} onChange={(e) => setSettingsForm({ ...settingsForm, privacyPolicyUrl: e.target.value })} placeholder="https://klinik.example/kvkk-aydinlatma" />
+            <span className="text-xs font-normal text-muted">
+              Aydınlatma metninizin yayımlandığı sayfa. Anında Form&apos;da &ldquo;Aydınlatma metni&rdquo; bağlantısı buraya gider; form yayını için zorunludur.
+            </span>
           </label>
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            Onay/Aydınlatma Metni
-            <textarea className={inputCls} rows={3} value={settingsForm.consentText} onChange={(e) => setSettingsForm({ ...settingsForm, consentText: e.target.value })} placeholder="KVKK aydınlatma metni… (boşsa varsayılan metin kullanılır; Türkçe Instant Form'larda rıza metni olarak da gösterilir)" />
+          <label className="field sm:col-span-2">
+            Aydınlatma metni
+            <textarea rows={6} value={settingsForm.privacyNoticeText} onChange={(e) => setSettingsForm({ ...settingsForm, privacyNoticeText: e.target.value })} />
+            <span className="text-xs font-normal text-muted">
+              Kişisel verilerin hangi amaçla, hangi hukuki sebeple işlendiğini ve kimlere aktarıldığını anlatır (KVKK md. 10). Yalnızca bilgi verir; hastadan onay istenmez.
+              Metnin güncel hâlini yukarıdaki bağlantıdaki sayfada da yayımlayın.
+            </span>
           </label>
-          <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500" type="submit">
-            Kaydet
-          </button>
+          <label className="field sm:col-span-2">
+            Açık rıza metni
+            <textarea rows={3} value={settingsForm.consentText} onChange={(e) => setSettingsForm({ ...settingsForm, consentText: e.target.value })} />
+            <span className="text-xs font-normal text-muted">
+              Yalnızca rıza beyanı: hastanın neye açık rıza verdiği (ör. pazarlama iletişimi ve reklam ölçümü). Aydınlatma bilgileri buraya yazılmaz.
+              Panelden kaydedilen rızaların kanıtına bu metin eklenir; Türkçe Anında Form&apos;larda &ldquo;Açık rıza&rdquo; bölümünde gösterilir. Boşsa varsayılan metin kullanılır.
+            </span>
+          </label>
+          {settingsForm.consentText.trim() && !settingsForm.privacyNoticeText.trim() ? (
+            <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">
+              Önceki &ldquo;Onay/Aydınlatma Metni&rdquo; alanı artık yalnızca açık rıza metnidir. Mevcut metin aydınlatma bilgileri içeriyorsa bu bilgileri
+              &ldquo;Aydınlatma metni&rdquo; alanına taşıyın; açık rıza metninde yalnızca rıza beyanı kalsın.
+            </p>
+          ) : null}
+          <div className="sm:col-span-2">
+            <button className="primary-button" type="submit">
+              Ayarları kaydet
+            </button>
+          </div>
         </form>
       </Card>
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={pendingConfirm?.kind === "deleteTarget" ? "Pazar hedefi silinsin mi?" : "Hizmet arşivlensin mi?"}
+        description={
+          pendingConfirm?.kind === "deleteTarget"
+            ? `${countryName(pendingConfirm.country)} pazar hedefi silinecek. Kampanya planlaması bu hedefi artık kullanmaz.`
+            : pendingConfirm?.kind === "archiveService"
+              ? `"${pendingConfirm.name}" arşivlenecek. Arşivdeki hizmet reklam üretiminde kullanılmaz; sonradan arşivden çıkarabilirsiniz.`
+              : undefined
+        }
+        confirmLabel={pendingConfirm?.kind === "deleteTarget" ? "Hedefi sil" : "Hizmeti arşivle"}
+        tone="danger"
+        onConfirm={() => {
+          if (pendingConfirm?.kind === "deleteTarget") void deleteTarget(pendingConfirm.country);
+          else if (pendingConfirm?.kind === "archiveService") void archiveService(pendingConfirm.id);
+        }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

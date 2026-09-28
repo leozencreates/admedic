@@ -716,7 +716,7 @@ export async function publishCampaign(
     }
     throw new HttpError(
       publishErrorStatus(error),
-      `Meta yayını "${STEP_LABEL[step]}" adımında durdu: ${message} Sorunu giderip "Yayınla" ile kaldığı yerden devam edebilirsiniz.`,
+      `Meta yayını "${STEP_LABEL[step]}" adımında durdu: ${message} Sorunu giderip "Yüklemeye devam et" düğmesiyle kaldığı yerden sürdürün.`,
     );
   }
 }

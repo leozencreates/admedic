@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { defaultAccountCurrency } from "../_lib/client-api";
+import { formatMoneyUnits, formatRatio } from "../_lib/format";
 import {
   compare,
   validMetrics,
@@ -21,6 +23,10 @@ export function Experiment({
   const [duration, setDuration] = useState(initialDuration);
   const [elapsed, setElapsed] = useState(0);
   const [source, setSource] = useState("Manuel veri girişi");
+  const [currency, setCurrency] = useState("EUR");
+  useEffect(() => {
+    void defaultAccountCurrency().then(setCurrency);
+  }, []);
   const result = compare(metrics[0], metrics[1], elapsed, duration);
   const valid = metrics.every(validMetrics);
   return (
@@ -83,8 +89,8 @@ export function Experiment({
             Temizle
           </button>
         </div>
-        <p className="mt-4 text-xs text-slate-500">
-          Meta Ads Manager'dan aynı tarih aralığındaki verileri girin. Tek
+        <p className="mt-4 text-xs text-muted">
+          Meta Reklam Yöneticisi'nden aynı tarih aralığındaki verileri girin. Tek
           değişken, rastgele ayrılmış kitleler ve önceden belirlenmiş
           değerlendirme süresi kullanın.
         </p>
@@ -102,7 +108,7 @@ export function Experiment({
                 {(["spend", "clicks", "leads"] as const).map((key) => (
                   <label className="field" key={key}>
                     {key === "spend"
-                      ? "Harcama (€)"
+                      ? `Harcama (${currency})`
                       : key === "clicks"
                         ? "Tıklama"
                         : "Lead"}
@@ -126,18 +132,18 @@ export function Experiment({
               </div>
               <div className="mt-6 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
                 <div>
-                  <p className="section-kicker">LEAD BAŞI MALİYET</p>
+                  <p className="section-kicker">Lead başı maliyet (CPL)</p>
                   <p className="text-2xl font-semibold">
                     {validMetrics(m) && m.leads
-                      ? `€${(m.spend / m.leads).toFixed(2)}`
+                      ? formatMoneyUnits(m.spend / m.leads, currency, { precise: true })
                       : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="section-kicker">DÖNÜŞÜM ORANI</p>
+                  <p className="section-kicker">Dönüşüm oranı</p>
                   <p className="text-2xl font-semibold">
                     {validMetrics(m) && m.clicks
-                      ? `%${((100 * m.leads) / m.clicks).toFixed(1)}`
+                      ? formatRatio(m.leads / m.clicks)
                       : "—"}
                   </p>
                 </div>
@@ -150,9 +156,9 @@ export function Experiment({
                   }}
                 />
               </div>
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-muted">
                 {interval && m.clicks
-                  ? `%95 Wilson aralığı: %${(interval[0] * 100).toFixed(1)} – %${(interval[1] * 100).toFixed(1)}`
+                  ? `%95 Wilson aralığı: ${formatRatio(interval[0])} – ${formatRatio(interval[1])}`
                   : "Aralık hesaplamak için veri girin."}
               </p>
             </section>
@@ -163,7 +169,7 @@ export function Experiment({
         className="studio-card border-l-4 border-l-violet-500"
         aria-live="polite"
       >
-        <div className="section-kicker">ANALİZ SONUCU</div>
+        <div className="section-kicker">Analiz sonucu</div>
         <h2>
           {!valid
             ? "Verileri kontrol edin"
@@ -171,10 +177,10 @@ export function Experiment({
               ? `Varyant ${result.winner} öne çıkıyor`
               : "Henüz karar vermeyin"}
         </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-3 text-sm leading-6 text-slate-700">
           {result.message}
         </p>
-        <p className="mt-4 text-xs leading-5 text-slate-500">
+        <p className="mt-4 text-xs leading-5 text-muted">
           Bu analiz tıklama → lead oranını karşılaştırır; lead kalitesi veya
           ROAS ölçmez. Wilson aralıklarının ayrışması konservatif bir karar
           ölçütüdür. Sonuca bakarak testi sürekli uzatmak istatistiksel

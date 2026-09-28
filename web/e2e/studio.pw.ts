@@ -48,14 +48,14 @@ test.describe("authenticated studio", () => {
     await page.getByLabel("Parola", { exact: true }).fill(password);
     await page.getByLabel("Çalışma alanı ID").fill(workspaceId);
     await page.getByRole("button", { name: "Çalışma alanına gir" }).click();
-    await expect(page).toHaveURL(/\/library/);
-    await page.getByRole("link", { name: "Yeni reklam oluştur" }).click();
+    // Giriş, `next` parametresiyle istenen sayfaya (/studio) geri döner.
+    await expect(page).toHaveURL((url) => url.pathname === "/studio");
     await page.getByLabel("Klinik adı", { exact: true }).fill("Browser clinic");
     await page.getByLabel("Hizmet / işlem").fill("Dental services");
     await page.getByLabel("Hedef pazar").fill("UAE");
     await page.getByLabel("Reklam dili").selectOption("AR");
     await page
-      .getByRole("button", { name: "Metinleri kendim yazacağım" })
+      .getByRole("button", { name: "Boş taslakla başla" })
       .click();
     const articles = page.locator("article.ad-preview");
     for (let i = 0; i < 2; i++) {
@@ -69,8 +69,8 @@ test.describe("authenticated studio", () => {
         .fill("تواصل مع فريقنا لمعرفة المزيد عن الخدمات.");
       await articles
         .nth(i)
-        .getByRole("textbox", { name: "CTA", exact: true })
-        .fill("اعرف المزيد");
+        .getByRole("combobox", { name: "Eylem düğmesi" })
+        .selectOption("LEARN_MORE");
     }
     await expect(
       articles.first().getByRole("textbox", { name: "Başlık", exact: true }),
@@ -98,7 +98,8 @@ test.describe("authenticated studio", () => {
     ).toBeVisible();
     await page.getByLabel("Geçen süre (gün)").fill("7");
     for (let i = 0; i < 2; i++) {
-      await page.getByLabel("Harcama (€)").nth(i).fill("350");
+      // Etiket hesabın para birimini gösterir; fikstürde reklam hesabı yok → EUR.
+      await page.getByLabel("Harcama (EUR)").nth(i).fill("350");
       await page.getByLabel("Tıklama", { exact: true }).nth(i).fill("1000");
       await page
         .getByLabel("Lead", { exact: true })

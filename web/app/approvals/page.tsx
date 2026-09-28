@@ -1,64 +1,114 @@
-"use client";
-import { useState, useEffect } from "react";
-import { api } from "../_lib/client-api";
-import { Badge, Card, EmptyState, SectionHeading, StatCard } from "../_components/ui";
-type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
-const APPROVAL_TONE: Record<string, Tone> = { PENDING: "amber", APPROVED: "green", REJECTED: "red", NOT_REQUIRED: "blue", DRAFT: "gray" };
-interface DecisionData { id: string; targetType: string; targetId: string; action: string; approval: string; changePct: number | null; reasoning: string; createdAt: string; }
-export default function ApprovalsPage() {
-  const [decisions, setDecisions] = useState<DecisionData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("ALL");
-  async function load() {
-    setLoading(true);
-    try { const data = await api<{ decisions: DecisionData[] }>("/api/decisions"); setDecisions(data.decisions); } catch { setDecisions([]); }
-    setLoading(false);
-  }
-  useEffect(() => { load(); }, []);
-  const filtered = filter === "ALL" ? decisions : decisions.filter((d) => d.approval === filter);
-  const counts = { PENDING: decisions.filter((d) => d.approval === "PENDING").length, APPROVED: decisions.filter((d) => d.approval === "APPROVED").length, REJECTED: decisions.filter((d) => d.approval === "REJECTED").length };
+import Link from "next/link";
+
+import { Badge, Card, EmptyState } from "../_components/ui";
+import { requirePageActor } from "../_lib/auth";
+import { formatDate, formatDuration, formatNumber } from "../_lib/format";
+import {
+  PENDING_APPROVAL_KINDS,
+  PENDING_APPROVAL_LABEL,
+  listPendingApprovals,
+  type PendingApprovalItem,
+  type PendingApprovalKind,
+} from "../_lib/pending-approvals";
+
+/**
+ * Onaylar (ADR-0016 · Faz 1 madde 11): bir insanın kararını ya da işlemini bekleyen gerçek işler.
+ * Onay bu sayfada verilmez; her satır kararın verildiği sayfaya ("Aç") götürür.
+ * Ajan kararları onay işi değildir; geçmişleri /decisions'ta.
+ */
+
+const ACTOR_PREFIX: Record<PendingApprovalKind, string> = {
+  CONTENT: "Kim onaylar",
+  CAMPAIGN: "Kim onaylar",
+  ACTIVATION: "Kim etkinleştirir",
+  RECOMMENDATION: "Kim onaylar",
+};
+
+function ApprovalRow({ item, now }: { item: PendingApprovalItem; now: number }) {
   return (
-    <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">ONAY AKIŞI</span>
-        <h1>Onay Merkezi</h1>
-        <p className="text-sm text-slate-500">Ajan kararları ve onay akışı.</p>
-      </header>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Onay bekleyen" value={counts.PENDING} hint="Harcama değiştiren aksiyonlar" />
-        <StatCard label="Onaylanan" value={counts.APPROVED} />
-        <StatCard label="Reddedilen" value={counts.REJECTED} />
-        <StatCard label="Toplam" value={decisions.length} />
+    <li className="flex flex-col gap-3 py-4 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <p className="break-words text-sm font-semibold text-slate-900">{item.title}</p>
+        {item.detail ? <p className="mt-0.5 break-words text-sm text-slate-600">{item.detail}</p> : null}
+        <p className="mt-1 text-xs text-muted">
+          {item.submittedBy ? (
+            <>
+              {item.submittedByLabel}: {item.submittedBy}
+              {" · "}
+            </>
+          ) : null}
+          <time dateTime={item.waitingSince.toISOString()}>{formatDate(item.waitingSince)}</time> tarihinden beri
+          bekliyor ({formatDuration(now - item.waitingSince.getTime())})
+        </p>
+        <p className="mt-0.5 text-xs text-muted">
+          {ACTOR_PREFIX[item.kind]}: {item.actors}
+        </p>
       </div>
-      <Card>
-        <SectionHeading title="Kararlar" description="Ajan yalnızca öneri üretir; harcamayı değiştiren aksiyonlar onay bekler." />
-        <div className="mb-3 flex flex-wrap gap-2 text-xs">
-          {(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={`rounded-full border px-3 py-1 ${filter === key ? "border-violet-400 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-            >
-              {key === "ALL" ? "Tümü" : key === "PENDING" ? "Onay bekleyen" : key === "APPROVED" ? "Onaylanan" : "Reddedilen"}
-            </button>
-          ))}
+      <Link href={item.href} className="secondary-button shrink-0 self-start">
+        Aç<span className="sr-only">: {item.title}</span>
+      </Link>
+    </li>
+  );
+}
+
+export default async function ApprovalsPage() {
+  const actor = await requirePageActor("/approvals");
+  const { counts, items } = await listPendingApprovals(actor.workspaceId);
+  const now = Date.now();
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Onaylar</h1>
+          <p className="text-sm text-muted">
+            Onayınızı ya da işleminizi bekleyen işler. Onay ilgili sayfada verilir.
+          </p>
         </div>
-        {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : filtered.length === 0 ? <EmptyState message="Henüz karar yok." /> : (
-          <div className="space-y-3">
-            {filtered.map((d) => (
-              <div key={d.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                <div><p className="text-sm font-medium text-slate-900">{d.targetId}</p><p className="text-xs text-slate-500">{d.action} · {d.targetType}</p></div>
-                <div className="flex items-center gap-2">
-                  <Badge tone={APPROVAL_TONE[d.approval] ?? "gray"}>{d.approval}</Badge>
-                  {d.changePct != null && <span className="text-xs text-slate-400">{d.changePct > 0 ? "+" : ""}{d.changePct}%</span>}
-                  <span className="text-xs text-slate-400">{new Date(d.createdAt).toLocaleDateString("tr-TR")}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+        <Link href="/decisions" className="text-sm font-medium text-brand-strong hover:underline">
+          Ajan kararları geçmişi →
+        </Link>
+      </header>
+
+      {counts.total === 0 ? (
+        <EmptyState message="Onayınızı bekleyen iş yok." />
+      ) : (
+        PENDING_APPROVAL_KINDS.map((kind) => {
+          const count = counts.byKind[kind];
+          const list = items[kind];
+          const headingId = `onay-${kind.toLowerCase()}`;
+          return (
+            <Card key={kind}>
+              <section aria-labelledby={headingId}>
+                <h2
+                  id={headingId}
+                  className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
+                >
+                  {PENDING_APPROVAL_LABEL[kind].section}
+                  <Badge tone={count > 0 ? "amber" : "gray"}>
+                    {formatNumber(count)}
+                    <span className="sr-only"> iş bekliyor</span>
+                  </Badge>
+                </h2>
+                {list.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted">Bu türde bekleyen iş yok.</p>
+                ) : (
+                  <ul className="mt-1 divide-y divide-slate-100">
+                    {list.map((item) => (
+                      <ApprovalRow key={item.id} item={item} now={now} />
+                    ))}
+                  </ul>
+                )}
+                {count > list.length ? (
+                  <p className="mt-2 text-xs text-muted">
+                    En uzun bekleyen {formatNumber(list.length)} iş gösteriliyor.
+                  </p>
+                ) : null}
+              </section>
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }

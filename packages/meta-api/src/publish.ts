@@ -75,7 +75,7 @@ export function resolveDelivery(objective: string, method: string): DeliverySpec
     case "instant_form":
       if (metaObjective !== "OUTCOME_LEADS")
         throw new MetaPublishSpecError(
-          "Instant Form (lead reklamı) yalnızca lead hedefiyle yayınlanabilir; hedefi \"Maksimum Dönüşüm\" seçin veya WhatsApp / açılış sayfası yöntemini kullanın.",
+          "Anında Form yalnızca \"Potansiyel müşteri\" kampanya hedefiyle kullanılabilir. Hedefi \"Potansiyel müşteri\" yapın ya da WhatsApp veya açılış sayfası yöntemini seçin.",
         );
       return {
         objective: metaObjective,
@@ -88,7 +88,7 @@ export function resolveDelivery(objective: string, method: string): DeliverySpec
     case "whatsapp":
       if (!WHATSAPP_OBJECTIVES.has(metaObjective))
         throw new MetaPublishSpecError(
-          "Click-to-WhatsApp reklamı bilinirlik hedefiyle yayınlanamaz; \"Maksimum Dönüşüm\" veya \"Maksimum ROAS\" hedefini seçin.",
+          "WhatsApp'a yönlendiren reklam \"Bilinirlik\" hedefiyle kullanılamaz. Hedefi \"Potansiyel müşteri\" ya da \"Satış\" yapın.",
         );
       return {
         objective: metaObjective,
@@ -119,7 +119,7 @@ export function resolveDelivery(objective: string, method: string): DeliverySpec
       };
     case "instagram_dm":
       throw new MetaPublishSpecError(
-        "Instagram DM dönüşümüyle Meta'ya yayın henüz desteklenmiyor (Meta, INSTAGRAM_DIRECT hedefini yalnızca bilinirlik/etkileşim kampanyalarında kabul ediyor). Instant Form veya WhatsApp seçin.",
+        "Instagram mesajına yönlendiren reklamlar henüz Meta'ya yüklenemiyor; Meta bu yöntemi yalnızca bilinirlik ve etkileşim kampanyalarında kabul ediyor. Anında Form ya da WhatsApp yöntemini seçin.",
       );
     default:
       throw new MetaPublishSpecError(`Bilinmeyen dönüşüm yöntemi: ${method}.`);

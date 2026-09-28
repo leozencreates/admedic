@@ -128,7 +128,7 @@ describe("campaign safety", () => {
   it("refuses plans whose objective and conversion method cannot be published to Meta", async () => {
     const res = await create(request({ name: "Fixture", budget: 50, markets: ["DE"], objective: "MAX_ROAS", conversionMethod: "instant_form" }));
     expect(res.status).toBe(422);
-    expect((await res.json()).error).toMatch(/Instant Form/);
+    expect((await res.json()).error).toMatch(/Anında Form/);
     expect((await create(request({ name: "Fixture", budget: 50, markets: ["DE"], conversionMethod: "instagram_dm" }))).status).toBe(422);
     expect(f.create).not.toHaveBeenCalled();
   });

@@ -214,7 +214,8 @@ model Organization {
   slug      String   @unique
   monthlyAdBudgetCap Int? // minor; aktif kampanyaların aylık toplamı + yeni bütçe bu sınırı aşarsa işlem bloklanır
   retentionDays Int   @default(365) // lead saklama süresi; süresi dolan lead'ler anonimleştirilir
-  consentText String? // tenant'a özel rıza/aydınlatma metni (varsayılan yerine)
+  consentText String? // açık rıza metni (rıza beyanı; aydınlatma içermez — KVKK İlke Kararı 2026/347, ADR-0016)
+  privacyNoticeText String? // KVKK aydınlatma metni (md. 10); açık rıza metninden ayrı tutulur (ADR-0016)
   privacyPolicyUrl String? // Instant Form gizlilik politikası bağlantısı (Meta lead formu için zorunlu; spec 3.11)
   reportRecipient String? // haftalık rapor alıcısı (tenant bazlı; boşsa WEEKLY_REPORT_RECIPIENT)
   createdAt DateTime @default(now())

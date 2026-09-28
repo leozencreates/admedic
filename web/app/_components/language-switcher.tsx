@@ -35,7 +35,7 @@ export function LanguageSwitcher({ initial }: { initial?: Language }) {
     router.refresh();
   }
   return (
-    <select value={lang} onChange={handleChange} className="field text-sm" aria-label={t("lang.label", lang)}>
+    <select value={lang} onChange={handleChange} className="lang-select" aria-label={t("lang.label", lang)}>
       {SUPPORTED_LANGUAGES.map((l) => (
         <option key={l} value={l}>{LANGUAGE_LABEL[l]}</option>
       ))}

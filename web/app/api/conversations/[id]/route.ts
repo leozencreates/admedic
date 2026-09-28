@@ -2,6 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor, requireRole, CARE_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { logAudit } from "../../../_lib/audit";
+import { memberDisplayNames } from "../../../_lib/conversation-claim";
 import { z } from "zod";
 export const maxDuration = 30;
 
@@ -12,6 +13,11 @@ const CreateConversationSchema = z.object({
   initiatedBy: z.string().nullable().optional(),
 }).strict();
 
+/**
+ * Lead'in konuşmaları (`id` = lead kimliği), en yenisi önce; her konuşmada son 50 mesaj (yeniden eskiye).
+ * Devir durumu için `escalatedToName` (devralan ekip üyesinin görünen adı) ve `escalatedToIsMe` döner:
+ * ESCALATED + `escalatedTo` boş = asistan devretti, henüz kimse devralmadı.
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
@@ -23,11 +29,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const conversations = await prisma.conversation.findMany({
       where: { leadId: id },
       include: {
-        messages: { orderBy: { createdAt: "desc" }, take: 50 },
+        // Aynı milisaniyedeki kayıtlar (ör. devralma notu + ilk yanıt) oluşturulma sırasıyla kalsın.
+        messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 },
       },
       orderBy: { createdAt: "desc" },
     });
-    return { conversations };
+    const names = await memberDisplayNames(actor.orgId, conversations.map((c) => c.escalatedTo));
+    return {
+      conversations: conversations.map((c) => ({
+        ...c,
+        escalatedToName: c.escalatedTo ? (names.get(c.escalatedTo) ?? null) : null,
+        escalatedToIsMe: c.escalatedTo !== null && c.escalatedTo === actor.userId,
+      })),
+    };
   });
 }
 

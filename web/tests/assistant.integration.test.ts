@@ -215,7 +215,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("AI lead assistant (respondT
     expect(await prisma.message.count({ where: { conversationId } })).toBe(messages.length);
   });
 
-  it("creates a conversation for a first contact, adds the bot disclosure once and hands off price questions with an INFO alert", async () => {
+  it("creates a conversation for a first contact, adds the bot disclosure once and hands off price questions with a WARNING alert", async () => {
     const lead = await prisma.lead.create({
       data: { workspaceId: owner.workspaceId, organizationId: owner.orgId, firstName: "Neu", lastName: "Kontakt", phone: encrypt("+4915112345678"), language: "de", channel: "WHATSAPP" },
     });
@@ -244,14 +244,16 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("AI lead assistant (respondT
     expect(JSON.parse(String(transport.mock.calls[1]![1]?.body)).system).not.toContain("otomatik bir asistan olduğunu açıkça belirt");
     // Yanıtlanacak yeni mesaj yoksa 409.
     expect((await aiChat(request({ leadId: lead.id }))).status).toBe(409);
-    // Kapsam dışı (fiyat): devir + INFO uyarısı, LLM çağrılmaz.
+    // Kapsam dışı (fiyat): devir + "Önemli" (WARNING) uyarısı, LLM çağrılmaz; kanal adı etiketle yazılır.
     const calls = transport.mock.calls.length;
     const price = await aiChat(request({ leadId: lead.id, message: "Was kostet die Behandlung?" }));
     expect(price.status).toBe(200);
     expect(await price.json()).toMatchObject({ escalated: true, reason: "out_of_scope" });
     expect(transport.mock.calls.length).toBe(calls);
     const alert = await prisma.alert.findFirstOrThrow({ where: { workspaceId: owner.workspaceId, entityId: conversation.id } });
-    expect(alert.severity).toBe("INFO");
+    expect(alert.severity).toBe("WARNING");
+    expect(alert.message).toContain("WhatsApp konuşmasını durdurdu");
+    expect(alert.message).not.toContain("WHATSAPP");
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("ESCALATED");
   });
 

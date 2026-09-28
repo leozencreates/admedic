@@ -3,15 +3,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
 import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
+import { safeNextPath } from "../_lib/navigation";
 
 export function Login({
   lang = DEFAULT_LANGUAGE,
   initialEmail = "",
   initialWorkspace = "",
+  next,
 }: {
   lang?: Language;
   initialEmail?: string;
   initialWorkspace?: string;
+  /** Oturum açılınca dönülecek uygulama içi yol (`?next=`); yoksa rolün ana sayfası. */
+  next?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -20,8 +24,8 @@ export function Login({
     setBusy(true);
     setError("");
     try {
-      await api("/api/session", "POST", Object.fromEntries(data));
-      router.push("/library");
+      const result = await api<{ ok: boolean; home?: string }>("/api/session", "POST", Object.fromEntries(data));
+      router.push(safeNextPath(next) ?? safeNextPath(result.home) ?? "/");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("login.failed", lang));

@@ -4,7 +4,10 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/client-api";
 import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
+import { roleLabel } from "../_lib/labels";
+import { LanguageSwitcher } from "./language-switcher";
 
+/** Menünün altındaki hesap bloğu: çalışma alanı, rol, arayüz dili ve çıkış (tek dil seçici burada). */
 export function Account({ lang = DEFAULT_LANGUAGE }: { lang?: Language }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -37,21 +40,30 @@ export function Account({ lang = DEFAULT_LANGUAGE }: { lang?: Language }) {
     }
   }
   return (
-    <div className="border-t border-white/10 pt-5 text-xs text-slate-400">
+    <div className="space-y-2 text-xs text-slate-300">
       {actor ? (
         <>
-          <p className="text-sm text-white">{actor.workspaceName}</p>
-          <p className="my-2">{actor.role}</p>
-          <button onClick={logout} className="text-violet-300">
+          <p className="text-sm font-medium text-white">{actor.workspaceName}</p>
+          <p>{roleLabel(actor.role)}</p>
+        </>
+      ) : null}
+      <div className="flex items-center justify-between gap-3">
+        <LanguageSwitcher initial={lang} />
+        {actor ? (
+          <button type="button" onClick={logout} className="min-h-9 text-sm font-medium text-violet-200 hover:text-white">
             {t("account.logout", lang)}
           </button>
-        </>
-      ) : (
-        <Link href="/login" className="text-violet-300">
-          {t("account.login", lang)}
-        </Link>
-      )}
-      <p role="alert">{error}</p>
+        ) : (
+          <Link href="/login" className="text-sm font-medium text-violet-200 hover:text-white">
+            {t("account.login", lang)}
+          </Link>
+        )}
+      </div>
+      {error ? (
+        <p role="alert" className="text-rose-300">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

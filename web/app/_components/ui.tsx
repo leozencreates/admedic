@@ -33,19 +33,18 @@ export function StatCard({
   label,
   value,
   hint,
-  tone = "gray",
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
+  /** Kullanılmıyor (eskiden ekran okuyucuya renk adı okutuyordu); geriye dönük uyumluluk için kabul edilir. */
   tone?: Tone;
 }) {
   return (
     <Card>
-      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <p className="text-sm font-medium text-muted">{label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
-      {hint ? <div className="mt-2 text-xs text-slate-500">{hint}</div> : null}
-      <span className="sr-only">{tone}</span>
+      {hint ? <div className="mt-2 text-xs text-muted">{hint}</div> : null}
     </Card>
   );
 }
@@ -63,7 +62,7 @@ export function SectionHeading({
     <div className="mb-4 flex items-end justify-between gap-4">
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">{title}</h2>
-        {description ? <p className="text-sm text-slate-500">{description}</p> : null}
+        {description ? <p className="text-sm text-muted">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -72,7 +71,7 @@ export function SectionHeading({
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-muted">
       {message}
     </div>
   );
@@ -81,7 +80,7 @@ export function EmptyState({ message }: { message: string }) {
 export function Th({ children, align = "left" }: { children: ReactNode; align?: "left" | "right" }) {
   return (
     <th
-      className={`whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 ${
+      className={`whitespace-nowrap px-3 py-2 text-xs font-semibold text-muted ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >

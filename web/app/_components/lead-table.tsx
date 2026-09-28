@@ -1,27 +1,8 @@
 "use client";
-import { Badge } from "./ui";
-import { formatDate } from "../_lib/format";
-import type { Tone } from "../_components/ui";
-
-const STATUS_TONE: Record<string, Tone> = {
-  NEW: "blue",
-  CONTACTED: "amber",
-  QUALIFIED: "green",
-  CONSULTATION_BOOKED: "violet",
-  TRAVEL_PLANNED: "blue",
-  TREATED: "green",
-  LOST: "red",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  NEW: "Yeni",
-  CONTACTED: "İletişime Geçildi",
-  QUALIFIED: "Değerlendirildi",
-  CONSULTATION_BOOKED: "Danışma Randevusu",
-  TRAVEL_PLANNED: "Seyahat Planlandı",
-  TREATED: "Tedavi Edildi",
-  LOST: "Kaybedildi",
-};
+import Link from "next/link";
+import { Badge, Th } from "./ui";
+import { formatDate, formatRelative } from "../_lib/format";
+import { channelLabel, countryName, languageName, leadStatusStyle } from "../_lib/labels";
 
 export interface Lead {
   id: string;
@@ -80,98 +61,122 @@ export function toLead(apiLead: ApiLead): Lead {
   };
 }
 
+/** Arama (ad, e-posta, telefon) ve durum filtresi. */
+export function filterLeads(leads: Lead[], search: string, statusFilter: string): Lead[] {
+  const query = search.trim().toLocaleLowerCase("tr");
+  return leads.filter((l) => {
+    const matchSearch =
+      !query ||
+      l.name.toLocaleLowerCase("tr").includes(query) ||
+      l.email.toLocaleLowerCase("tr").includes(query) ||
+      l.phone.includes(query);
+    const matchStatus = !statusFilter || l.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+}
+
 export function LeadTable({
   leads,
   onRowClick,
   search,
   statusFilter,
+  onClearFilters,
 }: {
   leads: Lead[];
   onRowClick?: (id: string) => void;
   search: string;
   statusFilter: string;
+  onClearFilters?: () => void;
 }) {
-  const filtered = leads.filter((l) => {
-    const matchSearch =
-      !search ||
-      l.name.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr")) ||
-      l.email.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr")) ||
-      l.phone.includes(search);
-    const matchStatus = !statusFilter || l.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  if (leads.length === 0) {
+    return (
+      <div className="studio-card py-12 text-center">
+        <h2>Henüz lead yok</h2>
+        <p className="mt-2 text-sm text-muted">
+          Kampanyalarınızdan ve WhatsApp&apos;tan gelen talepler burada listelenir.
+        </p>
+        <Link href="/campaign-planner" className="secondary-button mt-4">
+          Kampanyalara git
+        </Link>
+      </div>
+    );
+  }
 
+  const filtered = filterLeads(leads, search, statusFilter);
   if (filtered.length === 0) {
     return (
       <div className="studio-card py-12 text-center">
-        <h2>Lead bulunamadı</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Arama veya filtre kriterlerinize uygun lead yok.
-        </p>
+        <h2>Aramanıza uyan lead yok.</h2>
+        {onClearFilters && (
+          <button type="button" className="secondary-button mt-4" onClick={onClearFilters}>
+            Filtreleri temizle
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div
+      className="overflow-x-auto rounded-xl border border-slate-200 bg-white"
+      tabIndex={0}
+      role="region"
+      aria-label="Lead tablosu"
+    >
       <table className="w-full">
         <thead>
           <tr className="border-b border-slate-200">
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Ad
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Telefon
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              E-posta
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Durum
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Kanal
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Ülke
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Dil
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Hizmet
-            </th>
-            <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 text-left">
-              Oluşturulma
-            </th>
+            <Th>Ad</Th>
+            <Th>Telefon</Th>
+            <Th>E-posta</Th>
+            <Th>Durum</Th>
+            <Th>Kanal</Th>
+            <Th>Ülke</Th>
+            <Th>Dil</Th>
+            <Th>Hizmet</Th>
+            <Th>Oluşturulma</Th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((lead) => (
-            <tr
-              key={lead.id}
-              className="border-b border-slate-100 cursor-pointer transition hover:bg-slate-50"
-              onClick={() => onRowClick?.(lead.id)}
-            >
-              <td className="px-3 py-3 text-sm font-medium text-slate-900">
-                {lead.name}
-              </td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.phone}</td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.email}</td>
-              <td className="px-3 py-3">
-                <Badge tone={STATUS_TONE[lead.status] ?? "gray"}>
-                  {STATUS_LABEL[lead.status] ?? lead.status}
-                </Badge>
-              </td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.channel}</td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.country}</td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.language}</td>
-              <td className="px-3 py-3 text-sm text-slate-700">{lead.interestedService || "—"}</td>
-              <td className="px-3 py-3 text-sm text-slate-500">
-                {formatDate(lead.created)}
-              </td>
-            </tr>
-          ))}
+          {filtered.map((lead) => {
+            const status = leadStatusStyle(lead.status);
+            return (
+              <tr
+                key={lead.id}
+                className="cursor-pointer border-b border-slate-100 transition hover:bg-slate-50"
+                onClick={(e) => {
+                  // Satırın tamamı fare için tıklanabilir; ad bağlantısı (klavye, yeni sekme) kendi işini yapar.
+                  if ((e.target as Element).closest("a, button, input, select, textarea")) return;
+                  if (window.getSelection()?.toString()) return; // metin seçimi gezinme sayılmaz
+                  onRowClick?.(lead.id);
+                }}
+              >
+                <td className="whitespace-nowrap px-3 py-3 text-sm font-medium">
+                  <Link href={`/leads/${lead.id}`} className="text-slate-900 hover:underline" dir="auto">
+                    {lead.name}
+                  </Link>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{lead.phone || "—"}</td>
+                <td className="px-3 py-3 text-sm text-slate-700">{lead.email || "—"}</td>
+                <td className="whitespace-nowrap px-3 py-3">
+                  <Badge tone={status.tone}>{status.label}</Badge>
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{channelLabel(lead.channel)}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{countryName(lead.country)}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{languageName(lead.language)}</td>
+                <td className="px-3 py-3 text-sm text-slate-700">{lead.interestedService || "—"}</td>
+                <td className="whitespace-nowrap px-3 py-3 text-sm text-muted">
+                  {lead.created ? (
+                    <time dateTime={lead.created} title={formatDate(lead.created)}>
+                      {formatRelative(lead.created)}
+                    </time>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

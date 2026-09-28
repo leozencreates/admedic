@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
 
-/** Uyarı durum butonları: "Görüldü" (ACKED) ve "Çözüldü" (RESOLVED). */
+/** Uyarı durum düğmeleri: "Görüldü olarak işaretle" (ACKED) ve "Çözüldü olarak kapat" (RESOLVED). */
 export function AlertActions({ id, status }: { id: string; status: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -19,7 +19,7 @@ export function AlertActions({ id, status }: { id: string; status: string }) {
       await api(`/api/alerts/${id}`, "PATCH", { status: next });
       startTransition(() => router.refresh());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Güncellenemedi.");
+      setError(e instanceof Error ? e.message : "Uyarı güncellenemedi. Sayfayı yenileyip tekrar deneyin.");
     } finally {
       setBusy(false);
     }
@@ -30,14 +30,14 @@ export function AlertActions({ id, status }: { id: string; status: string }) {
     <div className="mt-3 flex flex-wrap items-center gap-2">
       {status === "OPEN" ? (
         <button type="button" className="secondary-button text-xs" disabled={disabled} onClick={() => void update("ACKED")}>
-          Görüldü
+          Görüldü olarak işaretle
         </button>
       ) : null}
       <button type="button" className="primary-button text-xs" disabled={disabled} onClick={() => void update("RESOLVED")}>
-        Çözüldü
+        Çözüldü olarak kapat
       </button>
       {error ? (
-        <span className="text-xs text-rose-600" role="alert">
+        <span className="text-xs text-rose-700" role="alert">
           {error}
         </span>
       ) : null}

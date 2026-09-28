@@ -318,7 +318,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       );
       const plan3 = (await unpublishable.json()).plan;
       expect(plan3.blocked).toBe(true);
-      expect(plan3.blockingReasons.join()).toMatch(/Instant Form/);
+      expect(plan3.blockingReasons.join()).toMatch(/Anında Form/);
     });
 
     it("planner accepts long market keys, maps languages per market and explains each recommendation", async () => {
@@ -351,7 +351,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       expect(plan.structure).toMatch(/1 kontrol \+ 2 varyant/);
       for (const key of ["objective", "targeting", "conversionMethod", "testPlan", "strategy"])
         expect(typeof plan.reasons[key]).toBe("string");
-      expect(plan.reasons.conversionMethod).toMatch(/Instant Form/);
+      expect(plan.reasons.conversionMethod).toMatch(/Anında Form/);
     });
 
     it("draft creation applies policy and budget cap in cents", async () => {
@@ -536,7 +536,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       ]);
       expect(forms.every((f) => /^lf_mock_/.test(f.metaFormId) && f.privacyPolicyUrl === "https://klinik.example/gizlilik")).toBe(true);
       expect(forms[0]!.consentText).toContain("Ich willige");
-      expect(forms[1]!.consentText).toContain("Kişisel verilerimin");
+      expect(forms[1]!.consentText).toContain("kişisel verilerimin işlenmesine açık rıza veriyorum");
       expect(forms[1]!.consentText).toContain("https://klinik.example/gizlilik");
       expect(spies.createAdCreative).toHaveBeenCalledTimes(4);
       for (const call of spies.createAdCreative.mock.calls) {

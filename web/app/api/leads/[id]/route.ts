@@ -1,4 +1,5 @@
 import { prisma, anonymizeLead } from "@admedic/database";
+import { CONSENT_EVIDENCE_BASES, DEFAULT_MARKETING_CONSENT_TEXT, type ConsentEvidenceBasis } from "../../../_lib/consent-texts";
 import { requireActor, requireRole, CARE_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
@@ -11,11 +12,23 @@ export const maxDuration = 30;
 
 const LeadStatusEnum = z.enum(["NEW", "CONTACTED", "QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED", "LOST"]);
 
+/**
+ * Panelden kaydedilen açık rızanın kanıtı (KVKK İlke Kararı 2026/347: ispat yükü veri sorumlusunda).
+ * Rızayı hasta verir; personel yalnızca nasıl ve ne zaman alındığını kaydeder.
+ */
+const ConsentEvidenceSchema = z.object({
+  basis: z.enum(CONSENT_EVIDENCE_BASES.map((b) => b.value) as [ConsentEvidenceBasis, ...ConsentEvidenceBasis[]]),
+  /** Rızanın alındığı gün (YYYY-MM-DD) ya da tam zaman damgası. */
+  obtainedAt: z.string().trim().min(10).max(40),
+  note: z.string().trim().max(500).optional(),
+}).strict();
+
 const UpdateLeadSchema = z.object({
   status: LeadStatusEnum.optional(),
   lostReason: z.string().max(1000).nullable().optional(),
   metadata: z.record(z.any()).optional(),
   consentGiven: z.boolean().optional(),
+  consentEvidence: ConsentEvidenceSchema.optional(),
   email: z.string().email().optional().nullable(),
   phone: z.string().min(7).max(20).optional().nullable(),
 }).strict();
@@ -28,7 +41,62 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   TRAVEL_PLANNED: ["TREATED", "LOST"],
 };
 
-const DEFAULT_CONSENT_TEXT = "Pazarlama iletişimleri için veri işleme onayı.";
+/** Kuruluş açık rıza metni tanımlamadıysa kayda geçen rıza beyanı. */
+const DEFAULT_CONSENT_TEXT = DEFAULT_MARKETING_CONSENT_TEXT;
+
+/** "2026-09-28" → o günün öğlesi (Europe/Istanbul, gün kayması olmasın); tam zaman damgası olduğu gibi. */
+function parseObtainedAt(value: string): Date | null {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00+03:00`) : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+interface SourceRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * Lead'in kaynak kampanya/reklam seti/reklam adları. Lead'deki kimlikler Meta kimliğidir (Lead Ads
+ * webhook'u, Click-to-Message referansı) ya da paneldeki kayıt kimliği (API ile oluşturulan lead);
+ * ikisi de aranır ve yalnızca bu çalışma alanının kampanyaları eşleşir. Yalnızca reklam kimliği olan
+ * lead'de (ör. WhatsApp/Messenger reklamından gelen) reklam seti ve kampanya reklamdan türetilir.
+ */
+async function resolveLeadSource(
+  workspaceId: string,
+  ids: { campaignId: string | null; adSetId: string | null; adId: string | null },
+): Promise<{ campaign: SourceRef | null; adSet: SourceRef | null; ad: SourceRef | null }> {
+  const inWorkspace = { workspaceId };
+  const [campaign, adSet, ad] = await Promise.all([
+    ids.campaignId
+      ? prisma.campaign.findFirst({
+          where: { ...inWorkspace, OR: [{ id: ids.campaignId }, { metaCampaignId: ids.campaignId }] },
+          select: { id: true, name: true },
+        })
+      : null,
+    ids.adSetId
+      ? prisma.adSet.findFirst({
+          where: { campaign: inWorkspace, OR: [{ id: ids.adSetId }, { metaAdSetId: ids.adSetId }] },
+          select: { id: true, name: true, campaign: { select: { id: true, name: true } } },
+        })
+      : null,
+    ids.adId
+      ? prisma.ad.findFirst({
+          where: { adSet: { campaign: inWorkspace }, OR: [{ id: ids.adId }, { metaAdId: ids.adId }] },
+          select: {
+            id: true,
+            name: true,
+            adSet: { select: { id: true, name: true, campaign: { select: { id: true, name: true } } } },
+          },
+        })
+      : null,
+  ]);
+  const pick = (row: SourceRef | null | undefined): SourceRef | null => (row ? { id: row.id, name: row.name } : null);
+  return {
+    campaign: pick(campaign ?? adSet?.campaign ?? ad?.adSet.campaign),
+    adSet: pick(adSet ?? ad?.adSet),
+    ad: pick(ad),
+  };
+}
 
 function getTimestampForStatus(status: string): Record<string, Date> {
   const now = new Date();
@@ -66,12 +134,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         acceptedAt: true, withdrawnAt: true, createdAt: true, evidence: true,
       },
     });
+    const source = await resolveLeadSource(actor.workspaceId, {
+      campaignId: lead.campaignId,
+      adSetId: lead.adSetId,
+      adId: lead.adId,
+    });
     const meta = asRecord(lead.metadata);
     return { lead: {
       ...lead,
       ...presentContact(actor.role, { email: lead.email, phone: lead.phone }),
       metadata: sanitizeMetadata(lead.metadata),
       lookupHash: undefined,
+      // Kaynak kampanya/reklam seti/reklamın paneldeki adı (kimlikler yalnızca "Teknik ayrıntı"da gösterilir).
+      source,
       // Alanları Meta'dan çekilemeyen Lead Ads lead'i (ADR-0015): panel "yeniden çek" gösterir.
       pendingFetch: meta.pendingFetch === true
         ? { error: typeof meta.fetchError === "string" ? meta.fetchError : null, attempts: typeof meta.fetchAttempts === "number" ? meta.fetchAttempts : 1 }
@@ -89,6 +164,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           createdAt: c.createdAt,
           basis: typeof evidence.basis === "string" ? evidence.basis : null,
           formLanguage: typeof evidence.language === "string" ? evidence.language : null,
+          evidenceNote: typeof evidence.note === "string" ? evidence.note : null,
         };
       }),
     } };
@@ -152,6 +228,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (input.metadata !== undefined)
       updateData.metadata = mergeLeadMetadata(asRecord(lead.metadata), input.metadata);
 
+    // Açık rıza kaydı kanıtsız açılmaz: nasıl ve ne zaman alındığı zorunludur (İlke Kararı 2026/347).
+    let consentObtainedAt: Date | null = null;
+    if (input.consentGiven === true) {
+      if (!input.consentEvidence)
+        throw new HttpError(422, "Açık rızanın nasıl ve hangi tarihte alındığını girin.");
+      consentObtainedAt = parseObtainedAt(input.consentEvidence.obtainedAt);
+      if (!consentObtainedAt) throw new HttpError(422, "Rızanın alındığı tarih geçersiz.");
+      if (consentObtainedAt.getTime() > Date.now() + 5 * 60_000)
+        throw new HttpError(422, "Rızanın alındığı tarih ileri bir tarih olamaz.");
+    } else if (input.consentEvidence) {
+      throw new HttpError(422, "Rıza kanıtı yalnızca açık rıza kaydedilirken gönderilir.");
+    }
+
     await prisma.$transaction(async (tx) => {
       if (contactChanged && nextHash && nextHash !== lead.lookupHash) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}), hashtext(${nextHash}))`;
@@ -178,12 +267,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
               type: "MARKETING",
               status: "GRANTED",
               consentText: org?.consentText ?? DEFAULT_CONSENT_TEXT,
-              acceptedAt: new Date(),
+              acceptedAt: consentObtainedAt ?? new Date(),
               ip: null,
               userAgent: null,
-              // Panelden kaydedilen rıza: kişinin rızasını beyan eden kullanıcı kanıtta tutulur.
+              // Panelden kaydedilen rıza: rızayı hasta verir; kaydeden kullanıcı, rızanın nasıl ve ne zaman
+              // alındığı ve isteğe bağlı not kanıtta tutulur.
               source: "PANEL",
-              evidence: { recordedBy: actor.userId },
+              evidence: {
+                recordedBy: actor.userId,
+                basis: input.consentEvidence?.basis ?? null,
+                obtainedAt: consentObtainedAt?.toISOString() ?? null,
+                ...(input.consentEvidence?.note ? { note: input.consentEvidence.note } : {}),
+              },
             },
           });
         }

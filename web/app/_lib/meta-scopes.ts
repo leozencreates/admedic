@@ -65,19 +65,21 @@ export function isRequiredScope(scope: string): boolean {
 export function scopeLabel(scope: string): string {
   switch (scope) {
     case "business_management":
-      return "Business Manager yönetimi";
+      return "İşletme portföyü yönetimi";
     case "ads_management":
       return "Reklam yönetimi";
     case "ads_read":
       return "Reklam okuma";
     case "pages_manage_metadata":
       return "Sayfa meta verisi yönetimi";
+    case "pages_manage_ads":
+      return "Sayfa reklamlarını ve formlarını yönetme";
     case "pages_show_list":
       return "Sayfa listesini görüntüleme";
     case "pages_messaging":
       return "Sayfa mesajlaşması (Messenger)";
     case "leads_retrieval":
-      return "Lead formu verilerini okuma";
+      return "Anında Form lead'lerini okuma";
     case "instagram_basic":
       return "Instagram hesabı (temel)";
     case "instagram_manage_messages":

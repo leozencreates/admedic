@@ -1,17 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { api } from "../_lib/client-api";
-import { formatMoney } from "../_lib/format";
+import { api, defaultAccountCurrency } from "../_lib/client-api";
+import { formatMoney, formatPercent, formatRoas } from "../_lib/format";
+import { policyMatcherLabel, policyRiskStyle, ruleActiveStyle } from "../_lib/labels";
 import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
-type Tone = "green" | "amber" | "red" | "blue" | "violet" | "gray";
-const RISK_TONE: Record<string, Tone> = { LOW: "green", MEDIUM: "amber", HIGH: "red" };
-const MATCHER_LABEL: Record<string, string> = {
-  PHRASES_V1: "İfade listesi",
-  GUARANTEE_V1: "Garanti / kesin sonuç",
-  BEFORE_AFTER_V1: "Önce/sonra",
-  PERSONAL_ATTRIBUTE_V1: "Kişisel özellik",
-};
 const OBJECTIVE_LABEL: Record<string, string> = {
   MAX_ROAS: "Maksimum ROAS",
   MAX_REVENUE: "Maksimum gelir",
@@ -40,85 +33,131 @@ interface OptimizationPolicy {
 }
 interface OptimizationRule { id: string; name: string; version: string; active: boolean; description: string | null; workspaceId: string | null }
 
+/** Yükleme hatası boş liste gibi gösterilmez (İÇ-3): ne olduğu + "Tekrar dene". */
+function LoadError({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+      <p className="font-medium">{title}</p>
+      {message && <p className="mt-1">{message}</p>}
+      <button type="button" className="secondary-button mt-3" onClick={onRetry}>
+        Tekrar dene
+      </button>
+    </div>
+  );
+}
+
 export default function PoliciesPage() {
   const [rules, setRules] = useState<PolicyRule[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [policy, setPolicy] = useState<OptimizationPolicy | null>(null);
   const [optRules, setOptRules] = useState<OptimizationRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("EUR");
   async function load() {
     setLoading(true);
+    setRulesError(null);
+    setPolicyError(null);
     try {
       const data = await api<{ rules: PolicyRule[]; canEdit: boolean }>("/api/policy-rules");
       setRules(data.rules);
       setCanEdit(Boolean(data.canEdit));
-    } catch { setRules([]); }
+    } catch (e) {
+      setRulesError(e instanceof Error ? e.message : "");
+    }
     try {
       const data = await api<{ optimizationPolicy: OptimizationPolicy | null; optimizationRules: OptimizationRule[] }>("/api/policies");
       setPolicy(data.optimizationPolicy);
       setOptRules(data.optimizationRules ?? []);
-    } catch { setPolicy(null); setOptRules([]); }
+    } catch (e) {
+      setPolicyError(e instanceof Error ? e.message : "");
+    }
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    void defaultAccountCurrency().then(setCurrency);
+  }, []);
+  const money = (cents: number | null) => (cents !== null ? formatMoney(cents, currency) : "tanımlı değil");
+  const enabled = policy ? ruleActiveStyle(policy.enabled) : null;
   return (
     <div className="space-y-8">
       <header className="studio-hero">
         <span className="eyebrow">POLİTİKALAR</span>
-        <h1>Politika Motoru</h1>
-        <p className="text-sm text-slate-500">Kural tabanlı içerik kontrolü (katman 1) ve LLM risk skoru (katman 2); optimizasyon guardrail'leri ayrı listelenir.</p>
+        <h1>Politika ve bütçe koruma</h1>
+        <p>Reklam metinleri önce içerik kurallarıyla, ardından AI değerlendirmesiyle kontrol edilir. Bütçe koruma sınırları aşağıda ayrıca listelenir.</p>
       </header>
       <Card>
         <SectionHeading
-          title="Politika Kuralları (salt okunur)"
-          description="Deterministik, sürümlü global kurallar: garanti vaadi, önce/sonra, kişisel özellik, ifade listeleri. Klinik yasaklı ifadeleri klinik profilinden gelir."
-          action={<Link href="/policy-rules" className="text-xs font-medium text-violet-600 hover:underline">{canEdit ? "Kuralları yönet →" : "Sürüm geçmişi →"}</Link>}
+          title="Politika kuralları (salt okunur)"
+          description="Tüm çalışma alanlarında geçerli, sürümlü içerik kuralları: garanti vaadi, önce/sonra karşılaştırması, kişisel özellik ve ifade listeleri. Kliniğe özel yasaklı ifadeler klinik profilinden gelir."
+          action={<Link href="/policy-rules" className="shrink-0 whitespace-nowrap text-xs font-medium text-violet-700 hover:underline">{canEdit ? "Kuralları yönet →" : "Sürüm geçmişi →"}</Link>}
         />
-        {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : rules.length === 0 ? <EmptyState message="Henüz politika kuralı yok." /> : (
+        {loading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+        ) : rulesError !== null ? (
+          <LoadError title="Politika kuralları yüklenemedi." message={rulesError} onRetry={() => void load()} />
+        ) : rules.length === 0 ? (
+          <EmptyState message="Henüz politika kuralı yok." />
+        ) : (
           <div className="space-y-3">
-            {rules.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{r.key} <span className="ml-1 text-xs font-normal text-slate-500">{MATCHER_LABEL[r.matcher] ?? r.matcher}</span></p>
-                  <p className="text-xs text-slate-500">{r.reason}</p>
-                  {r.matcher === "PHRASES_V1" && r.phrases.length > 0 && <p className="text-xs text-slate-400">İfadeler: {r.phrases.join(", ")}</p>}
+            {rules.map((r) => {
+              const active = ruleActiveStyle(r.active);
+              const risk = policyRiskStyle(r.risk);
+              return (
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{r.key} <span className="ml-1 text-xs font-normal text-muted">{policyMatcherLabel(r.matcher)}</span></p>
+                    <p className="text-xs text-muted">{r.reason}</p>
+                    {r.matcher === "PHRASES_V1" && r.phrases.length > 0 && <p className="text-xs text-muted">İfadeler: {r.phrases.join(", ")}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={active.tone}>{active.label}</Badge>
+                    <Badge tone={risk.tone}>{risk.label}</Badge>
+                    <span className="text-xs text-muted">v{r.version}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge tone={r.active ? "green" : "gray"}>{r.active ? "AKTİF" : "KAPALI"}</Badge>
-                  <Badge tone={RISK_TONE[r.risk] ?? "gray"}>{r.risk}</Badge>
-                  <span className="text-xs text-slate-400">v{r.version}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
       <Card>
-        <SectionHeading title="Optimizasyon Politikası" description="Bütçe guardrail'leri ve ajan modu (içerik politikası değildir; ROAS Autopilot için)." />
-        {loading ? <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" /> : !policy ? <EmptyState message="Bu çalışma alanı için optimizasyon politikası tanımlı değil." /> : (
+        <SectionHeading title="Optimizasyon politikası" description="Bütçe koruma sınırları ve AI önerilerinin çalışma modu. İçerik kontrolüyle ilgili değildir." />
+        {loading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+        ) : policyError !== null ? (
+          <LoadError title="Optimizasyon politikası yüklenemedi." message={policyError} onRetry={() => void load()} />
+        ) : !policy ? (
+          <EmptyState message="Bu çalışma alanı için optimizasyon politikası tanımlı değil." />
+        ) : (
           <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-            <p>Durum: <Badge tone={policy.enabled ? "green" : "gray"}>{policy.enabled ? "ETKİN" : "KAPALI"}</Badge></p>
-            <p>Mod: <Badge tone="blue">{MODE_LABEL[policy.mode] ?? policy.mode}</Badge></p>
-            <p>Hedef: {OBJECTIVE_LABEL[policy.objective] ?? policy.objective} · hedef ROAS {policy.targetRoas}</p>
-            <p>Günlük bütçe aralığı: {formatMoney(policy.minDailyBudgetCents)} – {policy.maxDailyBudgetCents !== null ? formatMoney(policy.maxDailyBudgetCents) : "sınırsız"}</p>
-            <p>Kampanya günlük üst sınır: {policy.campaignDailyMaxCents !== null ? formatMoney(policy.campaignDailyMaxCents) : "-"}</p>
-            <p>Hesap günlük / aylık üst sınır: {policy.accountDailyMaxCents !== null ? formatMoney(policy.accountDailyMaxCents) : "-"} / {policy.accountMonthlyMaxCents !== null ? formatMoney(policy.accountMonthlyMaxCents) : "-"}</p>
-            <p>Tek adım değişim: +%{policy.maxIncreasePct} / −%{policy.maxDecreasePct}; 24 saatte en fazla %{policy.maxChangePer24hPct}</p>
-            <p>Değişiklikler arası en az {policy.minHoursBetweenChanges} saat · maks CPA {policy.maxCpaCents !== null ? formatMoney(policy.maxCpaCents) : "-"}</p>
+            <p>Durum: {enabled && <Badge tone={enabled.tone}>{enabled.label}</Badge>}</p>
+            <p>Çalışma modu: <strong className="font-medium text-slate-900">{MODE_LABEL[policy.mode] ?? "Diğer"}</strong></p>
+            <p>Optimizasyon hedefi: {OBJECTIVE_LABEL[policy.objective] ?? "Diğer"} · Hedef ROAS: {formatRoas(policy.targetRoas)}</p>
+            <p>Günlük bütçe aralığı: {formatMoney(policy.minDailyBudgetCents, currency)} – {policy.maxDailyBudgetCents !== null ? formatMoney(policy.maxDailyBudgetCents, currency) : "üst sınır yok"}</p>
+            <p>Kampanya günlük üst sınırı: {money(policy.campaignDailyMaxCents)}</p>
+            <p>Hesap günlük / aylık üst sınırı: {money(policy.accountDailyMaxCents)} / {money(policy.accountMonthlyMaxCents)}</p>
+            <p>Tek seferde bütçe değişimi: en fazla +{formatPercent(policy.maxIncreasePct)} / −{formatPercent(policy.maxDecreasePct)}; 24 saatte en fazla {formatPercent(policy.maxChangePer24hPct)}</p>
+            <p>Değişiklikler arasında en az {policy.minHoursBetweenChanges} saat · En yüksek CPA: {money(policy.maxCpaCents)}</p>
           </div>
         )}
-        {optRules.length > 0 && (
+        {!loading && policyError === null && optRules.length > 0 && (
           <div className="mt-4 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Optimizasyon kuralları</p>
-            {optRules.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5">
-                <div><p className="text-sm text-slate-900">{r.name}</p>{r.description && <p className="text-xs text-slate-500">{r.description}</p>}</div>
-                <div className="flex items-center gap-2">
-                  <Badge tone={r.active ? "green" : "gray"}>{r.active ? "AKTİF" : "KAPALI"}</Badge>
-                  <span className="text-xs text-slate-400">{r.version}{r.workspaceId ? "" : " · global"}</span>
+            <p className="text-xs font-semibold text-muted">Optimizasyon kuralları</p>
+            {optRules.map((r) => {
+              const active = ruleActiveStyle(r.active);
+              return (
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5">
+                  <div className="min-w-0"><p className="text-sm text-slate-900">{r.name}</p>{r.description && <p className="text-xs text-muted">{r.description}</p>}</div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={active.tone}>{active.label}</Badge>
+                    {!r.workspaceId && <span className="text-xs text-muted">Tüm çalışma alanları</span>}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

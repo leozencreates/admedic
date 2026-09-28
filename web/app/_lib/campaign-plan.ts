@@ -1,3 +1,6 @@
+import { formatMoney } from "./format";
+import { budgetModeLabel, languageName } from "./labels";
+
 export type PlanObjective = "MAX_ROAS" | "MAX_CONVERSIONS" | "MAX_IMPRESSIONS";
 export const PLAN_OBJECTIVES = ["MAX_ROAS", "MAX_CONVERSIONS", "MAX_IMPRESSIONS"] as const;
 
@@ -94,38 +97,47 @@ export interface CampaignPlan {
   };
 }
 
-const OBJECTIVE_LABEL: Record<PlanObjective, string> = {
-  MAX_ROAS: "Maks. ROAS",
-  MAX_CONVERSIONS: "Maks. Dönüşüm",
-  MAX_IMPRESSIONS: "Maks. Görüntüleme",
+/**
+ * Planlayıcı hedefi → kampanya hedefi adı (Meta'nın Türkçe arayüzündeki adlar; Meta'dan gelen
+ * OUTCOME_* değerleri için `labels.ts` `objectiveLabel` aynı adları verir). Plan adında da kullanılır.
+ */
+export const OBJECTIVE_LABEL: Record<PlanObjective, string> = {
+  MAX_ROAS: "Satış",
+  MAX_CONVERSIONS: "Potansiyel müşteri",
+  MAX_IMPRESSIONS: "Bilinirlik",
 };
 
 const OBJECTIVE_REASON: Record<PlanObjective, string> = {
   MAX_ROAS:
-    "Satış/ciro odaklı hedef: Meta OUTCOME_SALES ile dönüşüm değeri en yüksek kitleye optimize edilir; yüksek paket değerli tedavilerde ROAS ölçülebilir olduğundan seçildi.",
+    "Satış odaklı hedef: Meta, dönüşüm değeri en yüksek kitleye optimize eder; yüksek paket değerli tedavilerde reklam getirisi (ROAS) ölçülebildiği için seçildi.",
   MAX_CONVERSIONS:
-    "Lead odaklı hedef: Meta OUTCOME_LEADS, form/WhatsApp başvurusu yapma olasılığı en yüksek kullanıcılara teslim eder; sağlık turizminde ana dönüşüm konsültasyon talebidir.",
+    "Lead odaklı hedef: Meta, reklamı form veya WhatsApp başvurusu yapma olasılığı en yüksek kişilere gösterir; sağlık turizminde ana dönüşüm konsültasyon talebidir.",
   MAX_IMPRESSIONS:
-    "Bilinirlik odaklı hedef: Meta OUTCOME_AWARENESS, pazara yeni giren klinik için erişim ve frekansla ilk teması kurar; lead beklentisi bu aşamada düşük tutulur.",
+    "Bilinirlik odaklı hedef: Meta, pazara yeni giren klinik için erişim ve sıklıkla ilk teması kurar; bu aşamada lead beklentisi düşük tutulur.",
 };
 
 export const METHOD_LABEL: Record<ConversionMethod, string> = {
-  landing_form: "Açılış Sayfası",
-  instant_form: "Instant Form",
+  landing_form: "Açılış sayfası formu",
+  instant_form: "Anında Form",
   whatsapp: "WhatsApp",
   instagram_dm: "Instagram DM",
 };
 
 const METHOD_REASON: Record<ConversionMethod, string> = {
   landing_form:
-    "Açılış sayfası formu: aydınlatma/rıza metni ve ön eleme soruları sizin kontrolünüzde; Instant Form'a göre daha düşük hacim, daha nitelikli lead.",
+    "Açılış sayfası formu: aydınlatma ve açık rıza metinleri ile ön eleme soruları sizin kontrolünüzde; Anında Form'a göre hacim daha düşük, lead'ler daha nitelikli.",
   instant_form:
-    "Instant Form (Meta Lead Ads): uygulama içinde doldurulduğu için sürtünme en düşük, lead hacmi en yüksek; rıza metni ve ön eleme soruları forma eklenir (spec 3.11).",
+    "Anında Form (Meta lead reklamı): Facebook veya Instagram içinde doldurulduğu için sürtünme en düşük, lead hacmi en yüksektir; açık rıza metni ve ön eleme soruları forma eklenir.",
   whatsapp:
-    "Click-to-WhatsApp: Körfez ve Rusça konuşan pazarlarda tercih edilen kanal; AI karşılama asistanı ilk yanıtı verir, 24 saatlik mesajlaşma penceresi kuralına uyulur.",
+    "WhatsApp'a yönlendiren reklam: Körfez ve Rusça konuşulan pazarlarda tercih edilen kanal; ilk yanıtı karşılama asistanı verir, 24 saatlik mesajlaşma penceresi kuralına uyulur.",
   instagram_dm:
-    "Instagram DM: görsel ağırlıklı hizmetlerde (estetik, diş) genç kitlede etkileşim yüksek; koordinatör devri için DM otomasyonu gerekir.",
+    "Instagram DM: görsel ağırlıklı hizmetlerde (estetik, diş) genç kitlede etkileşim yüksektir; koordinatöre devir için mesaj otomasyonu gerekir.",
 };
+
+/** Dil kodları → Türkçe dil adları ("DE/TR" → "Almanca/Türkçe"); gerekçe ve yapı metinleri için. */
+function languageNames(codes: readonly string[], separator = "/"): string {
+  return codes.map((code) => languageName(code)).join(separator);
+}
 
 /**
  * Pazar (ülke) → reklam dilleri (spec 3.2: Almanya → DE/TR, İngiltere → EN,
@@ -211,12 +223,12 @@ export function marketLanguages(
   return langs.size > 0 ? Array.from(langs) : ["EN"];
 }
 
+/**
+ * Plan ve aylık üst sınır mesajlarındaki tutarlar (`format.ts`, "€1.234"). Kuruş varsa 2 ondalık
+ * gösterilir; sınır karşılaştırmasında yuvarlama "€6.000 > €6.000" gibi yanıltıcı metin üretmesin.
+ */
 export function formatPlanMoney(cents: number, currency: string): string {
-  const major = cents / 100;
-  const text = Number.isInteger(major)
-    ? major.toLocaleString("tr-TR")
-    : major.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${text} ${currency}`;
+  return formatMoney(cents, currency, { precise: !Number.isInteger(cents / 100) });
 }
 
 function splitBudget(totalCents: number, parts: number): number[] {
@@ -246,8 +258,8 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
   if (input.monthlyCapCents != null && monthlyCommittedCents + monthlyProjectedCents > input.monthlyCapCents)
     blockingReasons.push(
       monthlyCommittedCents > 0
-        ? `Aktif kampanyaların aylık toplamı (${formatPlanMoney(monthlyCommittedCents, currency)}) ile bu planın aylık öngörüsü (${formatPlanMoney(monthlyProjectedCents, currency)}) kuruluş üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor.`
-        : `Aylık öngörülen bütçe (${formatPlanMoney(monthlyProjectedCents, currency)}) kuruluş üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor.`,
+        ? `Etkin kampanyaların aylık toplamı (${formatPlanMoney(monthlyCommittedCents, currency)}) ile bu planın aylık tahmini (${formatPlanMoney(monthlyProjectedCents, currency)}) aylık harcama üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor. Günlük bütçeyi düşürün ya da üst sınırı yükseltin.`
+        : `Bu planın aylık tahmini (${formatPlanMoney(monthlyProjectedCents, currency)}) aylık harcama üst sınırını (${formatPlanMoney(input.monthlyCapCents, currency)}) aşıyor. Günlük bütçeyi düşürün ya da üst sınırı yükseltin.`,
     );
 
   const mainMarket = markets[0] ?? "belirsiz";
@@ -290,33 +302,33 @@ export function buildCampaignPlan(input: CampaignPlanInput): CampaignPlan {
 
   const strategyReason =
     strategy === "CBO"
-      ? `${marketCount} pazar / ${campaignLangs.length} dil tek bütçeli kampanyada (CBO) birleştirilir; Meta, günlük bütçeyi en iyi CPL üreten ad set'e otomatik dağıtır ve küçük pazarlar bütçesiz kalmaz.`
-      : `${marketCount} pazar / ${campaignLangs.length} dil için ad set bazlı bütçe (ABO): her pazar sabit pay alır, hedefleme hassasiyeti ve pazar başına harcama kontrolü korunur.`;
+      ? `${marketCount} pazar ve ${campaignLangs.length} dil tek kampanyada, kampanya bütçesiyle (CBO) birleştirilir; Meta günlük bütçeyi lead başı maliyeti en düşük reklam setine otomatik dağıtır ve küçük pazarlar bütçesiz kalmaz.`
+      : `${marketCount} pazar ve ${campaignLangs.length} dil için reklam seti bütçesi (ABO): her pazar sabit pay alır; hedefleme hassasiyeti ve pazar başına harcama kontrolü korunur.`;
 
   const marketText = adSetMarkets
-    .map((m) => `${PLANNER_MARKETS[m] ?? m} (${marketLanguagesFor(m, overrides).join("/")})`)
+    .map((m) => `${PLANNER_MARKETS[m] ?? m} (${languageNames(marketLanguagesFor(m, overrides))})`)
     .join(", ");
   const targetingReason =
     `${ageMin}-${ageMax} yaş; pazarlar: ${marketText}${markets.length > MAX_PLAN_AD_SETS ? ` (+${markets.length - MAX_PLAN_AD_SETS} pazar ikinci kampanyaya bırakıldı)` : ""}. ` +
-    `Diller ${usedClinicTargets ? "klinik pazar hedeflerinden" : "pazar-dil haritasından"} türetildi${explicitLangs.length > 0 ? ", seçtiğiniz dillerle kesiştirildi" : ""}; ` +
-    "18 yaş altı hariç tutulur (Meta sağlık reklam kuralı) ve kişisel özellik varsayımı içeren hedefleme kullanılmaz.";
+    `Diller ${usedClinicTargets ? "klinik pazar hedeflerinden" : "pazar-dil eşleşmesinden"} türetildi${explicitLangs.length > 0 ? ", seçtiğiniz dillerle kesiştirildi" : ""}; ` +
+    "18 yaş altı hariç tutulur (Meta sağlık reklamı kuralı) ve kişisel özellik varsayımı içeren hedefleme kullanılmaz.";
 
   const whatsappHint =
     input.conversionMethod !== "whatsapp" && adSetMarkets.some((m) => WHATSAPP_FIRST_MARKETS.has(m))
-      ? " Seçilen pazarlarda WhatsApp birincil kanal olduğundan Click-to-WhatsApp varyantı da değerlendirin."
+      ? " Seçilen pazarlarda WhatsApp birincil kanal olduğundan WhatsApp'a yönlendiren bir reklam varyantını da değerlendirin."
       : "";
   const conversionReason = METHOD_REASON[input.conversionMethod] + whatsappHint;
 
   const testDurationDays = marketCount > 1 ? 7 : 14;
   const creativeVariations = 3; // 1 kontrol + 2 varyant
-  const decisionMetric = "CPL / lead sayısı";
+  const decisionMetric = "Lead başı maliyet (CPL)";
   const testPlanReason =
-    `Her ad set'te 1 kontrol + 2 varyant kreatif (${creativeVariations} varyasyon) ${testDurationDays} gün yayınlanır; ` +
-    `karar metriği ${decisionMetric}: ${strategy === "CBO" ? "CBO'da Meta dağıtımı farklı olsa da" : "ABO'da bütçe payları eşit olduğundan"} lead başına maliyet ve lead sayısı kıyaslanır, kazanan varyant ölçeklenir.`;
+    `Her reklam setinde 1 kontrol + 2 varyant (${creativeVariations} varyasyon) ${testDurationDays} gün yayınlanır. ` +
+    `Karar ölçütü: ${decisionMetric}. ${strategy === "CBO" ? "Kampanya bütçesinde (CBO) Meta bütçeyi eşit dağıtmasa da" : "Reklam seti bütçesinde (ABO) paylar eşit olduğundan"} lead başı maliyet ve lead sayısı kıyaslanır; kazanan varyant ölçeklenir.`;
 
   const structure =
-    `${strategy} — ${adSets.length} ad set (pazar başına: ${adSetMarkets.map((m) => PLANNER_MARKETS[m] ?? m).join(", ") || "—"}), ` +
-    `her ad set'te 1 kontrol + 2 varyant kreatif, diller ${campaignLangs.join(", ")}, dönüşüm ${METHOD_LABEL[input.conversionMethod]}`;
+    `${budgetModeLabel(strategy)} — ${adSets.length} reklam seti (pazar başına: ${adSetMarkets.map((m) => PLANNER_MARKETS[m] ?? m).join(", ") || "—"}), ` +
+    `her reklam setinde 1 kontrol + 2 varyant, diller ${languageNames(campaignLangs, ", ")}, dönüşüm yöntemi ${METHOD_LABEL[input.conversionMethod]}`;
 
   const reasons: PlanReasons = {
     objective: OBJECTIVE_REASON[input.objective],

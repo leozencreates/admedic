@@ -25,7 +25,7 @@ describe("resolveDelivery (objective × dönüşüm yöntemi)", () => {
       promotesPage: true,
     });
     expect(() => resolveDelivery("MAX_ROAS", "instant_form")).toThrow(MetaPublishSpecError);
-    expect(() => resolveDelivery("MAX_IMPRESSIONS", "instant_form")).toThrow(/Maksimum Dönüşüm/);
+    expect(() => resolveDelivery("MAX_IMPRESSIONS", "instant_form")).toThrow(/Potansiyel müşteri/);
   });
 
   it("WhatsApp: CONVERSATIONS + WHATSAPP; bilinirlik hedefiyle reddedilir", () => {
@@ -52,7 +52,7 @@ describe("resolveDelivery (objective × dönüşüm yöntemi)", () => {
   });
 
   it("Instagram DM ve bilinmeyen değerler Meta'ya gitmeden reddedilir", () => {
-    expect(() => resolveDelivery("MAX_CONVERSIONS", "instagram_dm")).toThrow(/Instagram DM/);
+    expect(() => resolveDelivery("MAX_CONVERSIONS", "instagram_dm")).toThrow(/Instagram mesajına/);
     expect(() => resolveDelivery("CONVERSIONS", "instant_form")).toThrow(/Desteklenmeyen kampanya hedefi/);
     expect(() => resolveDelivery("MAX_CONVERSIONS", "sms")).toThrow(/Bilinmeyen dönüşüm yöntemi/);
     const error = (() => {

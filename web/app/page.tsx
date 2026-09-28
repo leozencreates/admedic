@@ -1,6 +1,10 @@
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { loadEnv } from "@admedic/config";
+import { t } from "./_lib/i18n";
+import { uiLanguage } from "./_lib/page-meta";
 
 import {
   Badge,
@@ -19,7 +23,16 @@ import {
   formatPercent,
   formatRoas,
 } from "./_lib/format";
-import { actionStyle, approvalStyle } from "./_lib/status";
+import { actionStyle, decisionApprovalStyle, severityStyle, targetTypeLabel } from "./_lib/labels";
+import { countPendingApprovals, pendingApprovalSummary } from "./_lib/pending-approvals";
+import { UNKNOWN_TARGET, alertRecordLinks, targetKey, targetNames } from "./_lib/record-refs";
+
+/** Kök sayfa kök layout ile aynı segmentte olduğundan şablon uygulanmaz; başlık tam yazılır. */
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: { absolute: `${t("nav.overview", await uiLanguage())} · ${loadEnv().APP_NAME}` } };
+}
+
+const SECTION_LINK = "whitespace-nowrap text-sm font-medium text-brand-strong hover:underline";
 
 function Skeleton({ rows = 3 }: { rows?: number }) {
   return (
@@ -31,6 +44,15 @@ function Skeleton({ rows = 3 }: { rows?: number }) {
         />
       ))}
     </div>
+  );
+}
+
+/** Kartın tamamı bağlantıdır; ızgara hücresini doldurur (komşu kartlarla aynı yükseklik). */
+function CardLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className="grid rounded-xl transition-shadow hover:shadow-md">
+      {children}
+    </Link>
   );
 }
 
@@ -50,8 +72,8 @@ async function Kpis() {
         prisma.campaign.count({
           where: { workspaceId: workspace.id, status: "ACTIVE" },
         }),
-        prisma.adSet.count({ where: { workspaceId: workspace.id } }),
-        prisma.ad.count({ where: { workspaceId: workspace.id } }),
+        prisma.adSet.count({ where: { workspaceId: workspace.id, status: "ACTIVE" } }),
+        prisma.ad.count({ where: { workspaceId: workspace.id, status: "ACTIVE" } }),
       ]),
       prisma.insightSnapshot.aggregate({
         where: { workspaceId: workspace.id, date: { gte: since } },
@@ -66,9 +88,8 @@ async function Kpis() {
         where: { workspaceId: workspace.id, status: "ACTIVE" },
         _sum: { dailyBudget: true },
       }),
-      prisma.agentDecision.count({
-        where: { workspaceId: workspace.id, approval: "PENDING" },
-      }),
+      // Gerçek onay işi: içerik, kampanya, etkinleştirme, bütçe önerisi. Ajan kararları onaylanamaz; sayılmaz.
+      countPendingApprovals(workspace.id),
       prisma.alert.count({
         where: { workspaceId: workspace.id, status: "OPEN" },
       }),
@@ -93,11 +114,13 @@ async function Kpis() {
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-      <StatCard
-        label="Aktif kampanya / ad set / ad"
-        value={`${formatNumber(counts[0])} / ${formatNumber(counts[1])} / ${formatNumber(counts[2])}`}
-        hint={`Günlük planlanan bütçe: ${formatMoney(budgetAgg._sum.dailyBudget, currency)}`}
-      />
+      <CardLink href="/campaigns">
+        <StatCard
+          label="Etkin kampanya / reklam seti / reklam"
+          value={`${formatNumber(counts[0])} / ${formatNumber(counts[1])} / ${formatNumber(counts[2])}`}
+          hint={`Günlük planlanan bütçe: ${formatMoney(budgetAgg._sum.dailyBudget, currency)}`}
+        />
+      </CardLink>
       <StatCard
         label="Son 7 gün harcama"
         value={formatMoney(spend, currency)}
@@ -109,20 +132,24 @@ async function Kpis() {
         hint={`${formatNumber(purchases)} satın alma`}
       />
       <StatCard
-        label="Son 7 gün ROAS"
+        label="Son 7 gün reklam getirisi (ROAS)"
         value={formatRoas(roas)}
-        hint={targetRoas ? `Hedef: ${targetRoas.toFixed(2)}×` : undefined}
+        hint={targetRoas ? `Hedef: ${formatRoas(targetRoas)}` : undefined}
       />
-      <StatCard
-        label="Onay bekleyen karar"
-        value={formatNumber(pending)}
-        hint={pending > 0 ? "İnsan onayı gerekli" : "Bekleyen yok"}
-      />
-      <StatCard
-        label="Açık uyarı"
-        value={formatNumber(openAlerts)}
-        hint={openAlerts > 0 ? "İnceleme gerekiyor" : "Açık uyarı yok"}
-      />
+      <CardLink href="/approvals">
+        <StatCard
+          label="Onayınızı bekleyen"
+          value={formatNumber(pending.total)}
+          hint={pendingApprovalSummary(pending) ?? "Bekleyen iş yok"}
+        />
+      </CardLink>
+      <CardLink href="/alerts">
+        <StatCard
+          label="Açık uyarı"
+          value={formatNumber(openAlerts)}
+          hint={openAlerts > 0 ? "İnceleme gerekiyor" : "Açık uyarı yok"}
+        />
+      </CardLink>
     </div>
   );
 }
@@ -137,30 +164,33 @@ async function RecentDecisions() {
     orderBy: { createdAt: "desc" },
     take: 6,
   });
-  const adIds = decisions
-    .filter((d) => d.targetType === "AD")
-    .map((d) => d.targetId);
-  const ads = await prisma.ad.findMany({
-    where: { id: { in: adIds } },
-    select: { id: true, name: true },
-  });
-  const adNames = new Map(ads.map((a) => [a.id, a.name]));
+  const names = await targetNames(workspace.id, decisions);
 
   return (
     <Card>
       <SectionHeading
         title="Son ajan kararları"
-        description="Ajan yalnızca öneri üretir; harcamayı değiştiren aksiyonlar onay bekler."
+        description="Ajanın kaydettiği öneriler. Hiçbiri onay olmadan harcamayı değiştirmez."
+        action={
+          <Link href="/decisions" className={SECTION_LINK}>
+            Tümünü gör →
+          </Link>
+        }
       />
       {decisions.length === 0 ? (
-        <EmptyState message="Henüz karar yok." />
+        <EmptyState message="Henüz ajan kararı yok." />
       ) : (
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Son ajan kararları tablosu"
+        >
           <table className="min-w-full divide-y divide-slate-200">
             <thead>
               <tr>
                 <Th>Hedef</Th>
-                <Th>Aksiyon</Th>
+                <Th>Eylem</Th>
                 <Th align="right">Değişim</Th>
                 <Th>Onay</Th>
                 <Th>Tarih</Th>
@@ -169,24 +199,28 @@ async function RecentDecisions() {
             <tbody className="divide-y divide-slate-100">
               {decisions.map((d) => {
                 const action = actionStyle(d.action);
-                const approval = approvalStyle(d.approval);
+                const approval = decisionApprovalStyle(d.approval);
+                const name = names.get(targetKey(d.targetType, d.targetId)) ?? UNKNOWN_TARGET;
                 return (
                   <tr key={d.id}>
-                    <Td className="max-w-[280px] truncate font-medium text-slate-900">
-                      {adNames.get(d.targetId) ?? d.targetId}
+                    <Td>
+                      <span className="block min-w-[160px] max-w-[280px] whitespace-normal break-words font-medium text-slate-900">
+                        {name}
+                      </span>
+                      <span className="block text-xs text-muted">{targetTypeLabel(d.targetType)}</span>
                     </Td>
                     <Td>
                       <Badge tone={action.tone}>{action.label}</Badge>
                     </Td>
                     <Td align="right">
-                      {d.changePct == null
+                      {d.changePct == null || d.changePct === 0
                         ? "—"
-                        : formatPercent(d.changePct, 0)}
+                        : `${d.changePct > 0 ? "+" : ""}${formatPercent(d.changePct, 0)}`}
                     </Td>
                     <Td>
                       <Badge tone={approval.tone}>{approval.label}</Badge>
                     </Td>
-                    <Td className="text-slate-500">
+                    <Td className="text-muted">
                       {formatDate(d.createdAt)}
                     </Td>
                   </tr>
@@ -210,28 +244,46 @@ async function OpenAlerts() {
     orderBy: { createdAt: "desc" },
     take: 5,
   });
+  const links = await alertRecordLinks(workspace.id, alerts);
 
   return (
     <Card>
       <SectionHeading
         title="Açık uyarılar"
-        description="Anomali ve eşik ihlalleri."
+        description="Performans, bütçe ve bağlantı sorunları."
+        action={
+          <Link href="/alerts" className={SECTION_LINK}>
+            Tüm uyarılar →
+          </Link>
+        }
       />
       {alerts.length === 0 ? (
         <EmptyState message="Açık uyarı yok." />
       ) : (
         <ul className="space-y-3">
-          {alerts.map((a) => (
-            <li key={a.id} className="rounded-lg border border-slate-200 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-slate-900">{a.title}</p>
-                <span className="text-xs text-slate-400">
-                  {formatDate(a.createdAt)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{a.message}</p>
-            </li>
-          ))}
+          {alerts.map((a) => {
+            const severity = severityStyle(a.severity);
+            const href = links.get(a.id);
+            return (
+              <li key={a.id} className="rounded-lg border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge tone={severity.tone}>{severity.label}</Badge>
+                    <p className="min-w-0 break-words text-sm font-medium text-slate-900">{a.title}</p>
+                  </div>
+                  <span className="text-xs text-muted">
+                    {formatDate(a.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-sm text-slate-600">{a.message}</p>
+                {href ? (
+                  <Link href={href} className="mt-2 inline-block text-sm font-medium text-brand-strong hover:underline">
+                    İlgili kaydı aç<span className="sr-only">: {a.title}</span>
+                  </Link>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -244,9 +296,7 @@ export default function Page() {
       <header className="studio-hero">
         <span className="eyebrow">BÜYÜME KONTROL MERKEZİ</span>
         <h1>Bir sonraki iyi fikri verilerle bulun.</h1>
-        <p className="text-sm text-slate-500">
-          Çalışma alanınızın son 7 günlük performansı ve ajan durumu.
-        </p>
+        <p>Çalışma alanınızın son 7 günlük performansı ve ajan durumu.</p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/studio" className="primary-button">
             ✦ Reklam oluştur

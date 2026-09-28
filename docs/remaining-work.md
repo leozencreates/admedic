@@ -1,7 +1,7 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-27 (tam PAUSED yayın + harcama yetkisi, ADR-0014; Instant Form rızası, bekleyen lead
-çekimi, reklam düzeyi inceleme ve appsecret_proof, ADR-0015). Bu dosya `docs/spec.md` ile kod
+Son güncelleme: 2026-09-28 (tasarım kararları ve Faz 1 düzeltmeleri, aydınlatma / açık rıza ayrımı, ADR-0016).
+Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
 ADR'ler yeterli). Her maddede öncelik (P0/P1/P2), ilgili spec bölümü ve önerilen yaklaşım vardır.
 
@@ -26,7 +26,7 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 3. Yerel `.env` içinde `AUTH_SECRET` yenilendi; çalışan `next dev` oturumları yeniden giriş ister.
 4. **2026-09-27 turu için:** `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy`
    (yeni migration `20260927090000_full_publish_and_spend_authority`, toplam 22). Ardından:
-   - Klinik & Marka → Organizasyon Ayarları'nda **gizlilik politikası bağlantısı** (https) — Instant Form yayını için zorunlu.
+   - Klinik ve marka → Çalışma alanı ayarları'nda **aydınlatma metni bağlantısı** (https) — Instant Form yayını için zorunlu.
    - Kampanya Planlayıcı → **Harcama yetkisi** kartından, etkinleştirme/bütçe artışı yapacak ADMIN/MEDIA_BUYER
      üyelere Owner yetki verir (ADMIN rolü artık tek başına yetkili değil).
    - Meta bağlantısını yeniden yetkilendirin: OAuth kapsamına `pages_manage_ads` eklendi (Instant Form).
@@ -41,6 +41,11 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
    geçmişinde herkese açık. Testler artık rastgele anahtar üretiyor; yerel `ENCRYPTION_KEY` yenilenmeli
    (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) — şifreli token/iletişim alanları
    eski anahtarla okunamayacağı için `pnpm db:seed` ile yeniden tohumlayın ve Meta bağlantısını yeniden kurun.
+
+7. **2026-09-28 (ADR-0016):** yeni migration `20260928180000_privacy_notice_text` (toplam 24) —
+   `scripts\dev-up.cmd` veya `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy`.
+   Uygulanmadan `/clinic` ayarları yüklenmez (503). Ardından Klinik ve marka → Çalışma alanı ayarları'nda
+   aydınlatma metni ve açık rıza metni ayrı ayrı girilmeli; taslak metinler hukuki onaydan geçmeli (ADR-0016 §4).
 
 ## 1. Mimari (spec §4) — P1
 
@@ -131,7 +136,8 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 
 - **Pazarlama/ölçüm rızası formda yok:** Instant Form kutusu yalnızca "talebe yanıt ve iletişim için veri işleme"
   onayıdır ve `DATA_PROCESSING` olarak kaydedilir (ADR-0015); CAPI için gereken pazarlama rızası hâlâ yalnızca
-  panelden ("Rıza Ver"). Öneri: formda ayrı, isteğe bağlı ikinci kutu (metni hukuki onaydan geçmeli) → `MARKETING`.
+  panelden ("Açık rızayı kaydet", kanıt zorunlu — ADR-0016). Öneri: formda ayrı, isteğe bağlı ikinci kutu (metni
+  hukuki onaydan geçmeli) → `MARKETING`. Zorunlu kutunun İlke Kararı 2026/347 ile uyumu açık soru (ADR-0016 §4).
   Bot akışında açık rıza kaydı yok. Rıza metni Türkçe dışı formlarda genel yerel metindir; dil başına kuruluş rıza
   metni ayarı yok. Zorunlu kutunun Meta yanıtında dönüp dönmediği canlı doğrulanmalı (`docs/meta-constraints.md`).
 - WhatsApp şablon kaydı (registry) ve pencere dışı gönderimde opt-in kontrolü yok; şablon adı elle girilir.

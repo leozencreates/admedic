@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DraftContent } from "@admedic/llm";
-import { api, labels } from "../_lib/client-api";
+import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { rtlFor } from "../_lib/creative-lang";
+import { formatMoneyUnits, formatRatio } from "../_lib/format";
+import { ctaDisplay, experimentStatusStyle, languageName } from "../_lib/labels";
 import {
   compare,
   validMetrics,
@@ -28,15 +30,18 @@ export function TestDetail({
   const [test, setTest] = useState(initial);
   const [metrics, setMetrics] = useState(initial.metrics);
   const [elapsed, setElapsed] = useState(initial.elapsedDays);
-   const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [currency, setCurrency] = useState("EUR");
   const content = test.snapshot;
+  const lang = content.language.toLowerCase();
   const result = compare(metrics[0], metrics[1], elapsed, content.duration);
   const locked = !canEdit || busy || test.status === "COMPLETED";
+  useEffect(() => {
+    void defaultAccountCurrency().then(setCurrency);
+  }, []);
   async function save(status = test.status) {
     setBusy(true);
     setError("");
@@ -59,39 +64,34 @@ export function TestDetail({
       setDirty(false);
       setNotice("Deney kaydedildi.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Kaydedilemedi.");
+      setError(e instanceof Error ? e.message : "Deney kaydedilemedi. Tekrar deneyin.");
     } finally {
       setBusy(false);
     }
   }
-  async function syncMetrics() {
-    setSyncing(true); setError(""); setNotice("");
-    try {
-       const data = await api<{ result: { status: string; completed: boolean } }>(`/api/experiments/${test.id}/sync`, "POST", { experimentId: test.id });
-      setNotice(`Senkronizasyon tamamlandı: ${data.result.status}.`);
-      const recs = await api<{ recommendations: any[] }>("/api/recommendations");
-      setRecommendations(recs.recommendations);
-    } catch (e) { setError(e instanceof Error ? e.message : "Senkronizasyon başarısız."); }
-    finally { setSyncing(false); }
-  }
+  const dailyTotal = content.budget / content.duration;
   return (
     <div className="space-y-6">
-      <Link href="/tests" className="text-sm text-violet-600">
+      <Link href="/tests" className="text-sm text-violet-700">
         ← Kayıtlı deneyler
       </Link>
       <header className="studio-hero">
-        <span className="eyebrow">BAŞLIK DENEYİ · {content.language}</span>
+        <span className="eyebrow">BAŞLIK DENEYİ · {languageName(content.language).toLocaleUpperCase("tr")}</span>
         <h1>
           {content.clinic} · {content.service}
         </h1>
         <p>
-          Plan: {content.duration} gün · €{content.budget.toFixed(2)} ·{" "}
+          Plan: {content.duration} gün · {formatMoneyUnits(content.budget, currency)} ·{" "}
           {content.market}. Reklam içeriği deney oluşturulurken sabitlendi.
         </p>
-        <p>Toplam test bütçesi: €{content.budget.toFixed(2)} · Günlük toplam: €{(content.budget / content.duration).toFixed(2)} · Varyant başına günlük: €{(content.budget / content.duration / 2).toFixed(2)}</p>
+        <p>
+          Toplam test bütçesi: {formatMoneyUnits(content.budget, currency)} · Günlük toplam:{" "}
+          {formatMoneyUnits(dailyTotal, currency, { precise: true })} · Varyant başına günlük:{" "}
+          {formatMoneyUnits(dailyTotal / 2, currency, { precise: true })}
+        </p>
         {content.clinic.includes("DEMO") && <p role="note">DEMO · Harcama, tıklama ve lead sonuçları örnek veridir. Gerçek reklam yayını veya harcama yoktur.</p>}
         <div className="hero-tags">
-          <span>{labels[test.status]}</span>
+          <span>{experimentStatusStyle(test.status).label}</span>
           <span>Manuel ölçüm · Meta'da yayınlanmaz</span>
           <span>
             {dirty
@@ -145,20 +145,18 @@ export function TestDetail({
             </>
           )}
         </div>
-         <p className="mt-4 text-xs text-slate-500">
-           İki varyant için aynı dönemin toplam değerlerini girin; kayıt mevcut
-           toplamları günceller. Tamamlanan deney kilitlenir. Takibi başlatmak
-           reklam yayınlamaz.
-         </p>
-        </section>
-        {test.status === "RUNNING" && (
-          <div className="flex flex-wrap gap-3 items-center">
-            <button disabled={syncing} className="primary-button" onClick={syncMetrics}>
-              {syncing ? "Senkronizasyon sürüyor…" : "Meta metriklerini senkronize et"}
-            </button>
-            {recommendations.length > 0 && <Link href="/recommendations" className="secondary-button">Önerileri incele ({recommendations.length}) →</Link>}
-          </div>
-        )}
+        <p className="mt-4 text-xs text-muted">
+          İki varyant için aynı dönemin toplam değerlerini girin; kayıt mevcut
+          toplamları günceller. Tamamlanan deney kilitlenir. Takibi başlatmak
+          reklam yayınlamaz.
+        </p>
+      </section>
+      {/* Studio deneyleri elle girilen ölçümle çalışır; Meta'dan otomatik çekme yok (sync ucu 409 döner). */}
+      {test.status === "RUNNING" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/recommendations" className="secondary-button">Önerileri incele →</Link>
+        </div>
+      )}
       {error && (
         <p
           role="alert"
@@ -177,29 +175,30 @@ export function TestDetail({
             <section className="studio-card" key={i}>
               <div className="mb-4 flex items-center gap-3">
                 <span className="variant-marker">{i ? "B" : "A"}</span>
-                <h2 dir={rtlFor(content.language)}>
+                <h2 dir={rtlFor(content.language)} lang={lang}>
                   {content.variants[i].headline}
                 </h2>
               </div>
-              <details className="mb-5 text-sm text-slate-500">
+              <details className="mb-5 text-sm text-muted">
                 <summary className="cursor-pointer">
                   Sabit reklam metnini göster
                 </summary>
                 <p
                   className="mt-3 leading-6"
                   dir={rtlFor(content.language)}
+                  lang={lang}
                 >
                   {content.variants[i].text}
                 </p>
-                <p className="mt-2" dir={rtlFor(content.language)}>
-                  {content.variants[i].cta}
+                <p className="mt-2">
+                  Eylem düğmesi: {ctaDisplay(content.variants[i].cta)}
                 </p>
               </details>
               <div className="grid grid-cols-3 gap-3">
                 {(["spend", "clicks", "leads"] as const).map((key) => (
                   <label className="field" key={key}>
                     {key === "spend"
-                      ? "Harcama (€)"
+                      ? `Harcama (${currency})`
                       : key === "clicks"
                         ? "Tıklama"
                         : "Lead"}
@@ -225,18 +224,18 @@ export function TestDetail({
               </div>
               <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
                 <div>
-                  <p className="section-kicker">LEAD BAŞI MALİYET</p>
+                  <p className="section-kicker">Lead başı maliyet (CPL)</p>
                   <strong className="text-2xl">
                     {validMetrics(m) && m.leads
-                      ? `€${(m.spend / m.leads).toFixed(2)}`
+                      ? formatMoneyUnits(m.spend / m.leads, currency, { precise: true })
                       : "—"}
                   </strong>
                 </div>
                 <div>
-                  <p className="section-kicker">DÖNÜŞÜM ORANI</p>
+                  <p className="section-kicker">Dönüşüm oranı</p>
                   <strong className="text-2xl">
                     {validMetrics(m) && m.clicks
-                      ? `%${((m.leads / m.clicks) * 100).toFixed(1)}`
+                      ? formatRatio(m.leads / m.clicks)
                       : "—"}
                   </strong>
                 </div>
@@ -249,49 +248,31 @@ export function TestDetail({
                   }}
                 />
               </div>
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-muted">
                 {interval && m.clicks
-                  ? `%95 Wilson: %${(interval[0] * 100).toFixed(1)} – %${(interval[1] * 100).toFixed(1)}`
+                  ? `%95 Wilson aralığı: ${formatRatio(interval[0])} – ${formatRatio(interval[1])}`
                   : "Analiz için veri bekleniyor."}
               </p>
             </section>
           );
         })}
-       </div>
-       {recommendations.length > 0 && (
-         <section className="studio-card border-l-4 border-l-amber-500">
-           <div className="section-kicker">OPTİMİZASYON ÖNERİLERİ</div>
-           <h2>Veriye dayalı öneriler</h2>
-           <div className="mt-4 space-y-4">
-             {recommendations.map((rec) => (
-               <div key={rec.id} className="rounded-xl bg-amber-50 p-4">
-                 <p className="font-semibold">{rec.title}</p>
-                 <p className="mt-1 text-sm text-slate-600">{rec.description}</p>
-                 <p className="mt-2 text-xs text-slate-500">{rec.reasoning}</p>
-                 {rec.status === "DRAFT" && (
-                   <p className="mt-2 text-xs text-amber-700">Onay bekliyor. Onaylandıktan sonra uygulanabilir.</p>
-                 )}
-               </div>
-             ))}
-           </div>
-         </section>
-       )}
-       <section
-         className="studio-card border-l-4 border-l-violet-500"
-         aria-live="polite"
-       >
+      </div>
+      <section
+        className="studio-card border-l-4 border-l-violet-500"
+        aria-live="polite"
+      >
         <div className="section-kicker">
-          {dirty ? "KAYDEDİLMEMİŞ VERİLERLE ÖNİZLEME" : "ANALİZ SONUCU"}
+          {dirty ? "Kaydedilmemiş verilerle önizleme" : "Analiz sonucu"}
         </div>
         <h2>
           {result.winner
             ? `${result.winner} varyantı öne çıkıyor`
             : "Henüz belirgin kazanan yok"}
         </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-3 text-sm leading-6 text-slate-700">
           {result.message}
         </p>
-        <p className="mt-4 text-xs leading-5 text-slate-500">
+        <p className="mt-4 text-xs leading-5 text-muted">
           Bu analiz yalnızca tıklama → lead dönüşümünü karşılaştırır. Ayrık,
           rastgele kitleler ve önceden belirlenmiş değerlendirme süresi
           varsayılır. Lead kalitesi ve ROAS ölçülmez; otomatik bütçe değişikliği

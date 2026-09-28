@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { loadEnv } from "@admedic/config";
 
-import { Nav } from "./_components/nav";
-import { Account } from "./_components/account";
-import { LanguageSwitcher } from "./_components/language-switcher";
+import { AppShell } from "./_components/app-shell";
 import { UI_LANG_COOKIE, navLinks, parseLanguage, t } from "./_lib/i18n";
 import "./globals.css";
 
@@ -13,11 +11,15 @@ async function currentLanguage() {
   return parseLanguage((await cookies()).get(UI_LANG_COOKIE)?.value);
 }
 
+/**
+ * Sekme başlığı şablonu: her bölüm kendi adını verir ("Lead CRM · <APP_NAME>").
+ * Uygulama adı koda yazılmaz; `APP_NAME` ortam değişkeninden gelir.
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const env = loadEnv();
   const lang = await currentLanguage();
   return {
-    title: `${env.APP_NAME} ${t("layout.panel", lang)}`,
+    title: { default: env.APP_NAME, template: `%s · ${env.APP_NAME}` },
     description: t("layout.description", lang),
   };
 }
@@ -32,44 +34,25 @@ export default async function RootLayout({
   return (
     <html lang={lang}>
       <body className="min-h-screen">
-        <div className="app-shell">
-          <aside className="app-sidebar">
-            <div>
-              <p className="text-xl font-semibold tracking-tight text-white">
-                {env.APP_NAME}
-              </p>
-              <p className="mt-2 text-xs text-slate-400">
-                {t("layout.tagline", lang)}
-              </p>
-            </div>
-            <Nav links={navLinks(lang)} />
-            <Account lang={lang} />
-            <div className="mt-auto space-y-2 text-xs text-slate-400">
-              <LanguageSwitcher initial={lang} />
-              <p>
-                {t("layout.metaGraph", lang)}:{" "}
-                <span className="font-mono text-slate-500">
-                  {env.metaGraphApiVersion ?? "—"}
-                </span>
-              </p>
-              <p>
-                {t("layout.mode", lang)}:{" "}
-                <span className="font-mono text-slate-500">
-                  {env.META_MOCK_MODE ? t("layout.modeMock", lang) : t("layout.modeLive", lang)}
-                </span>
-              </p>
-            </div>
-          </aside>
-          <main className="app-main">
-            <div className="mb-8 flex items-center justify-between border-b border-slate-200 pb-4 text-xs text-slate-500">
-              <span>{t("layout.breadcrumb", lang)}</span>
-              <span className="status-pill">
-                {env.META_MOCK_MODE ? t("layout.envDemo", lang) : t("layout.envLive", lang)}
-              </span>
-            </div>
-            {children}
-          </main>
-        </div>
+        <AppShell
+          appName={env.APP_NAME}
+          tagline={t("layout.tagline", lang)}
+          links={navLinks(lang)}
+          lang={lang}
+          labels={{
+            skip: t("layout.skip", lang),
+            mainNav: t("layout.mainNav", lang),
+            menu: t("layout.menu", lang),
+            menuClose: t("layout.menuClose", lang),
+          }}
+          envLabel={env.META_MOCK_MODE ? t("layout.envDemo", lang) : t("layout.envLive", lang)}
+          footerLines={[
+            `${t("layout.metaGraph", lang)}: ${env.metaGraphApiVersion ?? "—"}`,
+            `${t("layout.mode", lang)}: ${env.META_MOCK_MODE ? t("layout.modeMock", lang) : t("layout.modeLive", lang)}`,
+          ]}
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
   );

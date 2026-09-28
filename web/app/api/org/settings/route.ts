@@ -17,7 +17,10 @@ const OrgSettingsSchema = z
     monthlyAdBudgetCap: z.number().positive().max(100_000_000).nullable().optional(),
     reportRecipient: z.string().trim().email().max(254).nullable().optional(),
     retentionDays: z.number().int().min(30).max(3650).optional(),
+    /** Açık rıza metni (rıza beyanı). Aydınlatma içeriği `privacyNoticeText`'e yazılır (KVKK İlke Kararı 2026/347). */
     consentText: z.string().max(4000).optional().nullable(),
+    /** KVKK aydınlatma metni (md. 10); yalnızca bilgilendirir, onay istenmez. */
+    privacyNoticeText: z.string().max(20000).optional().nullable(),
     /** Instant Form (Meta lead formu) gizlilik politikası bağlantısı; yalnızca https. */
     privacyPolicyUrl: z
       .string()
@@ -34,6 +37,7 @@ const SELECT = {
   reportRecipient: true,
   retentionDays: true,
   consentText: true,
+  privacyNoticeText: true,
   privacyPolicyUrl: true,
 } as const;
 type OrgRow = {
@@ -41,6 +45,7 @@ type OrgRow = {
   reportRecipient: string | null;
   retentionDays: number;
   consentText: string | null;
+  privacyNoticeText: string | null;
   privacyPolicyUrl: string | null;
 };
 function present(org: OrgRow, currency: string, monthlyCommittedCents: number) {
@@ -53,6 +58,7 @@ function present(org: OrgRow, currency: string, monthlyCommittedCents: number) {
     reportRecipient: org.reportRecipient,
     retentionDays: org.retentionDays,
     consentText: org.consentText,
+    privacyNoticeText: org.privacyNoticeText,
     privacyPolicyUrl: org.privacyPolicyUrl,
   };
 }
@@ -117,6 +123,9 @@ export async function PATCH(request: Request) {
           ...(input.consentText !== undefined
             ? { consentText: input.consentText }
             : {}),
+          ...(input.privacyNoticeText !== undefined
+            ? { privacyNoticeText: input.privacyNoticeText }
+            : {}),
           ...(input.privacyPolicyUrl !== undefined
             ? { privacyPolicyUrl: input.privacyPolicyUrl }
             : {}),
@@ -133,6 +142,7 @@ export async function PATCH(request: Request) {
           reportRecipient: before.reportRecipient,
           retentionDays: before.retentionDays,
           consentText: before.consentText,
+          privacyNoticeText: before.privacyNoticeText,
           privacyPolicyUrl: before.privacyPolicyUrl,
         },
         after: {
@@ -140,6 +150,7 @@ export async function PATCH(request: Request) {
           reportRecipient: after.reportRecipient,
           retentionDays: after.retentionDays,
           consentText: after.consentText,
+          privacyNoticeText: after.privacyNoticeText,
           privacyPolicyUrl: after.privacyPolicyUrl,
         },
       }, tx);

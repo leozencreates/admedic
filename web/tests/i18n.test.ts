@@ -74,7 +74,8 @@ describe("UI i18n (spec §4: TR/EN)", () => {
   });
 
   it("lead durum etiketleri", () => {
-    expect(formatLeadStatus("CONSULTATION_BOOKED", "en")).toBe("Consultation Booked");
+    expect(formatLeadStatus("CONSULTATION_BOOKED", "en")).toBe("Consultation booked");
+    expect(formatLeadStatus("NEW", "tr")).toBe("Yanıt bekliyor");
     expect(formatLeadStatus("LOST", "tr")).toBe("Kaybedildi");
     expect(formatLeadStatus("UNKNOWN", "tr")).toBe("lead.status.unknown");
   });

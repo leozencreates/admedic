@@ -266,7 +266,7 @@ export function publishReadiness(input: {
   const content = parseCampaignContent(input.content);
   const coverage = marketCoverage(plan, content);
   if (!content) {
-    reasons.push("Onaylı reklam içeriği bağlanmadı (Kreatif Stüdyo'dan onaylı taslak seçin).");
+    reasons.push("Onaylı reklam içeriği bağlanmadı. \"Reklam oluştur\" bölümünde onaylanmış bir taslak seçin.");
   } else {
     for (const c of coverage) {
       if (c.covered.length === 0)
