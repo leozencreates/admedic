@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Badge, Card, EmptyState } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader } from "../_components/ui";
 import { requirePageActor } from "../_lib/auth";
 import { formatDate, formatDuration, formatNumber } from "../_lib/format";
 import {
@@ -58,17 +58,15 @@ export default async function ApprovalsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Onaylar</h1>
-          <p className="text-sm text-muted">
-            Onayınızı ya da işleminizi bekleyen işler. Onay ilgili sayfada verilir.
-          </p>
-        </div>
-        <Link href="/decisions" className="text-sm font-medium text-brand-strong hover:underline">
-          Ajan kararları geçmişi →
-        </Link>
-      </header>
+      <PageHeader
+        title="Onaylar"
+        description="Onayınızı ya da işleminizi bekleyen işler; onayı ilgili sayfada verirsiniz."
+        actions={
+          <Link href="/decisions" className="secondary-button">
+            Ajan kararları geçmişi
+          </Link>
+        }
+      />
 
       {counts.total === 0 ? (
         <EmptyState message="Onayınızı bekleyen iş yok." />

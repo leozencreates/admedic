@@ -1,6 +1,7 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-28 (tasarım kararları ve Faz 1 düzeltmeleri, aydınlatma / açık rıza ayrımı, ADR-0016).
+Son güncelleme: 2026-09-28 (tasarım temeli, gruplu menü ve mobil gezinme, ADR-0017; Faz 1 ve aydınlatma / açık
+rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
 ADR'ler yeterli). Her maddede öncelik (P0/P1/P2), ilgili spec bölümü ve önerilen yaklaşım vardır.
@@ -46,6 +47,9 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
    `scripts\dev-up.cmd` veya `pnpm db:generate && pnpm --filter @admedic/database build && pnpm db:deploy`.
    Uygulanmadan `/clinic` ayarları yüklenmez (503). Ardından Klinik ve marka → Çalışma alanı ayarları'nda
    aydınlatma metni ve açık rıza metni ayrı ayrı girilmeli; taslak metinler hukuki onaydan geçmeli (ADR-0016 §4).
+
+8. **2026-09-28 Faz 2 (ADR-0017):** yeni paketler (`@fontsource/ibm-plex-sans`, `@fontsource/ibm-plex-sans-arabic`,
+   `lucide-react`) için depo kökünde `pnpm install` çalıştırın; migration yok.
 
 ## 1. Mimari (spec §4) — P1
 

@@ -12,6 +12,7 @@ import {
   wilson,
   type Metrics,
 } from "../_lib/experiment";
+import { Badge, PageHeader } from "./ui";
 type Test = {
   id: string;
   version: number;
@@ -72,34 +73,40 @@ export function TestDetail({
   const dailyTotal = content.budget / content.duration;
   return (
     <div className="space-y-6">
-      <Link href="/tests" className="text-sm text-violet-700">
-        ← Kayıtlı deneyler
-      </Link>
-      <header className="studio-hero">
-        <span className="eyebrow">BAŞLIK DENEYİ · {languageName(content.language).toLocaleUpperCase("tr")}</span>
-        <h1>
-          {content.clinic} · {content.service}
-        </h1>
-        <p>
-          Plan: {content.duration} gün · {formatMoneyUnits(content.budget, currency)} ·{" "}
-          {content.market}. Reklam içeriği deney oluşturulurken sabitlendi.
-        </p>
+      <PageHeader
+        title={
+          <>
+            {content.clinic} · {content.service}
+          </>
+        }
+        crumbs={[{ label: "Testler" }, { label: "A/B testleri", href: "/tests" }]}
+        description={
+          <>
+            {languageName(content.language)} başlık deneyi: {content.duration} gün,{" "}
+            {formatMoneyUnits(content.budget, currency)}, {content.market}. Reklam içeriği deney oluşturulurken
+            sabitlendi.
+          </>
+        }
+      />
+      <div className="space-y-2 text-sm text-ink-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={experimentStatusStyle(test.status).tone}>{experimentStatusStyle(test.status).label}</Badge>
+          <span className="text-xs text-ink-3">Manuel ölçüm · Meta&apos;da yayınlanmaz</span>
+          <span className="text-xs text-ink-3">
+            {dirty ? "Kaydedilmemiş değişiklikler" : `Kayıt sürümü ${test.version}`}
+          </span>
+        </div>
         <p>
           Toplam test bütçesi: {formatMoneyUnits(content.budget, currency)} · Günlük toplam:{" "}
           {formatMoneyUnits(dailyTotal, currency, { precise: true })} · Varyant başına günlük:{" "}
           {formatMoneyUnits(dailyTotal / 2, currency, { precise: true })}
         </p>
-        {content.clinic.includes("DEMO") && <p role="note">DEMO · Harcama, tıklama ve lead sonuçları örnek veridir. Gerçek reklam yayını veya harcama yoktur.</p>}
-        <div className="hero-tags">
-          <span>{experimentStatusStyle(test.status).label}</span>
-          <span>Manuel ölçüm · Meta'da yayınlanmaz</span>
-          <span>
-            {dirty
-              ? "Kaydedilmemiş değişiklikler"
-              : `Kayıt sürümü ${test.version}`}
-          </span>
-        </div>
-      </header>
+        {content.clinic.includes("DEMO") && (
+          <p role="note">
+            Demo · Harcama, tıklama ve lead sonuçları örnek veridir. Gerçek reklam yayını veya harcama yoktur.
+          </p>
+        )}
+      </div>
       <section className="studio-card">
         <div className="flex flex-wrap items-end gap-3">
           <label className="field">
@@ -154,7 +161,7 @@ export function TestDetail({
       {/* Studio deneyleri elle girilen ölçümle çalışır; Meta'dan otomatik çekme yok (sync ucu 409 döner). */}
       {test.status === "RUNNING" && (
         <div className="flex flex-wrap items-center gap-3">
-          <Link href="/recommendations" className="secondary-button">Önerileri incele →</Link>
+          <Link href="/recommendations" className="secondary-button">Önerileri incele</Link>
         </div>
       )}
       {error && (

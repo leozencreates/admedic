@@ -5,7 +5,7 @@ import { api } from "../_lib/client-api";
 import { rtlFor } from "../_lib/creative-lang";
 import { formatDay } from "../_lib/format";
 import { languageName, policyRiskStyle, studioStatusStyle } from "../_lib/labels";
-import { Badge } from "./ui";
+import { Badge, PageHeader } from "./ui";
 type Item = {
   id: string;
   name: string;
@@ -47,17 +47,16 @@ export function Library() {
   );
   return (
     <div className="space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">KREATİF KÜTÜPHANESİ</span>
-        <h1>Her fikir bir sonraki teste hazır.</h1>
-        <p>
-          Taslakları düzenleyin, içerik kontrollerini inceleyin ve ekibinizle
-          onaylayın.
-        </p>
-        <Link href="/studio" className="primary-button mt-5">
-          ✦ Yeni reklam oluştur
-        </Link>
-      </header>
+      <PageHeader
+        title="Reklam kütüphanesi"
+        crumbs={[{ label: "Reklamlar" }]}
+        description="Taslakları düzenleyin, içerik kontrollerini inceleyin ve ekibinizle onaylayın."
+        actions={
+          <Link href="/studio" className="primary-button">
+            Yeni reklam oluştur
+          </Link>
+        }
+      />
       <div className="grid grid-cols-3 gap-3">
         {[
           ["Toplam taslak", items.length],
@@ -155,7 +154,7 @@ export function Library() {
                 </div>
                 <div className="flex gap-3">
                   <Link href={`/studio?id=${item.id}`} className="primary-button">
-                    İncele →
+                    İncele
                   </Link>
                   {item.experiment && (
                     <Link

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { Badge, Card, EmptyState, SectionHeading, StatCard } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from "../_components/ui";
 import { CARE_ROLES, requirePageActor } from "../_lib/auth";
 import { prisma } from "../_lib/db";
 import { formatDate, formatNumber } from "../_lib/format";
@@ -93,12 +93,11 @@ async function Alerts() {
 export default function Page() {
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Uyarılar</h1>
-        <p className="text-sm text-muted">
-          Performans ve bağlantı sorunları. Gördüğünüz uyarıyı işaretleyin, sorun giderilince kapatın.
-        </p>
-      </header>
+      <PageHeader
+        title="Uyarılar"
+        description="Performans ve bağlantı sorunları; gördüğünüz uyarıyı işaretleyin, sorun giderilince kapatın."
+        crumbs={[{ label: "Performans" }]}
+      />
       <Suspense fallback={<Skeleton />}>
         <AlertSummary />
       </Suspense>

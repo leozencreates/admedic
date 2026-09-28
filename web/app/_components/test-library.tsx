@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatMoneyUnits } from "../_lib/format";
 import { experimentStatusStyle, languageName } from "../_lib/labels";
-import { Badge } from "./ui";
+import { Badge, PageHeader } from "./ui";
 type Test = {
   id: string;
   status: string;
@@ -36,26 +36,21 @@ export function TestLibrary() {
   }, []);
   return (
     <div className="space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">KAYITLI DENEYLER / 02</span>
-        <h1>Her testten bir şey öğrenin.</h1>
-        <p>
-          Onaylı reklamlardan oluşturulan deneyler, sabit test planları ve
-          kaydedilmiş sonuçlar.
-        </p>
-        <div className="hero-tags">
-          <span>Manuel metrik girişi</span>
-          <span>Otomatik Meta yayını yok</span>
-        </div>
-      </header>
-      <div className="flex flex-wrap gap-3">
-        <Link href="/library" className="primary-button">
-          Onaylı reklamdan deney oluştur
-        </Link>
-        <Link href="/experiments" className="secondary-button">
-          Hızlı hesaplayıcı
-        </Link>
-      </div>
+      <PageHeader
+        title="A/B testleri"
+        crumbs={[{ label: "Testler" }]}
+        description="Onaylı reklamlardan oluşturulan deneyleri ve elle girilen sonuçlarını izleyin; Meta'da otomatik yayın yapılmaz."
+        actions={
+          <>
+            <Link href="/library" className="primary-button">
+              Onaylı reklamdan deney oluştur
+            </Link>
+            <Link href="/experiments" className="secondary-button">
+              Test hesaplayıcı
+            </Link>
+          </>
+        }
+      />
       {loading ? (
         <div className="studio-card animate-pulse" role="status">
           Deneyler yükleniyor…
@@ -105,7 +100,7 @@ export function TestLibrary() {
                     }}
                   />
                 </div>
-                <p className="text-sm text-violet-700">Sonuçları incele →</p>
+                <p className="text-sm text-violet-700">Sonuçları incele</p>
               </Link>
             );
           })}

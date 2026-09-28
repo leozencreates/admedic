@@ -19,7 +19,7 @@ import {
  * okunmaz (hydration uyumsuzluğu); sunucu `initial` verirse o kullanılır, yoksa mount sonrası
  * çerezden eşitlenir.
  */
-export function LanguageSwitcher({ initial }: { initial?: Language }) {
+export function LanguageSwitcher({ initial, variant = "dark" }: { initial?: Language; variant?: "dark" | "light" }) {
   const router = useRouter();
   const [lang, setLang] = useState<Language>(initial ?? DEFAULT_LANGUAGE);
   useEffect(() => {
@@ -35,7 +35,7 @@ export function LanguageSwitcher({ initial }: { initial?: Language }) {
     router.refresh();
   }
   return (
-    <select value={lang} onChange={handleChange} className="lang-select" aria-label={t("lang.label", lang)}>
+    <select value={lang} onChange={handleChange} className={variant === "light" ? "lang-select lang-select--light" : "lang-select"} aria-label={t("lang.label", lang)}>
       {SUPPORTED_LANGUAGES.map((l) => (
         <option key={l} value={l}>{LANGUAGE_LABEL[l]}</option>
       ))}

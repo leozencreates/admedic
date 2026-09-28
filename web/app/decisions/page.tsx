@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { connection } from "next/server";
 
-import { Badge, Card, EmptyState, SectionHeading, StatCard, Td, Th } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard, Td, Th } from "../_components/ui";
 import { getPrimaryWorkspace, prisma } from "../_lib/db";
 import { formatDate, formatMoney, formatNumber, formatPercent, formatRoas } from "../_lib/format";
 import { actionStyle, decisionApprovalStyle, budgetChangeStatusStyle, targetTypeLabel } from "../_lib/labels";
@@ -239,14 +239,11 @@ async function BudgetChanges() {
 export default function Page() {
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Ajan kararları
-        </h1>
-        <p className="text-sm text-muted">
-          Ajanın kaydettiği öneriler. Hiçbiri onay olmadan para harcamaz ya da bütçeyi değiştirmez.
-        </p>
-      </header>
+      <PageHeader
+        title="Ajan kararları"
+        description="Ajanın kaydettiği öneriler; hiçbiri onayınız olmadan para harcamaz ya da bütçeyi değiştirmez."
+        crumbs={[{ label: "Performans" }]}
+      />
       <Suspense fallback={<Skeleton />}>
         <ApprovalSummary />
       </Suspense>

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { api } from "../_lib/client-api";
-import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 import { ConfirmDialog, Dialog } from "../_components/dialog";
 import { METHOD_LABEL, OBJECTIVE_LABEL, PLANNER_MARKETS, marketLanguages } from "../_lib/campaign-plan";
 import type { PlanAdSet, PlanReasons } from "../_lib/campaign-plan";
@@ -1135,17 +1135,14 @@ export default function CampaignPlannerPage() {
   const rejectLength = rejecting?.reason.length ?? 0;
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">KAMPANYA PLANLAYICI</span>
-        <h1>Kampanya taslağı oluştur</h1>
-        <p>
-          AI ajan pazarları, dilleri ve bütçe türünü planlar. Kampanya onaylanmadan yayınlanmaz; Meta'ya kapalı olarak yüklenir ve
-          yalnızca harcama yetkisi olan kişi etkinleştirir.
-        </p>
-      </header>
+      <PageHeader
+        title="Kampanya planlayıcı"
+        description="AI ajan pazarları, dilleri ve bütçe türünü planlar; kampanya onaylanmadan yayınlanmaz."
+        crumbs={[{ label: "Kampanyalar" }]}
+      />
       {metaDisconnected && (
         <Link href="/meta-connections" className="block rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 hover:bg-rose-100">
-          Meta bağlantısı kesildi. Kampanya işlemlerini sürdürmek için Meta Bağlantıları sayfasından bağlantıyı yenileyin →
+          Meta bağlantısı kesildi. Kampanya işlemlerini sürdürmek için Meta bağlantıları sayfasından bağlantıyı yenileyin.
         </Link>
       )}
       <Card>

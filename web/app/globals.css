@@ -1,24 +1,79 @@
 @import "tailwindcss";
 
 /*
- * Renk ve durum belirteçleri (ADR-0016 · Faz 1). Faz 2'de "Operasyon Odası" (K1-B) değerleriyle
- * değişecek; bileşenler bu adları kullanır. Oranlar WCAG göreli parlaklık formülüyle:
- * muted #58617a → beyazda 6,2:1, #f5f6fb zeminde 5,7:1; input kenarı ≥3:1.
+ * Tasarım belirteçleri — K1-B "Operasyon Odası" (ADR-0017 · Faz 2). Bileşenler yalnızca bu adları kullanır.
+ * Kontrast (WCAG göreli parlaklık): ink-2 #475467 beyazda 7,6:1 · ink-3 #667085 beyazda 4,8:1 ·
+ * brand-600 #5B45D0 beyazda 6,6:1 · input kenarı #828B9E beyazda 3,4:1 (≥3:1 bileşen sınırı).
+ * Eski adlar (muted, brand, brand-strong, pill, input) yeni değerlere bağlanır; sayfalar bozulmaz.
  */
 @theme {
-  --color-muted: #58617a;
-  --color-muted-on-dark: #90a1b9;
-  --color-brand: #7054dc;
-  --color-brand-strong: #6446d0;
-  --color-pill: #5b4bb0;
-  --color-input: #8b93a7;
+  --font-sans: "IBM Plex Sans", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* Yüzey ve metin */
+  --color-canvas: #f4f5f8;
+  --color-surface: #ffffff;
+  --color-subtle: #f8f9fb;
+  --color-ink: #101828;
+  --color-ink-2: #475467;
+  --color-ink-3: #667085;
+  --color-line: #e4e7ec;
+  --color-line-soft: #f2f4f7;
+  --color-btn-line: #d0d5dd;
+
+  /* Marka (durum anlamı taşımaz) */
+  --color-brand-50: #f3f1fd;
+  --color-brand-100: #e6e1fb;
+  --color-brand-200: #cbc1f6;
+  --color-brand-600: #5b45d0;
+  --color-brand-700: #4a36b3;
+
+  /* Koyu menü */
+  --color-nav: #0f1426;
+  --color-nav-fg: #aeb6ca;
+  --color-nav-muted: #8a94ac;
+  --color-nav-active: #2a2562;
+  --color-nav-line: #242b45;
+
+  /* Durum tonları: zemin / kenar / metin (amber = bir insandan eylem bekleniyor) */
+  --color-ok-bg: #ecfdf3;
+  --color-ok-line: #abefc6;
+  --color-ok: #067647;
+  --color-warn-bg: #fffaeb;
+  --color-warn-line: #fedf89;
+  --color-warn: #93370d;
+  --color-warn-badge: #fef0c7;
+  --color-bad-bg: #fef3f2;
+  --color-bad-line: #fecdca;
+  --color-bad: #b42318;
+  --color-bad-fill: #c4320a;
+  --color-info-bg: #eff8ff;
+  --color-info-line: #b2ddff;
+  --color-info: #175cd3;
+  --color-neutral-bg: #f2f4f7;
+  --color-neutral: #344054;
+
+  /* Geriye dönük adlar (Faz 1 sayfaları) */
+  --color-muted: #475467;
+  --color-muted-on-dark: #aeb6ca;
+  --color-brand: #5b45d0;
+  --color-brand-strong: #4a36b3;
+  --color-pill: #4a36b3;
+  --color-input: #828b9e;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-dialog: 12px;
+  --shadow-dropdown: 0 4px 8px -2px rgb(16 24 40 / 0.1);
+  --shadow-dialog: 0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
 }
 
 :root {
-  --background: #f5f6fb;
-  --foreground: #0f172a;
-  --focus-ring: #7054dc;
-  --focus-ring-on-dark: #c4b5fd;
+  --background: #f4f5f8;
+  --foreground: #101828;
+  --focus-ring: #5b45d0;
+  --focus-ring-on-dark: #cbc1f6;
+  --topbar-h: 56px;
+  --tabbar-h: 64px;
 }
 
 @theme inline {
@@ -30,15 +85,18 @@
   body {
     background: var(--background);
     color: var(--foreground);
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: inherit;
+  }
+  .tabular,
+  td,
+  dd {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Odak halkası her yerde görünür (EM-6/12); koyu menüde açık ton. */
@@ -47,6 +105,7 @@
     outline-offset: 2px;
   }
   .app-sidebar :focus-visible,
+  .app-sheet :focus-visible,
   .studio-hero :focus-visible {
     outline-color: var(--focus-ring-on-dark);
   }
@@ -73,19 +132,19 @@
 }
 
 @layer components {
-  /* ── Kabuk ───────────────────────────────────────────────────────────────── */
+  /* ── Kabuk: yan menü + üst çubuk + içerik (ADR-0017) ─────────────────────── */
   .skip-link {
     position: absolute;
     left: 12px;
     top: -60px;
     z-index: 100;
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: white;
-    color: #1e1b4b;
+    color: var(--color-ink);
     font-size: 14px;
     font-weight: 600;
-    box-shadow: 0 4px 16px #0f172a33;
+    box-shadow: var(--shadow-dropdown);
   }
   .skip-link:focus {
     top: 12px;
@@ -95,80 +154,452 @@
     min-height: 100vh;
   }
   .app-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
     width: 248px;
     flex-shrink: 0;
-    padding: 20px 12px 12px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    background: #111529;
-    color: #e2e8f0;
-  }
-  .app-sidebar__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 0 10px;
+    padding: 16px 12px 12px;
+    background: var(--color-nav);
+    color: var(--color-nav-fg);
   }
   .app-brand {
-    font-size: 20px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    color: white;
-  }
-  .app-tagline {
-    margin-top: 4px;
-    font-size: 12px;
-    color: var(--color-muted-on-dark);
-  }
-  .app-menu-toggle {
-    display: none;
-  }
-  .app-sidebar__body {
-    flex: 1;
-    min-height: 0;
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px 16px;
+    min-width: 0;
   }
-  /* Menü kendi içinde kayar; hesap, dil ve çıkış her ekran boyunda görünür kalır (IA-1). */
-  .app-sidebar__nav {
+  .app-brand__mark {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: var(--radius-card);
+    background: var(--color-brand-600);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .app-brand__name {
+    display: block;
+    color: white;
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+  .app-brand__sub {
+    display: block;
+    color: var(--color-nav-muted);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Menü kendi içinde kayar; alt blok her ekran boyunda görünür (IA-1). */
+  .app-nav {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-right: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: #3a4260 transparent;
   }
-  .app-sidebar__foot {
-    flex-shrink: 0;
-    border-top: 1px solid #ffffff1a;
-    padding: 12px 10px 0;
+  .app-nav__group {
+    padding: 16px 10px 6px;
+    color: var(--color-nav-muted);
     font-size: 12px;
-    color: var(--color-muted-on-dark);
+    line-height: 16px;
+    font-weight: 500;
   }
-  .lang-select {
-    border: 1px solid #3a4260;
-    border-radius: 6px;
-    background: #1b2036;
-    color: #e2e8f0;
-    padding: 6px 8px;
+  .app-nav__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: var(--radius-control);
+    color: var(--color-nav-fg);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .app-nav__link:hover {
+    background: #ffffff0d;
+    color: white;
+  }
+  .app-nav__link[aria-current="page"] {
+    background: var(--color-nav-active);
+    color: white;
+  }
+  .app-nav__link svg {
+    flex-shrink: 0;
+  }
+  .app-nav__label {
+    flex: 1;
+    min-width: 0;
+  }
+  .app-nav__foot {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-nav-line);
+  }
+  .app-nav__meta {
+    padding: 8px 10px 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-nav-muted);
+  }
+  /* Bir insandan eylem bekleyen sayılar: amber rozet (renk tek başına anlam taşımaz; sayı + aria-label). */
+  .count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--color-warn-badge);
+    color: var(--color-warn);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .app-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: var(--topbar-h);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .app-topbar__title {
+    display: none;
+    margin: 0;
+    font-size: 18px;
+    line-height: 28px;
+    font-weight: 600;
+    color: var(--color-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .app-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(400px, 40vw);
+    height: 36px;
+    padding: 0 8px 0 10px;
+    border: 1px solid var(--color-input);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-ink-3);
+  }
+  .app-search:focus-within {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .app-search input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    font-size: 14px;
+    color: var(--color-ink);
+  }
+  .app-search input:focus-visible {
+    outline: none;
+  }
+  .app-search input::placeholder {
+    color: var(--color-ink-3);
+  }
+  .kbd {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--color-ink-2);
+    background: var(--color-subtle);
+    border: 1px solid var(--color-line);
+    border-radius: 4px;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+  .app-topbar__spacer {
+    flex: 1;
+  }
+  .env-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--color-warn-bg);
+    border: 1px solid var(--color-warn-line);
+    color: var(--color-warn);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .icon-button {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-btn-line);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-neutral);
+    cursor: pointer;
+  }
+  .icon-button:hover {
+    background: var(--color-subtle);
+  }
+  .icon-button .count-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    border: 2px solid white;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+  }
+  .avatar {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-brand-100);
+    color: var(--color-brand-700);
     font-size: 13px;
+    font-weight: 600;
   }
+  .account-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 8px 0 4px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-ink);
+    cursor: pointer;
+    text-align: left;
+  }
+  .account-button:hover {
+    background: var(--color-subtle);
+  }
+  .account-button__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 16px;
+  }
+  .account-button__name {
+    font-size: 13px;
+    font-weight: 500;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .account-button__role {
+    font-size: 12px;
+    color: var(--color-ink-3);
+  }
+
+  /* Açılır panel (Yeni, bildirimler, hesap) */
+  .popover-anchor {
+    position: relative;
+  }
+  .popover {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 50;
+    min-width: 240px;
+    max-width: min(360px, calc(100vw - 24px));
+    padding: 6px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-dropdown);
+  }
+  .popover--wide {
+    width: 360px;
+  }
+  .popover__head {
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--color-ink-2);
+  }
+  .popover__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-ink);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .popover__item:hover,
+  .popover__item:focus-visible {
+    background: var(--color-subtle);
+  }
+  .popover__item svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--color-ink-2);
+  }
+  .popover__hint {
+    display: block;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+  .popover__sep {
+    height: 1px;
+    margin: 6px 0;
+    background: var(--color-line);
+  }
+  .popover__foot {
+    display: block;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-brand-700);
+    text-decoration: none;
+    border-radius: var(--radius-control);
+  }
+  .popover__foot:hover {
+    background: var(--color-brand-50);
+  }
+
   .app-main {
+    flex: 1;
     min-width: 0;
     width: 100%;
-    max-width: 1500px;
+    max-width: 1440px;
     margin: 0 auto;
-    padding: 24px 40px 60px;
-  }
-  .app-topline {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 16px;
+    padding: 24px 32px 64px;
   }
   .login-main {
     min-height: 100vh;
     padding: 48px 20px;
+  }
+
+  /* Mobil alt sekme çubuğu ve tam ekran menü (K7-A) */
+  .app-tabbar,
+  .app-sheet {
+    display: none;
+  }
+
+  /* ── Sayfa başlığı (K6-B) ─────────────────────────────────────────────── */
+  .page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 16px;
+    margin-bottom: 24px;
+  }
+  .page-header__crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+  .page-header__crumbs a {
+    color: var(--color-ink-2);
+    text-decoration: none;
+  }
+  .page-header__crumbs a:hover {
+    text-decoration: underline;
+  }
+  .page-header h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  .page-header__desc {
+    margin-top: 4px;
+    max-width: 760px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink-2);
+  }
+  .page-header__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  /* Tanıtım yalnızca boş durumda (K6-B): sayfanın ilk kullanımında ne işe yaradığını anlatır. */
+  .intro-panel {
+    border: 1px dashed var(--color-btn-line);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    padding: 24px;
+  }
+  .intro-panel h2 {
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+  .intro-panel p {
+    margin-top: 4px;
+    max-width: 640px;
+    color: var(--color-ink-2);
   }
 
   /* ── Sayfa başlığı (hero) ─────────────────────────────────────────────── */
@@ -218,32 +649,33 @@
 
   /* ── Kart, form, düğme ────────────────────────────────────────────────── */
   .studio-card {
-    border: 1px solid #e7e9f2;
-    background: white;
-    border-radius: 20px;
-    padding: 24px;
-    box-shadow: 0 4px 24px #1e254104;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    padding: 20px;
   }
   .studio-card h2 {
-    font-size: 18px;
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--color-ink);
   }
   .section-kicker {
     font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--color-muted);
-    margin-bottom: 8px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--color-ink-2);
+    margin-bottom: 6px;
   }
   /* `.field` yalnızca etiket sarmalayıcısıdır; tek başına giriş alanı için `.input`. */
   .field {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     font-size: 12px;
-    font-weight: 550;
-    color: var(--color-muted);
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--color-neutral);
     min-width: 0;
   }
   .field input,
@@ -251,12 +683,14 @@
   .field textarea,
   .input {
     width: 100%;
+    min-height: 36px;
     border: 1px solid var(--color-input);
-    border-radius: 10px;
-    background: #fbfcff;
-    padding: 11px 12px;
-    color: #20283e;
-    font-size: 13px;
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    padding: 7px 10px;
+    color: var(--color-ink);
+    font-size: 14px;
+    line-height: 20px;
     font-weight: 400;
   }
   .field textarea,
@@ -266,69 +700,103 @@
   .field input[type="checkbox"],
   .field input[type="radio"] {
     width: auto;
+    min-height: 0;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-brand-600);
   }
   .primary-button,
   .secondary-button,
+  .ghost-button,
   .danger-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    min-height: 40px;
-    border-radius: 10px;
-    padding: 9px 16px;
-    font-size: 13px;
-    font-weight: 600;
+    gap: 6px;
+    min-height: 36px;
+    border-radius: var(--radius-control);
+    padding: 7px 14px;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background-color 0.15s;
   }
   .primary-button {
-    background: var(--color-brand);
+    background: var(--color-brand-600);
+    border: 1px solid var(--color-brand-600);
     color: white;
   }
   .primary-button:hover {
-    background: var(--color-brand-strong);
+    background: var(--color-brand-700);
   }
   .secondary-button {
-    background: white;
-    color: #3d465c;
-    border: 1px solid #c9cedb;
+    background: var(--color-surface);
+    color: var(--color-neutral);
+    border: 1px solid var(--color-btn-line);
   }
   .secondary-button:hover {
-    background: #f5f3ff;
+    background: var(--color-subtle);
+  }
+  .ghost-button {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-ink-2);
+  }
+  .ghost-button:hover {
+    background: var(--color-line-soft);
   }
   .danger-button {
-    background: #c4320a;
+    background: var(--color-bad-fill);
+    border: 1px solid var(--color-bad-fill);
     color: white;
   }
   .danger-button:hover {
     background: #a52a08;
   }
+  .primary-button:disabled,
+  .secondary-button:disabled,
+  .danger-button:disabled {
+    opacity: 1;
+    background: var(--color-line-soft);
+    border-color: var(--color-line);
+    color: #98a2b3;
+  }
   .status-pill {
     display: inline-flex;
-    border-radius: 30px;
-    padding: 4px 10px;
+    align-items: center;
+    height: 22px;
+    border-radius: 999px;
+    padding: 0 8px;
     font-size: 12px;
-    font-weight: 600;
-    color: var(--color-pill);
-    background: #eeeafa;
+    font-weight: 500;
+    color: var(--color-brand-700);
+    background: var(--color-brand-50);
+  }
+  .text-link {
+    color: var(--color-brand-700);
+    font-weight: 500;
+  }
+  .text-link:hover {
+    text-decoration: underline;
   }
 
   /* ── Diyalog (`_components/dialog.tsx`) ──────────────────────────────── */
   .app-dialog {
     /* Tailwind'in sıfırlaması `margin: 0` verir; modal diyalog ortalansın. */
     margin: auto;
-    width: min(520px, calc(100vw - 32px));
+    width: min(480px, calc(100vw - 32px));
     max-height: calc(100vh - 48px);
     overflow-y: auto;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-dialog);
     padding: 24px;
-    color: #0f172a;
+    color: var(--color-ink);
     background: white;
-    box-shadow:
-      0 12px 16px -4px #10182814,
-      0 4px 6px -2px #10182808;
+    box-shadow: var(--shadow-dialog);
   }
   .app-dialog::backdrop {
     background: rgb(16 24 40 / 0.45);
@@ -387,71 +855,221 @@
     opacity: 0.85;
   }
 
-  @media (min-width: 1024px) {
-    .app-sidebar {
-      position: sticky;
-      top: 0;
-      height: 100vh;
-    }
-  }
-
-  /* Telefon ve tablet: menü bir düğmenin arkasında; ilk ekran içeriğe kalır (IA-5, EM-8). */
+  /* ── Telefon ve tablet (K7-A): ince üst çubuk, alt sekme çubuğu, tam ekran menü ── */
   @media (max-width: 1023px) {
-    .app-shell {
-      flex-direction: column;
-    }
     .app-sidebar {
-      position: sticky;
-      top: 0;
-      z-index: 40;
-      width: 100%;
-      padding: 8px 12px;
-      gap: 0;
-    }
-    .app-sidebar__head {
-      padding: 0 4px;
-    }
-    .app-brand {
-      font-size: 18px;
-    }
-    .app-tagline {
       display: none;
     }
-    .app-menu-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 44px;
-      padding: 0 14px;
-      border: 1px solid #3a4260;
-      border-radius: 8px;
-      background: #1b2036;
-      color: #e2e8f0;
-      font-size: 14px;
-      font-weight: 600;
+    .app-topbar {
+      padding: 0 8px 0 16px;
+      gap: 4px;
     }
-    .app-sidebar__body {
+    .app-topbar__title {
+      display: block;
+      flex: 1;
+    }
+    .app-topbar__spacer,
+    .app-topbar .env-chip,
+    .app-topbar .account-anchor,
+    .app-topbar .new-anchor,
+    .app-search .kbd {
       display: none;
-      max-height: calc(100vh - 64px);
-      overflow-y: auto;
-      padding: 12px 4px 8px;
     }
-    .app-sidebar[data-open="true"] .app-sidebar__body {
+    .app-search {
+      display: none;
+    }
+    .app-search[data-open="true"] {
       display: flex;
+      position: absolute;
+      inset: 8px 8px auto 8px;
+      width: auto;
+      height: 40px;
+      z-index: 2;
     }
-    .app-sidebar__nav {
-      overflow: visible;
+    .icon-button {
+      width: 44px;
+      height: 44px;
+      border-color: transparent;
+    }
+    .icon-button .count-badge {
+      top: 2px;
+      right: 2px;
+    }
+    .mobile-only {
+      display: inline-flex;
+    }
+    /* Sayfa adı üst çubukta; kayıt sayfası dışında h1 ve grup kırıntısı yalnızca ekran okuyucuya kalır. */
+    .page-header:not(.page-header--record) h1,
+    .page-header:not(.page-header--record) .page-header__crumbs {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .page-header:not(.page-header--record) .page-header__desc {
+      margin-top: 0;
+    }
+    .popover {
+      position: fixed;
+      left: 8px;
+      right: 8px;
+      top: calc(var(--topbar-h) + 4px);
+      width: auto;
+      max-width: none;
     }
     .app-main {
-      padding: 16px 16px 48px;
+      padding: 16px 16px calc(var(--tabbar-h) + 32px);
+    }
+    .app-tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      display: flex;
+      height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-line);
+    }
+    /* Klavye açıkken (sohbet yazarken) alt çubuk yazma alanını örtmesin. */
+    .app-tabbar[data-hidden="true"] {
+      display: none;
+    }
+    .app-tab {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      border: 0;
+      background: transparent;
+      color: var(--color-ink-2);
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .app-tab[aria-current="page"],
+    .app-tab[aria-expanded="true"] {
+      color: var(--color-brand-600);
+    }
+    .app-tab__icon {
+      position: relative;
+      display: inline-flex;
+    }
+    .app-tab .count-badge {
+      position: absolute;
+      top: -6px;
+      left: 14px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      font-size: 11px;
+    }
+    .app-tab__label {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 2px;
+    }
+    .app-sheet[data-open="true"] {
+      position: fixed;
+      inset: 0 0 calc(var(--tabbar-h) + env(safe-area-inset-bottom)) 0;
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 12px 12px 24px;
+      background: var(--color-nav);
+      color: var(--color-nav-fg);
+    }
+    .app-sheet .app-nav {
+      flex: none;
+      overflow: visible;
+    }
+    .app-sheet .app-nav__link {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .app-sheet__account {
+      margin-top: 16px;
+      padding: 12px 10px 0;
+      border-top: 1px solid var(--color-nav-line);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .app-sheet__account strong {
+      color: white;
+      font-weight: 500;
+    }
+    .app-sheet__row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .app-sheet__logout {
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid #3a4260;
+      border-radius: var(--radius-control);
+      background: transparent;
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
     }
   }
-  @media (max-width: 600px) {
+  @media (min-width: 1024px) {
+    .mobile-only {
+      display: none;
+    }
+  }
+  @media (max-width: 640px) {
+    .primary-button,
+    .secondary-button,
+    .ghost-button,
+    .danger-button {
+      min-height: 44px;
+    }
+    .studio-card {
+      padding: 16px;
+    }
     .studio-hero {
       padding: 24px;
     }
-    .studio-card {
-      padding: 18px;
+    .page-header {
+      margin-bottom: 16px;
     }
+    .page-header h1 {
+      font-size: 20px;
+      line-height: 28px;
+    }
+  }
+  .lang-select {
+    border: 1px solid #3a4260;
+    border-radius: var(--radius-control);
+    background: #1b2036;
+    color: #e2e8f0;
+    min-height: 36px;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+  .lang-select--light {
+    border-color: var(--color-input);
+    background: var(--color-surface);
+    color: var(--color-ink);
   }
 }

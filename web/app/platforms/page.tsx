@@ -4,7 +4,7 @@ import Link from "next/link";
 import { api } from "../_lib/client-api";
 import { formatDate } from "../_lib/format";
 import { entityStatusStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 interface Platform { id: string; name: string; status: string; syncedAt: string | null; metaAccountId: string | null }
 export default function PlatformsPage() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
@@ -25,11 +25,16 @@ export default function PlatformsPage() {
   useEffect(() => { load(); }, []);
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">PLATFORM BAĞLANTILARI</span>
-        <h1>Platform bağlantıları</h1>
-        <p>Reklam hesaplarınız ve durumları. Meta hesaplarını <Link href="/meta-connections" className="underline">Meta Bağlantıları</Link> sayfasından bağlayın.</p>
-      </header>
+      <PageHeader
+        title="Platformlar"
+        description={
+          <>
+            Reklam hesaplarınızı ve durumlarını görün; Meta hesaplarını{" "}
+            <Link href="/meta-connections" className="text-link">Meta bağlantıları</Link> sayfasından bağlayın.
+          </>
+        }
+        crumbs={[{ label: "Ayarlar" }]}
+      />
       <Card>
         <SectionHeading
           title="Reklam hesapları"
@@ -46,7 +51,7 @@ export default function PlatformsPage() {
             </button>
           </div>
         ) : platforms.length === 0 ? (
-          <EmptyState message="Henüz reklam hesabı yok. Meta hesabınızı Meta Bağlantıları sayfasından bağlayın." />
+          <EmptyState message="Henüz reklam hesabı yok. Meta hesabınızı Meta bağlantıları sayfasından bağlayın." />
         ) : (
           <div className="space-y-3">
             {platforms.map((p) => {

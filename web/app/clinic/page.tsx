@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
-import { Card, EmptyState, SectionHeading, Badge } from "../_components/ui";
+import { Card, EmptyState, SectionHeading, Badge, PageHeader } from "../_components/ui";
 import { ConfirmDialog } from "../_components/dialog";
 import { BRIEF_LANGUAGES } from "../_lib/creative-lang";
 import { countryName, entityStatusStyle, languageName } from "../_lib/labels";
@@ -423,17 +423,16 @@ export default function ClinicPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Klinik ve marka</h1>
-          <p className="mt-1 text-sm text-muted">
-            Diller, hedef pazar ve yasaklı ifadeler reklam üretimine ve içerik kontrolüne beslenir.
-          </p>
-        </div>
-        <button type="button" onClick={() => setShowCreate((v) => !v)} className="secondary-button" aria-expanded={showCreate}>
-          {showCreate ? "Formu gizle" : "+ Yeni klinik"}
-        </button>
-      </header>
+      <PageHeader
+        title="Klinik ve marka"
+        description="Diller, hedef pazar ve yasaklı ifadeler reklam üretimine ve içerik kontrolüne beslenir."
+        crumbs={[{ label: "Ayarlar" }]}
+        actions={
+          <button type="button" onClick={() => setShowCreate((v) => !v)} className="secondary-button" aria-expanded={showCreate}>
+            {showCreate ? "Formu gizle" : "+ Yeni klinik"}
+          </button>
+        }
+      />
       {notice && (
         <p
           role={notice.kind === "ok" ? "status" : "alert"}

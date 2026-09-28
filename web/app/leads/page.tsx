@@ -1,11 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LEAD_SEARCH_EVENT } from "../_components/app-shell";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/client-api";
 import { formatDate } from "../_lib/format";
 import { LEAD_STAGES, leadStatusStyle } from "../_lib/labels";
 import { LeadTable, toLead, type ApiLead, type Lead } from "../_components/lead-table";
+import { PageHeader } from "../_components/ui";
 
 /** Liste sekme görünürken bu aralıkla sessizce yenilenir (yükleniyor göstergesi yok). */
 const REFRESH_MS = 20_000;
@@ -63,6 +65,15 @@ export default function LeadsPage() {
     }
   }, []);
 
+  // Üst çubuktaki lead araması (ADR-0017): `/leads?q=` ile gelinir ya da sayfadayken olay gönderilir.
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search).get("q");
+    if (initial) setSearch(initial);
+    const onSearch = (e: Event) => setSearch(String((e as CustomEvent<string>).detail ?? ""));
+    window.addEventListener(LEAD_SEARCH_EVENT, onSearch);
+    return () => window.removeEventListener(LEAD_SEARCH_EVENT, onSearch);
+  }, []);
+
   useEffect(() => {
     void load();
     const timer = setInterval(() => {
@@ -100,16 +111,14 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">LEAD YÖNETİMİ / 01</span>
-        <h1>Lead CRM</h1>
-        <p>Tüm potansiyel müşterilerinizi görün, filtreleyin ve takip edin.</p>
-        {!loading && !error && (
-          <div className="hero-tags">
-            <span>{leads.length} lead</span>
-          </div>
-        )}
-      </header>
+      <PageHeader
+        title="Lead'ler"
+        description={
+          !loading && !error
+            ? `Reklamlardan gelen ${leads.length} lead'i görün, filtreleyin ve takip edin.`
+            : "Reklamlardan gelen lead'leri görün, filtreleyin ve takip edin."
+        }
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="field min-w-[200px] flex-1">

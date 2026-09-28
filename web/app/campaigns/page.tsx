@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { connection } from "next/server";
 
-import { Badge, Card, SectionHeading, Td, Th } from "../_components/ui";
+import { Badge, Card, PageHeader, SectionHeading, Td, Th } from "../_components/ui";
 import { daysAgoUTC, getPrimaryWorkspace, prisma } from "../_lib/db";
 import { formatMoney, formatNumber, formatRoas } from "../_lib/format";
 import { campaignWorkflowStyle, entityStatusStyle } from "../_lib/labels";
@@ -70,13 +70,13 @@ async function Campaigns() {
     <Card>
       <SectionHeading
         title="Kampanyalar"
-        description="Son 7 günün harcaması, cirosu ve reklam getirisi (ROAS). Kampanya adı, onay ve yayın işlemlerinin yapıldığı Kampanya Planlayıcı satırını açar."
+        description="Son 7 günün harcaması, cirosu ve reklam getirisi (ROAS). Kampanya adı, onay ve yayın işlemlerinin yapıldığı Kampanya planlayıcı satırını açar."
       />
       {campaigns.length === 0 ? (
         <EmptyWithAction
           message="Henüz kampanya yok."
           href="/campaign-planner"
-          action="Kampanya Planlayıcı'da ilk kampanyanızı oluşturun."
+          action="Kampanya planlayıcı'da ilk kampanyanızı oluşturun."
         />
       ) : (
         <ScrollRegion label="Kampanyalar tablosu">
@@ -163,9 +163,9 @@ async function AdSets() {
       <SectionHeading title="Reklam setleri" description="Bütçe ve durum; optimizasyonun en küçük birimi." />
       {adsets.length === 0 ? (
         <EmptyWithAction
-          message="Henüz reklam seti yok. Reklam setleri, Kampanya Planlayıcı'da kampanya oluşturulduğunda burada listelenir."
+          message="Henüz reklam seti yok. Reklam setleri, Kampanya planlayıcı'da kampanya oluşturulduğunda burada listelenir."
           href="/campaign-planner"
-          action="Kampanya Planlayıcı'yı açın."
+          action="Kampanya planlayıcı'yı açın."
         />
       ) : (
         <ScrollRegion label="Reklam setleri tablosu">
@@ -210,16 +210,15 @@ async function AdSets() {
 export default function Page() {
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Kampanyalar</h1>
-        <p className="text-sm text-muted">
-          Kampanya ve reklam seti envanteri. Onay, Meta'ya yükleme ve etkinleştirme{" "}
-          <Link href="/campaign-planner" className="font-medium text-violet-700 underline-offset-2 hover:underline">
-            Kampanya Planlayıcı
+      <PageHeader
+        title="Kampanyalar"
+        description="Kampanya ve reklam seti envanteri; onay, Meta'ya yükleme ve yayına alma Kampanya planlayıcı'da yapılır."
+        actions={
+          <Link href="/campaign-planner" className="primary-button">
+            Kampanya planla
           </Link>
-          'da yapılır.
-        </p>
-      </header>
+        }
+      />
       <Suspense fallback={<Skeleton label="Kampanyalar yükleniyor" />}>
         <Campaigns />
       </Suspense>

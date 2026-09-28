@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../_lib/client-api";
-import { Badge } from "../_components/ui";
+import { Badge, PageHeader } from "../_components/ui";
 import { formatDate, formatMoney, formatMoneyUnits, formatNumber } from "../_lib/format";
 import { priorityLabel, recommendationStatusStyle } from "../_lib/labels";
 import {
@@ -94,14 +94,14 @@ export default function RecommendationsPage() {
   if (loading) return <div className="studio-card animate-pulse" role="status">Öneriler yükleniyor…</div>;
   return (
     <div className="space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">ÖNERİLER</span>
-        <h1>Optimizasyon önerileri</h1>
-        <p>Tamamlanan A/B testlerinden üretilen öneriler. Onaylanmadan hiçbiri uygulanmaz.</p>
-        <p className="mt-2">
-          {formatNumber(pending)} öneri onay bekliyor · {formatNumber(applied)} öneri uygulandı
-        </p>
-      </header>
+      <PageHeader
+        title="Öneriler"
+        description="Tamamlanan A/B testlerinden üretilen öneriler; onaylamadığınız hiçbir öneri uygulanmaz."
+        crumbs={[{ label: "Performans" }]}
+      />
+      <p className="text-sm text-muted">
+        {formatNumber(pending)} öneri onay bekliyor · {formatNumber(applied)} öneri uygulandı
+      </p>
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">{error}</div>}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Duruma göre süz">
         {FILTERS.map((s) => {

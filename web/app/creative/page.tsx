@@ -3,7 +3,7 @@ import { useState, useEffect, useId } from "react";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatDay } from "../_lib/format";
 import { ctaDisplay, entityStatusStyle, languageName, policyRiskStyle, studioStatusStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 import { LANG_LABEL, BRIEF_LANGUAGES, rtlFor } from "../_lib/creative-lang";
 interface CreativeData { id: string; name: string; status: string; languages: string[]; variations: number; policyRisk: string | null; primaryText?: string; headline?: string; createdAt: string; }
 interface Variant { headline: string; text: string; description?: string; cta: string }
@@ -84,11 +84,11 @@ export default function CreativePage() {
   const overall = overallRisk ? policyRiskStyle(overallRisk) : null;
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">KREATİF ÜRETİMİ</span>
-        <h1>Kreatif üretimi</h1>
-        <p>Brif bazlı, içerik kontrollü çok dilli kreatif üretimi; her dil için ayrı, yerelleştirilmiş üretim.</p>
-      </header>
+      <PageHeader
+        title="Çok dilli üretim"
+        crumbs={[{ label: "Reklamlar" }]}
+        description="Tek brifle her hedef dil için ayrı, yerelleştirilmiş ve içerik kontrolünden geçmiş reklam metinleri üretin."
+      />
       <Card>
         <SectionHeading title="Yeni kreatif" description="Hedef, hedef kitle ve üslup bilgisiyle AI reklam metni üretir; içerik kontrolünden geçirir." />
         <div className="mt-6 space-y-4">

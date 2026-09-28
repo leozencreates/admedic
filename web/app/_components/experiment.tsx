@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { defaultAccountCurrency } from "../_lib/client-api";
 import { formatMoneyUnits, formatRatio } from "../_lib/format";
+import { PageHeader } from "./ui";
 import {
   compare,
   validMetrics,
@@ -31,18 +32,12 @@ export function Experiment({
   const valid = metrics.every(validMetrics);
   return (
     <div className="space-y-7">
-      <header className="studio-hero">
-        <span className="eyebrow">DENEY MERKEZİ / 02</span>
-        <h1>Tahmin etmeyin. Karşılaştırın.</h1>
-        <p>
-          A ve B reklamlarının sonuçlarını girin; dönüşüm oranını, maliyeti ve
-          belirsizliği birlikte görün.
-        </p>
-        <div className="hero-tags">
-          <span>{source}</span>
-          <span>Otomatik harcama kapalı</span>
-        </div>
-      </header>
+      <PageHeader
+        title="Test hesaplayıcı"
+        crumbs={[{ label: "Testler" }]}
+        description="A ve B reklamlarının elle girdiğiniz sonuçlarından dönüşüm oranını, maliyeti ve belirsizliği birlikte görün; bu sayfa harcama yapmaz."
+      />
+      <p className="text-xs text-ink-3">Veri kaynağı: {source}</p>
       <section className="studio-card">
         <div className="flex flex-wrap items-end gap-4">
           <label className="field">
@@ -73,7 +68,7 @@ export function Experiment({
               ]);
               setElapsed(7);
               setDuration(7);
-              setSource("DEMO — örnek veriler");
+              setSource("Demo — örnek veriler");
             }}
           >
             Örnek verilerle incele

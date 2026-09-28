@@ -4,7 +4,7 @@ import Link from "next/link";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatMoney, formatPercent, formatRoas } from "../_lib/format";
 import { policyMatcherLabel, policyRiskStyle, ruleActiveStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 const OBJECTIVE_LABEL: Record<string, string> = {
   MAX_ROAS: "Maksimum ROAS",
   MAX_REVENUE: "Maksimum gelir",
@@ -83,21 +83,21 @@ export default function PoliciesPage() {
   const enabled = policy ? ruleActiveStyle(policy.enabled) : null;
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">POLİTİKALAR</span>
-        <h1>Politika ve bütçe koruma</h1>
-        <p>Reklam metinleri önce içerik kurallarıyla, ardından AI değerlendirmesiyle kontrol edilir. Bütçe koruma sınırları aşağıda ayrıca listelenir.</p>
-      </header>
+      <PageHeader
+        title="Politika ve bütçe koruma"
+        description="Reklam metinleri önce içerik kurallarıyla, ardından AI değerlendirmesiyle kontrol edilir; bütçe koruma sınırları aşağıda listelenir."
+        crumbs={[{ label: "Ayarlar" }]}
+      />
       <Card>
         <SectionHeading
-          title="Politika kuralları (salt okunur)"
+          title="İçerik kuralları (salt okunur)"
           description="Tüm çalışma alanlarında geçerli, sürümlü içerik kuralları: garanti vaadi, önce/sonra karşılaştırması, kişisel özellik ve ifade listeleri. Kliniğe özel yasaklı ifadeler klinik profilinden gelir."
-          action={<Link href="/policy-rules" className="shrink-0 whitespace-nowrap text-xs font-medium text-violet-700 hover:underline">{canEdit ? "Kuralları yönet →" : "Sürüm geçmişi →"}</Link>}
+          action={<Link href="/policy-rules" className="shrink-0 whitespace-nowrap text-xs font-medium text-violet-700 hover:underline">{canEdit ? "Kuralları yönet" : "Sürüm geçmişi"}</Link>}
         />
         {loading ? (
           <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
         ) : rulesError !== null ? (
-          <LoadError title="Politika kuralları yüklenemedi." message={rulesError} onRetry={() => void load()} />
+          <LoadError title="İçerik kuralları yüklenemedi." message={rulesError} onRetry={() => void load()} />
         ) : rules.length === 0 ? (
           <EmptyState message="Henüz politika kuralı yok." />
         ) : (

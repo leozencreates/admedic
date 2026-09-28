@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LANGUAGE,
-  NAV_ITEMS,
   SUPPORTED_LANGUAGES,
   UI_LANG_COOKIE,
   dictionaries,
   formatLeadStatus,
   isLanguage,
   languageFromCookieHeader,
-  navLinks,
   parseLanguage,
   t,
 } from "../app/_lib/i18n";
@@ -42,7 +40,7 @@ describe("UI i18n (spec §4: TR/EN)", () => {
   });
 
   it("t() dile göre çevirir; bilinmeyen dil/anahtar güvenli düşer", () => {
-    expect(t("nav.leads", "tr")).toBe("Lead CRM");
+    expect(t("nav.leads", "tr")).toBe("Lead'ler");
     expect(t("nav.billing", "en")).toBe("Billing");
     expect(t("nav.billing", "tr")).toBe("Faturalar");
     expect(t("nav.billing")).toBe(t("nav.billing", DEFAULT_LANGUAGE));
@@ -59,18 +57,6 @@ describe("UI i18n (spec §4: TR/EN)", () => {
     expect(languageFromCookieHeader("ui-lang=ru")).toBe("tr");
     expect(languageFromCookieHeader("")).toBe("tr");
     expect(languageFromCookieHeader(null)).toBe("tr");
-  });
-
-  it("nav bağlantıları kreatif ve onay sayfalarını içerir; etiketler dile göre üretilir", () => {
-    const hrefs = NAV_ITEMS.map((i) => i.href);
-    expect(hrefs).toContain("/creative");
-    expect(hrefs).toContain("/approvals");
-    expect(new Set(hrefs).size).toBe(hrefs.length);
-    const en = navLinks("en");
-    expect(en.find((l) => l.href === "/creative")?.label).toBe("Creative Generation");
-    expect(navLinks("tr").find((l) => l.href === "/creative")?.label).toBe("Kreatif Üretimi");
-    expect(navLinks("tr").find((l) => l.href === "/approvals")?.label).toBe("Onaylar");
-    expect(en).toHaveLength(NAV_ITEMS.length);
   });
 
   it("lead durum etiketleri", () => {

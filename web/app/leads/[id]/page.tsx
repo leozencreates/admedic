@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "../../_lib/client-api";
 import { LeadChat } from "../../_components/lead-chat";
-import { Badge } from "../../_components/ui";
+import { Badge, PageHeader } from "../../_components/ui";
 import { ConfirmDialog, Dialog } from "../../_components/dialog";
 import { toLead, type ApiLead } from "../../_components/lead-table";
 import { formatDate } from "../../_lib/format";
@@ -363,20 +363,18 @@ export default function LeadDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/leads" className="text-sm text-violet-600">
-        ← Lead listesine geri dön
-      </Link>
-
-      <header className="studio-hero">
-        <span className="eyebrow">LEAD AYRINTISI</span>
-        <h1 dir="auto">{lead.name}</h1>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Badge tone={status.tone}>{status.label}</Badge>
-          <span className="text-xs text-slate-400">
-            Oluşturulma: <time dateTime={lead.created}>{formatDate(lead.created)}</time>
+      <PageHeader
+        title={<bdi dir="auto">{lead.name}</bdi>}
+        crumbs={[{ label: "Lead'ler", href: "/leads" }]}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-3">
+            <Badge tone={status.tone}>{status.label}</Badge>
+            <span className="text-xs text-ink-3">
+              Oluşturulma: <time dateTime={lead.created}>{formatDate(lead.created)}</time>
+            </span>
           </span>
-        </div>
-      </header>
+        }
+      />
 
       {lead.pendingFetch && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -407,7 +405,7 @@ export default function LeadDetailPage() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className="studio-card">
-          <div className="section-kicker">BİLGİLER</div>
+          <div className="section-kicker">Bilgiler</div>
           <h2>Kişi bilgileri</h2>
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between gap-4">
@@ -501,7 +499,7 @@ export default function LeadDetailPage() {
         </section>
 
         <section className="studio-card">
-          <div className="section-kicker">DURUM</div>
+          <div className="section-kicker">Durum</div>
           <h2 ref={statusHeadingRef} tabIndex={-1}>
             Durumu güncelle
           </h2>

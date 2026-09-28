@@ -19,7 +19,7 @@ import { rtlFor } from "../_lib/creative-lang";
 import { formatMoneyUnits } from "../_lib/format";
 import { languageName, policyRiskStyle, studioStatusStyle, type StatusStyle } from "../_lib/labels";
 import type { StudioPolicy } from "../_lib/studio-service";
-import { Badge } from "./ui";
+import { Badge, PageHeader } from "./ui";
 
 type Saved = {
   id: string;
@@ -256,18 +256,11 @@ export function Studio({
   const contentLang = draft ? draft.language.toLowerCase() : undefined;
   return (
     <div className="space-y-7">
-      <header className="studio-hero">
-        <span className="eyebrow">AI KREATİF STÜDYO / 01</span>
-        <h1>Bir fikir. Sekiz dil. Yeni olasılıklar.</h1>
-        <p>
-          Klinik ve hedef pazarınıza göre reklam metinleri hazırlayın, inceleyin
-          ve test planına dönüştürün.
-        </p>
-        <div className="hero-tags">
-          <span>{BRIEF_LANGUAGES.join(" · ")}</span>
-          <span>{saved ? studioStatusStyle(saved.status).label : "Yeni taslak"}</span>
-        </div>
-      </header>
+      <PageHeader
+        title="Reklam oluştur"
+        crumbs={[{ label: "Reklamlar" }]}
+        description="Klinik ve hedef pazarınıza göre reklam metinleri hazırlayın, inceleyin ve test planına dönüştürün."
+      />
       <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
         <section className="studio-card self-start">
           <div className="section-kicker">Adım 1 — Reklam brifi</div>
@@ -671,7 +664,7 @@ export function Studio({
                         disabled={busy}
                         onClick={() => transition("experiment")}
                       >
-                        A/B deneyi oluştur →
+                        A/B deneyi oluştur
                       </button>
                     )}
                   {saved?.experimentId && (
@@ -679,7 +672,7 @@ export function Studio({
                       className="secondary-button"
                       href={`/tests/${saved.experimentId}`}
                     >
-                      Kayıtlı deneye git →
+                      Kayıtlı deneye git
                     </Link>
                   )}
                 </div>

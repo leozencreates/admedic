@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { formatDate } from "../_lib/format";
 import { POLICY_MATCHERS, policyMatcherLabel, policyRiskStyle, ruleActiveStyle } from "../_lib/labels";
-import { Card, EmptyState, SectionHeading, Badge } from "../_components/ui";
+import { Card, EmptyState, SectionHeading, Badge, PageHeader } from "../_components/ui";
 
 type Rule = {
   id: string;
@@ -119,17 +119,15 @@ export default function PolicyRulesPage() {
 
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">{canEdit ? "PLATFORM YÖNETİCİSİ" : "POLİTİKA KURALLARI"}</span>
-        <h1>Politika kuralları</h1>
-        <p>
-          Reklam metinlerinin içerik kontrolünde kullanılan ortak kurallar; tüm çalışma alanlarında geçerlidir. Her
-          değişiklik yeni bir sürüm olarak kaydedilir, eski sürümler silinmez.
-          {canEdit
-            ? " Bu kuralları düzenleme yetkiniz var (platform yöneticisi)."
-            : " Bu sayfa salt okunurdur; kuralları yalnızca platform yöneticisi düzenleyebilir."}
-        </p>
-      </header>
+      <PageHeader
+        title="İçerik kuralları"
+        description={
+          canEdit
+            ? "Tüm çalışma alanlarında geçerli içerik kurallarını düzenleyin; her değişiklik yeni bir sürüm olarak kaydedilir."
+            : "Tüm çalışma alanlarında geçerli içerik kuralları; yalnızca platform yöneticisi düzenleyebilir."
+        }
+        crumbs={[{ label: "Ayarlar" }]}
+      />
       {notice && (
         <div
           role={notice.kind === "ok" ? "status" : "alert"}

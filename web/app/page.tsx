@@ -10,6 +10,7 @@ import {
   Badge,
   Card,
   EmptyState,
+  PageHeader,
   SectionHeading,
   StatCard,
   Td,
@@ -173,7 +174,7 @@ async function RecentDecisions() {
         description="Ajanın kaydettiği öneriler. Hiçbiri onay olmadan harcamayı değiştirmez."
         action={
           <Link href="/decisions" className={SECTION_LINK}>
-            Tümünü gör →
+            Tümünü gör
           </Link>
         }
       />
@@ -253,7 +254,7 @@ async function OpenAlerts() {
         description="Performans, bütçe ve bağlantı sorunları."
         action={
           <Link href="/alerts" className={SECTION_LINK}>
-            Tüm uyarılar →
+            Tüm uyarılar
           </Link>
         }
       />
@@ -293,19 +294,15 @@ async function OpenAlerts() {
 export default function Page() {
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">BÜYÜME KONTROL MERKEZİ</span>
-        <h1>Bir sonraki iyi fikri verilerle bulun.</h1>
-        <p>Çalışma alanınızın son 7 günlük performansı ve ajan durumu.</p>
-        <div className="mt-6 flex flex-wrap gap-3">
+      <PageHeader
+        title="Genel bakış"
+        description="Çalışma alanınızın son 7 günlük performansı ve ajan durumu."
+        actions={
           <Link href="/studio" className="primary-button">
-            ✦ Reklam oluştur
+            Reklam oluştur
           </Link>
-          <Link href="/experiments" className="secondary-button">
-            A/B test merkezi →
-          </Link>
-        </div>
-      </header>
+        }
+      />
       <Suspense fallback={<Skeleton rows={2} />}>
         <Kpis />
       </Suspense>

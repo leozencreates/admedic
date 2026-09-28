@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { formatDay } from "../_lib/format";
 import { entityStatusStyle, metaConnectionStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 import { ConfirmDialog } from "../_components/dialog";
 import { isRequiredScope, optionalScopesMissing, scopeLabel } from "../_lib/meta-scopes";
 
@@ -284,14 +284,12 @@ export default function MetaConnectionsPage() {
 
   return (
     <div className="space-y-8">
-      <header className="studio-hero">
-        <span className="eyebrow">META BAĞLANTILARI</span>
-        <h1>Meta hesap bağlantısı</h1>
-        <p>İşletme portföyünüzü, reklam hesaplarınızı, Facebook sayfalarınızı, Instagram ve WhatsApp Business hesaplarınızı bağlayın.</p>
-        <div className="mt-6">
-          <button type="button" onClick={connect} className="primary-button">Meta ile bağlantı kur</button>
-        </div>
-      </header>
+      <PageHeader
+        title="Meta bağlantıları"
+        description="İşletme portföyünüzü, reklam hesaplarınızı, Facebook sayfalarınızı, Instagram ve WhatsApp Business hesaplarınızı bağlayın."
+        crumbs={[{ label: "Ayarlar" }]}
+        actions={<button type="button" onClick={connect} className="primary-button">Meta ile bağlantı kur</button>}
+      />
       {notice && (
         <div
           role={notice.status === "connected" ? "status" : "alert"}

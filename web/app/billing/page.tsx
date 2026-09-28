@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../_lib/client-api";
 import { formatDay, formatMoney } from "../_lib/format";
-import { Badge } from "../_components/ui";
+import { Badge, PageHeader } from "../_components/ui";
 import type { Tone } from "../_components/ui";
 
 // Renk anlamı (K4-B): yeşil = etkin/tamam · amber = ödeme bekleniyor · gri = kapandı.
@@ -157,11 +157,11 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">FATURALANDIRMA</span>
-        <h1>Abonelik ve faturalandırma</h1>
-        <p>{mock ? "Deneme modu: ödemeler simüle edilir, gerçek ödeme alınmaz." : "Ödemeler Stripe üzerinden alınır."}</p>
-      </header>
+      <PageHeader
+        title="Faturalar"
+        description={mock ? "Deneme modu: ödemeler simüle edilir, gerçek ödeme alınmaz." : "Ödemeler Stripe üzerinden alınır."}
+        crumbs={[{ label: "Ayarlar" }]}
+      />
       {notice && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" role="status">{notice}</div>
       )}

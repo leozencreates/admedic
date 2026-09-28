@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
 import { api } from "../_lib/client-api";
-import { Badge, StatCard } from "../_components/ui";
+import { Badge, PageHeader, StatCard } from "../_components/ui";
 import {
   formatDate,
   formatDay,
@@ -180,13 +180,14 @@ function DailySpendChart({ daily, days, money }: { daily: InsightDaily[]; days: 
   );
 }
 
-function Header({ children }: { children?: ReactNode }) {
+function Header({ description, actions }: { description?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="studio-hero">
-      <span className="eyebrow">İÇGÖRÜLER</span>
-      <h1>Performans analizi</h1>
-      {children}
-    </header>
+    <PageHeader
+      title="İçgörüler"
+      description={description ?? "Harcama, tıklama ve lead performansının kampanya, ülke ve dile göre dökümü."}
+      crumbs={[{ label: "Performans" }]}
+      actions={actions}
+    />
   );
 }
 
@@ -239,12 +240,10 @@ export default function InsightsPage() {
   const days = fillDays(daily, period.from, period.to);
   return (
     <div className="space-y-6">
-      <Header>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p>Son {period.days} gün · {currency}</p>
-          <a className="secondary-button text-xs" href="/api/reports/weekly?pdf=1">Haftalık rapor (PDF)</a>
-        </div>
-      </Header>
+      <Header
+        description={`Son ${period.days} günün harcama, tıklama ve lead performansı; tutarlar ${currency} cinsinden.`}
+        actions={<a className="secondary-button" href="/api/reports/weekly?pdf=1">Haftalık rapor (PDF)</a>}
+      />
       {/* 1440 px'te altı sütun değerleri kart kenarına dayıyordu; altı sütun yalnızca çok geniş ekranda. */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <StatCard
@@ -268,7 +267,7 @@ export default function InsightsPage() {
       </div>
       <div className="grid gap-6 md:grid-cols-3">
         <section className="studio-card min-w-0 md:col-span-2">
-          <div className="section-kicker">HARCAMA</div>
+          <div className="section-kicker">Harcama</div>
           <h2>Günlük trend</h2>
           {daily.length === 0 ? (
             <p className="mt-4 text-sm text-muted">Bu dönemde performans verisi yok.</p>
@@ -277,7 +276,7 @@ export default function InsightsPage() {
           )}
         </section>
         <section className="studio-card min-w-0">
-          <div className="section-kicker">KAMPANYA</div>
+          <div className="section-kicker">Kampanya</div>
           <h2>Bütçe kullanımı</h2>
           <div className="mt-4 space-y-3">
             {campaigns.length === 0 && <p className="text-sm text-muted">Etkin kampanya yok.</p>}
@@ -300,7 +299,7 @@ export default function InsightsPage() {
       </div>
       <div className="grid gap-6 md:grid-cols-2">
         <section className="studio-card min-w-0">
-          <div className="section-kicker">PAZAR</div>
+          <div className="section-kicker">Pazar</div>
           <h2>Ülke kırılımı</h2>
           <BreakdownTable
             heading="Ülke"
@@ -313,7 +312,7 @@ export default function InsightsPage() {
           />
         </section>
         <section className="studio-card min-w-0">
-          <div className="section-kicker">DİL</div>
+          <div className="section-kicker">Dil</div>
           <h2>Dil kırılımı</h2>
           <BreakdownTable
             heading="Dil"
@@ -328,7 +327,7 @@ export default function InsightsPage() {
       </div>
       {data.alerts.length > 0 && (
         <section className="studio-card">
-          <div className="section-kicker">UYARI</div>
+          <div className="section-kicker">Uyarı</div>
           <h2>Açık uyarılar</h2>
           <ul className="mt-4 space-y-2">
             {data.alerts.map((a) => {
@@ -343,12 +342,12 @@ export default function InsightsPage() {
               );
             })}
           </ul>
-          <Link className="mt-3 inline-block text-sm font-medium text-brand-strong hover:underline" href="/alerts">Tüm uyarılar →</Link>
+          <Link className="mt-3 inline-block text-sm font-medium text-brand-strong hover:underline" href="/alerts">Tüm uyarılar</Link>
         </section>
       )}
       {data.pendingRecommendations.length > 0 && (
         <section className="studio-card">
-          <div className="section-kicker">ÖNERİ</div>
+          <div className="section-kicker">Öneri</div>
           <h2>Onay bekleyen öneriler</h2>
           <ul className="mt-4 space-y-2">
             {data.pendingRecommendations.map((r) => (
@@ -363,7 +362,7 @@ export default function InsightsPage() {
               </li>
             ))}
           </ul>
-          <Link className="mt-3 inline-block text-sm font-medium text-brand-strong hover:underline" href="/recommendations">Önerilere git →</Link>
+          <Link className="mt-3 inline-block text-sm font-medium text-brand-strong hover:underline" href="/recommendations">Önerilere git</Link>
         </section>
       )}
     </div>

@@ -260,7 +260,7 @@ export function LeadChat({
 
   return (
     <section className="studio-card" aria-labelledby={headingId}>
-      <div className="section-kicker">MESAJLAR</div>
+      <div className="section-kicker">Mesajlar</div>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id={headingId}>Konuşma</h2>
         <p className="text-sm text-muted">Kanal: {channelLabel(channel)}</p>
