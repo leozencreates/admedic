@@ -1,317 +1,215 @@
-import { Suspense, type ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { loadEnv } from "@admedic/config";
+import { CircleCheck, Circle } from "lucide-react";
+
+import { Card, EmptyState, PageHeader, Td, Th } from "./_components/ui";
+import { requirePageActor } from "./_lib/auth";
+import { formatDuration, formatMoney, formatNumber, formatRoas } from "./_lib/format";
 import { t } from "./_lib/i18n";
 import { uiLanguage } from "./_lib/page-meta";
-
-import {
-  Badge,
-  Card,
-  EmptyState,
-  PageHeader,
-  SectionHeading,
-  StatCard,
-  Td,
-  Th,
-} from "./_components/ui";
-import { daysAgoUTC, getPrimaryWorkspace, prisma } from "./_lib/db";
-import {
-  formatDate,
-  formatMoney,
-  formatNumber,
-  formatPercent,
-  formatRoas,
-} from "./_lib/format";
-import { actionStyle, decisionApprovalStyle, severityStyle, targetTypeLabel } from "./_lib/labels";
-import { countPendingApprovals, pendingApprovalSummary } from "./_lib/pending-approvals";
-import { UNKNOWN_TARGET, alertRecordLinks, targetKey, targetNames } from "./_lib/record-refs";
+import { campaignHref } from "./_lib/record-refs";
+import { campaignExtremes, setupSteps, todayKpis, todayQueue, type CampaignRow, type QueueItem } from "./_lib/today";
 
 /** Kök sayfa kök layout ile aynı segmentte olduğundan şablon uygulanmaz; başlık tam yazılır. */
 export async function generateMetadata(): Promise<Metadata> {
   return { title: { absolute: `${t("nav.overview", await uiLanguage())} · ${loadEnv().APP_NAME}` } };
 }
 
-const SECTION_LINK = "whitespace-nowrap text-sm font-medium text-brand-strong hover:underline";
-
-function Skeleton({ rows = 3 }: { rows?: number }) {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          className="h-16 animate-pulse rounded-xl bg-slate-200/60"
-        />
-      ))}
-    </div>
-  );
-}
-
-/** Kartın tamamı bağlantıdır; ızgara hücresini doldurur (komşu kartlarla aynı yükseklik). */
-function CardLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <Link href={href} className="grid rounded-xl transition-shadow hover:shadow-md">
-      {children}
-    </Link>
-  );
-}
-
-async function Kpis() {
+/**
+ * Bugün (ADR-0018 · K3-A): rolünüze göre sizden beklenen işler (satır başına tek eylem), temel göstergeler
+ * ve kurulum tamamlanana kadar kurulum rehberi. Analist ve izleyici için en iyi / en zayıf kampanyalar.
+ */
+export default async function TodayPage() {
   await connection();
-  const workspace = await getPrimaryWorkspace();
-  if (!workspace) {
-    return (
-      <EmptyState message="Çalışma alanı bulunamadı. Yeniden oturum açın." />
-    );
-  }
-
-  const since = daysAgoUTC(6);
-  const [counts, insightAgg, budgetAgg, pending, openAlerts, policy, account] =
-    await Promise.all([
-      Promise.all([
-        prisma.campaign.count({
-          where: { workspaceId: workspace.id, status: "ACTIVE" },
-        }),
-        prisma.adSet.count({ where: { workspaceId: workspace.id, status: "ACTIVE" } }),
-        prisma.ad.count({ where: { workspaceId: workspace.id, status: "ACTIVE" } }),
-      ]),
-      prisma.insightSnapshot.aggregate({
-        where: { workspaceId: workspace.id, date: { gte: since } },
-        _sum: {
-          spend: true,
-          conversionValue: true,
-          purchases: true,
-          clicks: true,
-        },
-      }),
-      prisma.adSet.aggregate({
-        where: { workspaceId: workspace.id, status: "ACTIVE" },
-        _sum: { dailyBudget: true },
-      }),
-      // Gerçek onay işi: içerik, kampanya, etkinleştirme, bütçe önerisi. Ajan kararları onaylanamaz; sayılmaz.
-      countPendingApprovals(workspace.id),
-      prisma.alert.count({
-        where: { workspaceId: workspace.id, status: "OPEN" },
-      }),
-      prisma.optimizationPolicy.findUnique({
-        where: { workspaceId: workspace.id },
-      }),
-      prisma.adAccount.findFirst({
-        where: { workspaceId: workspace.id, status: "ACTIVE" },
-        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-        select: { currency: true },
-      }),
-    ]);
-
-  const spend = insightAgg._sum.spend ?? 0;
-  const revenue = insightAgg._sum.conversionValue ?? 0;
-  const purchases = insightAgg._sum.purchases ?? 0;
-  const clicks = insightAgg._sum.clicks ?? 0;
-  const roas = spend > 0 ? revenue / spend : null;
-  const targetRoas = policy?.targetRoas ?? null;
-  // Tüm tutarlar minor unit; para birimi varsayılan reklam hesabından (ADR-0011).
-  const currency = account?.currency || "EUR";
+  const actor = await requirePageActor("/");
+  const manager = actor.role === "OWNER" || actor.role === "ADMIN";
+  const readOnly = actor.role === "ANALYST" || actor.role === "VIEWER";
+  const [queue, kpis, setup, extremes] = await Promise.all([
+    readOnly ? Promise.resolve({ items: [] as QueueItem[], total: 0 }) : todayQueue(actor),
+    actor.role === "PATIENT_COORDINATOR" ? Promise.resolve([]) : todayKpis(actor),
+    manager ? setupSteps(actor) : Promise.resolve([]),
+    readOnly ? campaignExtremes(actor) : Promise.resolve(null),
+  ]);
+  const setupDone = setup.filter((s) => s.done).length;
+  const showSetup = setup.length > 0 && setupDone < setup.length;
+  const now = Date.now();
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-      <CardLink href="/campaigns">
-        <StatCard
-          label="Etkin kampanya / reklam seti / reklam"
-          value={`${formatNumber(counts[0])} / ${formatNumber(counts[1])} / ${formatNumber(counts[2])}`}
-          hint={`Günlük planlanan bütçe: ${formatMoney(budgetAgg._sum.dailyBudget, currency)}`}
-        />
-      </CardLink>
-      <StatCard
-        label="Son 7 gün harcama"
-        value={formatMoney(spend, currency)}
-        hint={`${formatNumber(clicks)} tıklama`}
-      />
-      <StatCard
-        label="Son 7 gün ciro"
-        value={formatMoney(revenue, currency)}
-        hint={`${formatNumber(purchases)} satın alma`}
-      />
-      <StatCard
-        label="Son 7 gün reklam getirisi (ROAS)"
-        value={formatRoas(roas)}
-        hint={targetRoas ? `Hedef: ${formatRoas(targetRoas)}` : undefined}
-      />
-      <CardLink href="/approvals">
-        <StatCard
-          label="Onayınızı bekleyen"
-          value={formatNumber(pending.total)}
-          hint={pendingApprovalSummary(pending) ?? "Bekleyen iş yok"}
-        />
-      </CardLink>
-      <CardLink href="/alerts">
-        <StatCard
-          label="Açık uyarı"
-          value={formatNumber(openAlerts)}
-          hint={openAlerts > 0 ? "İnceleme gerekiyor" : "Açık uyarı yok"}
-        />
-      </CardLink>
-    </div>
-  );
-}
-
-async function RecentDecisions() {
-  await connection();
-  const workspace = await getPrimaryWorkspace();
-  if (!workspace) return null;
-
-  const decisions = await prisma.agentDecision.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { createdAt: "desc" },
-    take: 6,
-  });
-  const names = await targetNames(workspace.id, decisions);
-
-  return (
-    <Card>
-      <SectionHeading
-        title="Son ajan kararları"
-        description="Ajanın kaydettiği öneriler. Hiçbiri onay olmadan harcamayı değiştirmez."
-        action={
-          <Link href="/decisions" className={SECTION_LINK}>
-            Tümünü gör
-          </Link>
+    <div className="space-y-6">
+      <PageHeader
+        title="Bugün"
+        description={
+          readOnly
+            ? "Son 7 günün temel göstergeleri ve kampanyaların durumu."
+            : queue.total > 0
+              ? `Sizden beklenen ${formatNumber(queue.total)} iş var; önce sorunlar, sonra en uzun bekleyenler.`
+              : "Sizden beklenen iş yok. Temel göstergeler aşağıda."
         }
       />
-      {decisions.length === 0 ? (
-        <EmptyState message="Henüz ajan kararı yok." />
-      ) : (
-        <div
-          className="overflow-x-auto"
-          tabIndex={0}
-          role="region"
-          aria-label="Son ajan kararları tablosu"
-        >
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr>
-                <Th>Hedef</Th>
-                <Th>Eylem</Th>
-                <Th align="right">Değişim</Th>
-                <Th>Onay</Th>
-                <Th>Tarih</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {decisions.map((d) => {
-                const action = actionStyle(d.action);
-                const approval = decisionApprovalStyle(d.approval);
-                const name = names.get(targetKey(d.targetType, d.targetId)) ?? UNKNOWN_TARGET;
-                return (
-                  <tr key={d.id}>
-                    <Td>
-                      <span className="block min-w-[160px] max-w-[280px] whitespace-normal break-words font-medium text-slate-900">
-                        {name}
-                      </span>
-                      <span className="block text-xs text-muted">{targetTypeLabel(d.targetType)}</span>
-                    </Td>
-                    <Td>
-                      <Badge tone={action.tone}>{action.label}</Badge>
-                    </Td>
-                    <Td align="right">
-                      {d.changePct == null || d.changePct === 0
-                        ? "—"
-                        : `${d.changePct > 0 ? "+" : ""}${formatPercent(d.changePct, 0)}`}
-                    </Td>
-                    <Td>
-                      <Badge tone={approval.tone}>{approval.label}</Badge>
-                    </Td>
-                    <Td className="text-muted">
-                      {formatDate(d.createdAt)}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
 
-async function OpenAlerts() {
-  await connection();
-  const workspace = await getPrimaryWorkspace();
-  if (!workspace) return null;
-
-  const alerts = await prisma.alert.findMany({
-    where: { workspaceId: workspace.id, status: "OPEN" },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
-  const links = await alertRecordLinks(workspace.id, alerts);
-
-  return (
-    <Card>
-      <SectionHeading
-        title="Açık uyarılar"
-        description="Performans, bütçe ve bağlantı sorunları."
-        action={
-          <Link href="/alerts" className={SECTION_LINK}>
-            Tüm uyarılar
-          </Link>
-        }
-      />
-      {alerts.length === 0 ? (
-        <EmptyState message="Açık uyarı yok." />
-      ) : (
-        <ul className="space-y-3">
-          {alerts.map((a) => {
-            const severity = severityStyle(a.severity);
-            const href = links.get(a.id);
-            return (
-              <li key={a.id} className="rounded-lg border border-slate-200 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge tone={severity.tone}>{severity.label}</Badge>
-                    <p className="min-w-0 break-words text-sm font-medium text-slate-900">{a.title}</p>
+      {showSetup ? (
+        <section aria-labelledby="kurulum-baslik" className="studio-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="kurulum-baslik">Kurulum</h2>
+            <p className="text-sm text-ink-3">
+              {setupDone}/{setup.length} adım tamamlandı
+            </p>
+          </div>
+          <div aria-hidden="true" className="mt-3 flex h-2 overflow-hidden rounded-full bg-line-soft">
+            <span className="bg-brand-600" style={{ width: `${(setupDone / setup.length) * 100}%` }} />
+          </div>
+          <ol className="mt-3 divide-y divide-line-soft">
+            {setup.map((step) => (
+              <li key={step.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  {step.done ? (
+                    <CircleCheck size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#079455]" aria-hidden="true" />
+                  ) : (
+                    <Circle size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ink-3" aria-hidden="true" />
+                  )}
+                  <div className="min-w-0">
+                    <p className={step.done ? "text-ink-2 line-through decoration-ink-3" : "font-medium text-ink"}>
+                      {step.label}
+                      <span className="sr-only">{step.done ? " (tamamlandı)" : " (yapılacak)"}</span>
+                    </p>
+                    {!step.done ? <p className="text-sm text-ink-2">{step.hint}</p> : null}
                   </div>
-                  <span className="text-xs text-muted">
-                    {formatDate(a.createdAt)}
-                  </span>
                 </div>
-                <p className="mt-1 break-words text-sm text-slate-600">{a.message}</p>
-                {href ? (
-                  <Link href={href} className="mt-2 inline-block text-sm font-medium text-brand-strong hover:underline">
-                    İlgili kaydı aç<span className="sr-only">: {a.title}</span>
+                {!step.done ? (
+                  <Link href={step.href} className="secondary-button self-start sm:self-auto">
+                    Başla<span className="sr-only">: {step.label}</span>
                   </Link>
                 ) : null}
               </li>
-            );
-          })}
-        </ul>
-      )}
-    </Card>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        {readOnly && extremes ? (
+          <Extremes best={extremes.best} worst={extremes.worst} />
+        ) : (
+          <section aria-labelledby="kuyruk-baslik" className="studio-card min-w-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="kuyruk-baslik">Sizden beklenenler</h2>
+              {queue.total > queue.items.length ? (
+                <p className="text-sm text-ink-3">
+                  En önemli {formatNumber(queue.items.length)} iş gösteriliyor ({formatNumber(queue.total)} toplam)
+                </p>
+              ) : null}
+            </div>
+            {queue.items.length === 0 ? (
+              <p className="mt-3 text-sm text-ink-2">Şu an sizden beklenen iş yok. Yeni bir iş geldiğinde burada görünür.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-line-soft">
+                {queue.items.map((item) => (
+                  <li key={item.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div className="flex min-w-0 gap-3">
+                      <span
+                        aria-hidden="true"
+                        className={`mt-1.5 size-2.5 shrink-0 rounded-full ${item.tone === "problem" ? "bg-bad-fill" : "bg-[#dc6803]"}`}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-ink-3">
+                          {item.kind}
+                          {item.tone === "problem" ? <span className="sr-only"> (sorun)</span> : null}
+                        </p>
+                        <p id={`is-${item.key}`} className="break-words font-medium text-ink">
+                          {item.title}
+                        </p>
+                        {item.context ? <p className="break-words text-sm text-ink-2">{item.context}</p> : null}
+                        {item.since ? (
+                          <p className="text-xs text-ink-3">{formatDuration(now - item.since.getTime())} bekliyor</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <Link
+                      href={item.action.href}
+                      aria-describedby={`is-${item.key}`}
+                      className={`${item.tone === "problem" ? "primary-button" : "secondary-button"} shrink-0 self-start sm:self-auto`}
+                    >
+                      {item.action.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {kpis.length > 0 ? (
+          <section aria-labelledby="gosterge-baslik" className="studio-card self-start !p-0">
+            <h2 id="gosterge-baslik" className="border-b border-line px-4 py-3">
+              Temel göstergeler
+            </h2>
+            <dl>
+              {kpis.map((kpi, i) => (
+                <div key={kpi.key} className={`px-4 py-3 ${i < kpis.length - 1 ? "border-b border-line-soft" : ""}`}>
+                  <dt className="text-xs font-medium text-ink-2">{kpi.label}</dt>
+                  <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${kpi.warn ? "text-warn" : "text-ink"}`}>
+                    {kpi.value}
+                    {kpi.warn ? <span className="ml-2 align-middle text-xs font-medium">Hedefin dışında</span> : null}
+                  </dd>
+                  {kpi.hint ? <dd className="mt-0.5 text-xs text-ink-3">{kpi.hint}</dd> : null}
+                </div>
+              ))}
+            </dl>
+            <div className="border-t border-line px-4 py-3">
+              <Link href="/insights" className="text-link text-sm">
+                İçgörüler
+              </Link>
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
-export default function Page() {
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Genel bakış"
-        description="Çalışma alanınızın son 7 günlük performansı ve ajan durumu."
-        actions={
-          <Link href="/studio" className="primary-button">
-            Reklam oluştur
-          </Link>
-        }
-      />
-      <Suspense fallback={<Skeleton rows={2} />}>
-        <Kpis />
-      </Suspense>
-      <Suspense fallback={<Skeleton rows={4} />}>
-        <RecentDecisions />
-      </Suspense>
-      <Suspense fallback={<Skeleton rows={3} />}>
-        <OpenAlerts />
-      </Suspense>
+function Extremes({ best, worst }: { best: CampaignRow[]; worst: CampaignRow[] }) {
+  if (!best.length)
+    return (
+      <Card>
+        <EmptyState message="Son 7 günde harcama yapan kampanya yok." />
+      </Card>
+    );
+  const table = (rows: CampaignRow[], caption: string) => (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[480px]">
+        <caption className="mb-2 text-left text-sm font-medium text-ink">{caption}</caption>
+        <thead className="bg-subtle">
+          <tr>
+            <Th>Kampanya</Th>
+            <Th align="right">Harcama</Th>
+            <Th align="right">Lead</Th>
+            <Th align="right">Reklam getirisi (ROAS)</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line-soft">
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <Td>
+                <Link href={campaignHref(r.id)} className="font-medium text-ink hover:underline">
+                  {r.name}
+                </Link>
+              </Td>
+              <Td align="right">{formatMoney(r.spend, r.currency)}</Td>
+              <Td align="right">{formatNumber(r.leads)}</Td>
+              <Td align="right">{formatRoas(r.roas)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
+  );
+  return (
+    <section aria-labelledby="kampanya-ozet" className="studio-card min-w-0 space-y-6">
+      <h2 id="kampanya-ozet">Kampanyalar, son 7 gün</h2>
+      {table(best, "En yüksek reklam getirisi")}
+      {worst.length ? table(worst, "En düşük reklam getirisi") : null}
+    </section>
   );
 }

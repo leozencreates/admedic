@@ -2,7 +2,8 @@ import type { AlertType, Prisma } from "@admedic/database";
 import { prisma } from "@admedic/database";
 import { CARE_ROLES, EDIT_ROLES, requireActor, type Actor } from "../../_lib/auth";
 import { respond } from "../../_lib/http";
-import { countPendingApprovals } from "../../_lib/pending-approvals";
+import { countPendingApprovals, listPendingApprovals, scopePendingApprovals } from "../../_lib/pending-approvals";
+import { hasSpendAuthority } from "../../_lib/spend-authority";
 import { HANDOFF_ALERT_TYPE } from "../../_lib/lead-assistant";
 import { alertRecordLinks } from "../../_lib/record-refs";
 import { roleLabel } from "../../_lib/labels";
@@ -10,7 +11,7 @@ import { roleLabel } from "../../_lib/labels";
 /**
  * Kabuk özeti (ADR-0017): menü rozetleri, bildirim zili ve hesap menüsü için tek, hafif uç.
  * Salt okunur; her sayı çalışma alanıyla sınırlı ve role göre süzülür:
- * - Onaylar: yalnızca onay akışında iş yapabilen roller (Owner, Admin, Reklam uzmanı).
+ * - Onaylar: Owner/Admin tüm bekleyen işler; Reklam uzmanı kendi gönderdikleri (+ yetkisi varsa etkinleştirmeler).
  * - Lead'ler: "Yanıt bekliyor" (NEW) lead sayısı; yalnızca hastayla yazışabilen roller.
  * - Uyarılar/zil: hasta koordinatörü yalnızca konuşma devri uyarılarını görür; izleyici hiç görmez.
  */
@@ -21,6 +22,14 @@ function alertScope(actor: Actor): Prisma.AlertWhereInput | null {
   const base: Prisma.AlertWhereInput = { workspaceId: actor.workspaceId, status: "OPEN" };
   if (actor.role === "PATIENT_COORDINATOR") return { ...base, type: HANDOFF_ALERT_TYPE as AlertType };
   return base;
+}
+
+/** Onaylar rozeti: Owner/Admin tüm bekleyen işler; Reklam uzmanı Onaylar kutusunda gördükleri (ADR-0018). */
+async function approvalCount(actor: Actor): Promise<number> {
+  if (actor.role === "OWNER" || actor.role === "ADMIN") return (await countPendingApprovals(actor.workspaceId)).total;
+  if (!EDIT_ROLES.includes(actor.role)) return 0;
+  const [all, canApproveSpend] = await Promise.all([listPendingApprovals(actor.workspaceId), hasSpendAuthority(actor)]);
+  return scopePendingApprovals(all, actor, { canApproveSpend }).counts.total;
 }
 
 function initials(name: string): string {
@@ -37,7 +46,7 @@ export async function GET() {
     const canCare = CARE_ROLES.includes(actor.role);
     const [user, approvals, leads, alertCount, alerts] = await Promise.all([
       prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true, email: true } }),
-      EDIT_ROLES.includes(actor.role) ? countPendingApprovals(actor.workspaceId).then((c) => c.total) : 0,
+      approvalCount(actor),
       canCare ? prisma.lead.count({ where: { workspaceId: actor.workspaceId, status: "NEW" } }) : 0,
       scope && canCare ? prisma.alert.count({ where: scope }) : 0,
       scope

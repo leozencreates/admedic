@@ -5,6 +5,8 @@ import Link from "next/link";
 import { api } from "../../_lib/client-api";
 import { LeadChat } from "../../_components/lead-chat";
 import { Badge, PageHeader } from "../../_components/ui";
+import { StageBar } from "../../_components/stage-bar";
+import { leadStage } from "../../_lib/stages";
 import { ConfirmDialog, Dialog } from "../../_components/dialog";
 import { toLead, type ApiLead } from "../../_components/lead-table";
 import { formatDate } from "../../_lib/format";
@@ -368,7 +370,7 @@ export default function LeadDetailPage() {
         crumbs={[{ label: "Lead'ler", href: "/leads" }]}
         description={
           <span className="inline-flex flex-wrap items-center gap-3">
-            <Badge tone={status.tone}>{status.label}</Badge>
+            <StageBar stage={leadStage(lead.status)} />
             <span className="text-xs text-ink-3">
               Oluşturulma: <time dateTime={lead.created}>{formatDate(lead.created)}</time>
             </span>
@@ -481,12 +483,6 @@ export default function LeadDetailPage() {
                     </div>
                   </details>
                 )}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Durum</dt>
-              <dd>
-                <Badge tone={status.tone}>{status.label}</Badge>
               </dd>
             </div>
             {lead.status === "LOST" && lead.lostReason && (

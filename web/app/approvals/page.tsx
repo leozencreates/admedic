@@ -1,112 +1,99 @@
 import Link from "next/link";
+import { connection } from "next/server";
+import { prisma } from "@admedic/database";
 
-import { Badge, Card, EmptyState, PageHeader } from "../_components/ui";
+import { PageHeader } from "../_components/ui";
 import { requirePageActor } from "../_lib/auth";
-import { formatDate, formatDuration, formatNumber } from "../_lib/format";
 import {
-  PENDING_APPROVAL_KINDS,
-  PENDING_APPROVAL_LABEL,
+  listCorrectionRequests,
   listPendingApprovals,
-  type PendingApprovalItem,
-  type PendingApprovalKind,
+  scopePendingApprovals,
 } from "../_lib/pending-approvals";
+import { hasSpendAuthority } from "../_lib/spend-authority";
+import { MONTH_DAYS, activeMonthlyCommitmentCents } from "../_lib/spend-cap";
+import { ApprovalsInbox, type InboxCorrection, type InboxItem } from "./approvals-inbox";
 
 /**
- * Onaylar (ADR-0016 · Faz 1 madde 11): bir insanın kararını ya da işlemini bekleyen gerçek işler.
- * Onay bu sayfada verilmez; her satır kararın verildiği sayfaya ("Aç") götürür.
+ * Onaylar (ADR-0018 · K2-A): bir insanın kararını ya da işlemini bekleyen işlerin tek kutusu.
+ * Hesap sahibi ve Yönetici içerik, kampanya ve bütçe önerisini burada onaylar ya da düzeltme ister;
+ * harcama yetkisi olan kişi kampanyayı burada etkinleştirir (günlük tutar ve aylık etki onay penceresinde).
+ * Reklam uzmanı kendi gönderdiklerini ve düzeltme istenenleri görür. Yetki her işlemde API'de yeniden denetlenir.
  * Ajan kararları onay işi değildir; geçmişleri /decisions'ta.
  */
-
-const ACTOR_PREFIX: Record<PendingApprovalKind, string> = {
-  CONTENT: "Kim onaylar",
-  CAMPAIGN: "Kim onaylar",
-  ACTIVATION: "Kim etkinleştirir",
-  RECOMMENDATION: "Kim onaylar",
-};
-
-function ApprovalRow({ item, now }: { item: PendingApprovalItem; now: number }) {
-  return (
-    <li className="flex flex-col gap-3 py-4 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <div className="min-w-0">
-        <p className="break-words text-sm font-semibold text-slate-900">{item.title}</p>
-        {item.detail ? <p className="mt-0.5 break-words text-sm text-slate-600">{item.detail}</p> : null}
-        <p className="mt-1 text-xs text-muted">
-          {item.submittedBy ? (
-            <>
-              {item.submittedByLabel}: {item.submittedBy}
-              {" · "}
-            </>
-          ) : null}
-          <time dateTime={item.waitingSince.toISOString()}>{formatDate(item.waitingSince)}</time> tarihinden beri
-          bekliyor ({formatDuration(now - item.waitingSince.getTime())})
-        </p>
-        <p className="mt-0.5 text-xs text-muted">
-          {ACTOR_PREFIX[item.kind]}: {item.actors}
-        </p>
-      </div>
-      <Link href={item.href} className="secondary-button shrink-0 self-start">
-        Aç<span className="sr-only">: {item.title}</span>
-      </Link>
-    </li>
-  );
-}
-
 export default async function ApprovalsPage() {
+  await connection();
   const actor = await requirePageActor("/approvals");
-  const { counts, items } = await listPendingApprovals(actor.workspaceId);
-  const now = Date.now();
+  const canApprove = actor.role === "OWNER" || actor.role === "ADMIN";
+  const [all, canApproveSpend, org, account] = await Promise.all([
+    listPendingApprovals(actor.workspaceId),
+    hasSpendAuthority(actor),
+    prisma.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { monthlyAdBudgetCap: true } }),
+    prisma.adAccount.findFirst({
+      where: { orgId: actor.orgId, workspaceId: actor.workspaceId, status: "ACTIVE" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: { currency: true },
+    }),
+  ]);
+  const scoped = scopePendingApprovals(all, actor, { canApproveSpend });
+  const currency = account?.currency ?? "EUR";
+  const [committedCents, corrections] = await Promise.all([
+    activeMonthlyCommitmentCents(prisma, actor.orgId, currency),
+    canApprove ? Promise.resolve([]) : listCorrectionRequests(actor.workspaceId, { userId: actor.userId }),
+  ]);
+
+  const items: InboxItem[] = [
+    ...scoped.items.CONTENT,
+    ...scoped.items.CAMPAIGN,
+    ...scoped.items.ACTIVATION,
+    ...scoped.items.RECOMMENDATION,
+  ].map((item) => ({
+    kind: item.kind,
+    id: item.id,
+    title: item.title,
+    detail: item.detail,
+    submittedBy: item.submittedBy,
+    submittedByLabel: item.submittedByLabel,
+    waitingSince: item.waitingSince.toISOString(),
+    actors: item.actors,
+    href: item.href,
+    version: item.version ?? null,
+    dailyBudgetCents: item.dailyBudgetCents ?? null,
+    currency: item.currency ?? currency,
+    workflowStatus: item.workflowStatus ?? null,
+  }));
+  const correctionItems: InboxCorrection[] = corrections.map((c) => ({
+    kind: c.kind,
+    id: c.id,
+    title: c.title,
+    reason: c.reason,
+    rejectedBy: c.rejectedBy,
+    rejectedAt: c.rejectedAt.toISOString(),
+    href: c.href,
+  }));
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Onaylar"
-        description="Onayınızı ya da işleminizi bekleyen işler; onayı ilgili sayfada verirsiniz."
+        description={
+          canApprove
+            ? "Onayınızı ya da işleminizi bekleyen işler; en uzun bekleyen en üstte."
+            : "Onaya gönderdiğiniz işler ve sizden düzeltme istenenler."
+        }
         actions={
           <Link href="/decisions" className="secondary-button">
             Ajan kararları geçmişi
           </Link>
         }
       />
-
-      {counts.total === 0 ? (
-        <EmptyState message="Onayınızı bekleyen iş yok." />
-      ) : (
-        PENDING_APPROVAL_KINDS.map((kind) => {
-          const count = counts.byKind[kind];
-          const list = items[kind];
-          const headingId = `onay-${kind.toLowerCase()}`;
-          return (
-            <Card key={kind}>
-              <section aria-labelledby={headingId}>
-                <h2
-                  id={headingId}
-                  className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900"
-                >
-                  {PENDING_APPROVAL_LABEL[kind].section}
-                  <Badge tone={count > 0 ? "amber" : "gray"}>
-                    {formatNumber(count)}
-                    <span className="sr-only"> iş bekliyor</span>
-                  </Badge>
-                </h2>
-                {list.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted">Bu türde bekleyen iş yok.</p>
-                ) : (
-                  <ul className="mt-1 divide-y divide-slate-100">
-                    {list.map((item) => (
-                      <ApprovalRow key={item.id} item={item} now={now} />
-                    ))}
-                  </ul>
-                )}
-                {count > list.length ? (
-                  <p className="mt-2 text-xs text-muted">
-                    En uzun bekleyen {formatNumber(list.length)} iş gösteriliyor.
-                  </p>
-                ) : null}
-              </section>
-            </Card>
-          );
-        })
-      )}
+      <ApprovalsInbox
+        items={items}
+        corrections={correctionItems}
+        canApprove={canApprove}
+        canApproveSpend={canApproveSpend}
+        monthly={{ committedCents, capCents: org.monthlyAdBudgetCap, currency, monthDays: MONTH_DAYS }}
+        now={Date.now()}
+      />
     </div>
   );
 }

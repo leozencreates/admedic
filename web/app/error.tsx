@@ -31,7 +31,7 @@ export default function ErrorPage({
           Tekrar dene
         </button>
         <Link href="/" className="secondary-button">
-          Genel bakışa dön
+          Bugün sayfasına dön
         </Link>
       </div>
     </section>

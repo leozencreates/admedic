@@ -55,6 +55,26 @@ export interface PendingApprovalItem {
   actors: string;
   /** Kararın ya da işlemin verildiği sayfa. */
   href: string;
+  /** Gönderenin kullanıcı kimliği (Reklam uzmanı yalnızca kendi gönderdiklerini görür); bilinmiyorsa null. */
+  submittedById: string | null;
+  /** İçerik taslağının sürümü (onay/ret çağrısı eşzamanlılık denetimi için). */
+  version?: number;
+  /** Kampanya ve etkinleştirme: günlük bütçe (minor unit) ve para birimi. */
+  dailyBudgetCents?: number | null;
+  currency?: string;
+  /** Kampanya iş akışı durumu (aşama şeridi için). */
+  workflowStatus?: string;
+}
+
+/** Düzeltme istenen iş (içerik ya da kampanya): gönderene geri döner. */
+export interface CorrectionItem {
+  kind: "CONTENT" | "CAMPAIGN";
+  id: string;
+  title: string;
+  reason: string | null;
+  rejectedBy: string | null;
+  rejectedAt: Date;
+  href: string;
 }
 
 export interface PendingApprovalCounts {
@@ -193,6 +213,7 @@ export async function listPendingApprovals(
     name: true,
     dailyBudget: true,
     policyRisk: true,
+    workflowStatus: true,
     createdAt: true,
     updatedAt: true,
     adAccount: { select: { currency: true } },
@@ -203,7 +224,7 @@ export async function listPendingApprovals(
       where: where.content(workspaceId),
       orderBy: { updatedAt: "asc" },
       take,
-      select: { id: true, name: true, policy: true, createdAt: true, updatedAt: true },
+      select: { id: true, name: true, policy: true, version: true, createdAt: true, updatedAt: true },
     }),
     prisma.campaign.findMany({ where: where.campaign(workspaceId), orderBy: { updatedAt: "asc" }, take, select: campaignSelect }),
     prisma.campaign.findMany({ where: where.activation(workspaceId), orderBy: { updatedAt: "asc" }, take, select: campaignSelect }),
@@ -252,6 +273,8 @@ export async function listPendingApprovals(
       updatedAt: d.updatedAt,
       actors: APPROVER_LABEL,
       href: studioDraftHref(d.id),
+      submittedById: hit?.userId ?? null,
+      version: d.version,
     };
   });
 
@@ -273,6 +296,10 @@ export async function listPendingApprovals(
       updatedAt: c.updatedAt,
       actors: APPROVER_LABEL,
       href: campaignHref(c.id),
+      submittedById: hit?.userId ?? null,
+      dailyBudgetCents: c.dailyBudget,
+      currency,
+      workflowStatus: c.workflowStatus,
     };
   });
 
@@ -294,6 +321,10 @@ export async function listPendingApprovals(
       updatedAt: c.updatedAt,
       actors: SPEND_AUTHORITY_LABEL,
       href: campaignHref(c.id),
+      submittedById: hit?.userId ?? null,
+      dailyBudgetCents: c.dailyBudget,
+      currency,
+      workflowStatus: c.workflowStatus,
     };
   });
 
@@ -313,6 +344,7 @@ export async function listPendingApprovals(
       updatedAt: r.updatedAt,
       actors: APPROVER_LABEL,
       href: RECOMMENDATIONS_HREF,
+      submittedById: (submitted ?? generated)?.userId ?? null,
     };
   });
 
@@ -325,4 +357,116 @@ export async function listPendingApprovals(
       RECOMMENDATION: recommendation.sort(byWaiting),
     },
   };
+}
+
+/**
+ * Rol görünümü (ADR-0018): Hesap sahibi ve Yönetici tüm işleri görür. Reklam uzmanı onay veremez;
+ * yalnızca kendi gönderdiği ya da Meta'ya yüklediği işleri izler (etkinleştirmeyi harcama yetkisi varsa
+ * kendisi de yapabilir, bu yüzden tüm etkinleştirmeler ona da görünür).
+ */
+export function scopePendingApprovals(
+  data: PendingApprovals,
+  actor: { userId: string; role: string },
+  options: { canApproveSpend: boolean },
+): PendingApprovals {
+  if (actor.role === "OWNER" || actor.role === "ADMIN") return data;
+  const mine = (item: PendingApprovalItem) => item.submittedById === actor.userId;
+  const items: PendingApprovals["items"] = {
+    CONTENT: data.items.CONTENT.filter(mine),
+    CAMPAIGN: data.items.CAMPAIGN.filter(mine),
+    ACTIVATION: options.canApproveSpend ? data.items.ACTIVATION : data.items.ACTIVATION.filter(mine),
+    RECOMMENDATION: [],
+  };
+  const byKind = {
+    CONTENT: items.CONTENT.length,
+    CAMPAIGN: items.CAMPAIGN.length,
+    ACTIVATION: items.ACTIVATION.length,
+    RECOMMENDATION: 0,
+  };
+  return { counts: { total: Object.values(byKind).reduce((a, b) => a + b, 0), byKind }, items };
+}
+
+/**
+ * Düzeltme istenen işler: reddedilmiş içerik taslakları ve kampanyalar. `userId` verilirse yalnızca o kişinin
+ * onaya gönderdikleri (Reklam uzmanının "düzeltme istenenler" listesi). Gerekçe denetim kaydından okunur.
+ */
+export async function listCorrectionRequests(
+  workspaceId: string,
+  options: { userId?: string; limit?: number } = {},
+): Promise<CorrectionItem[]> {
+  const take = options.limit ?? 20;
+  const [drafts, campaigns] = await Promise.all([
+    prisma.studioDraft.findMany({
+      where: { workspaceId, status: "REJECTED" },
+      orderBy: { updatedAt: "desc" },
+      take,
+      select: { id: true, name: true, updatedAt: true },
+    }),
+    prisma.campaign.findMany({
+      where: { workspaceId, workflowStatus: "REJECTED" },
+      orderBy: { updatedAt: "desc" },
+      take,
+      select: { id: true, name: true, updatedAt: true, rejectionReason: true, rejectionBy: true },
+    }),
+  ]);
+  const draftIds = drafts.map((d) => d.id);
+  const campaignIds = campaigns.map((c) => c.id);
+  const logs =
+    draftIds.length || campaignIds.length
+      ? await prisma.auditLog.findMany({
+          where: {
+            workspaceId,
+            OR: [
+              ...(draftIds.length
+                ? [{ entityType: "STUDIO_DRAFT", action: { in: ["DRAFT_SUBMIT", "DRAFT_REJECT"] }, entityId: { in: draftIds } }]
+                : []),
+              ...(campaignIds.length
+                ? [{ entityType: "CAMPAIGN", action: { in: ["CAMPAIGN_SUBMITTED", "CAMPAIGN_REJECTED"] }, entityId: { in: campaignIds } }]
+                : []),
+            ],
+          },
+          orderBy: { createdAt: "desc" },
+          select: { action: true, entityId: true, userId: true, after: true, createdAt: true },
+        })
+      : [];
+  const latest = new Map<string, (typeof logs)[number]>();
+  for (const log of logs) {
+    const key = `${log.action}:${log.entityId}`;
+    if (!latest.has(key)) latest.set(key, log);
+  }
+  const names = await userNames([...logs.map((l) => l.userId), ...campaigns.map((c) => c.rejectionBy)]);
+  const reasonOf = (after: unknown) => {
+    const reason = (after as { reason?: unknown } | null)?.reason;
+    return typeof reason === "string" && reason.trim() ? reason.trim() : null;
+  };
+  const items: Array<CorrectionItem & { submitterId: string | null }> = [
+    ...drafts.map((d) => {
+      const rejected = latest.get(`DRAFT_REJECT:${d.id}`);
+      return {
+        kind: "CONTENT" as const,
+        id: d.id,
+        title: d.name,
+        reason: reasonOf(rejected?.after),
+        rejectedBy: rejected?.userId ? (names.get(rejected.userId) ?? null) : null,
+        rejectedAt: rejected?.createdAt ?? d.updatedAt,
+        href: studioDraftHref(d.id),
+        submitterId: latest.get(`DRAFT_SUBMIT:${d.id}`)?.userId ?? null,
+      };
+    }),
+    ...campaigns.map((c) => ({
+      kind: "CAMPAIGN" as const,
+      id: c.id,
+      title: c.name,
+      reason: c.rejectionReason ?? reasonOf(latest.get(`CAMPAIGN_REJECTED:${c.id}`)?.after),
+      rejectedBy: c.rejectionBy ? (names.get(c.rejectionBy) ?? null) : null,
+      rejectedAt: latest.get(`CAMPAIGN_REJECTED:${c.id}`)?.createdAt ?? c.updatedAt,
+      href: campaignHref(c.id),
+      submitterId: latest.get(`CAMPAIGN_SUBMITTED:${c.id}`)?.userId ?? null,
+    })),
+  ];
+  return items
+    .filter((item) => !options.userId || item.submitterId === options.userId)
+    .sort((a, b) => b.rejectedAt.getTime() - a.rejectedAt.getTime())
+    .slice(0, take)
+    .map(({ submitterId: _submitterId, ...item }) => item);
 }

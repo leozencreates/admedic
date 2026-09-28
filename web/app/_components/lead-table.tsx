@@ -1,8 +1,10 @@
 "use client";
 import Link from "next/link";
-import { Badge, Th } from "./ui";
+import { Th } from "./ui";
+import { StageBar } from "./stage-bar";
+import { leadStage } from "../_lib/stages";
 import { formatDate, formatRelative } from "../_lib/format";
-import { channelLabel, countryName, languageName, leadStatusStyle } from "../_lib/labels";
+import { channelLabel, countryName, languageName } from "../_lib/labels";
 
 export interface Lead {
   id: string;
@@ -139,7 +141,7 @@ export function LeadTable({
         </thead>
         <tbody>
           {filtered.map((lead) => {
-            const status = leadStatusStyle(lead.status);
+            const stage = leadStage(lead.status);
             return (
               <tr
                 key={lead.id}
@@ -158,8 +160,9 @@ export function LeadTable({
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{lead.phone || "—"}</td>
                 <td className="px-3 py-3 text-sm text-slate-700">{lead.email || "—"}</td>
-                <td className="whitespace-nowrap px-3 py-3">
-                  <Badge tone={status.tone}>{status.label}</Badge>
+                {/* `relative`: şeridin sr-only cümlesi kaydırma alanından taşıp mobilde sayfayı genişletmesin. */}
+                <td className="relative whitespace-nowrap px-3 py-3">
+                  <StageBar stage={stage} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{channelLabel(lead.channel)}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{countryName(lead.country)}</td>

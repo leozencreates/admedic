@@ -67,8 +67,12 @@ export default function LeadsPage() {
 
   // Üst çubuktaki lead araması (ADR-0017): `/leads?q=` ile gelinir ya da sayfadayken olay gönderilir.
   useEffect(() => {
-    const initial = new URLSearchParams(window.location.search).get("q");
+    const params = new URLSearchParams(window.location.search);
+    const initial = params.get("q");
     if (initial) setSearch(initial);
+    // "Bugün" sayfasındaki "Lead'leri aç" bağlantısı yanıt bekleyenleri süzerek açar (?status=NEW).
+    const status = params.get("status");
+    if (status) setStatusFilter(status);
     const onSearch = (e: Event) => setSearch(String((e as CustomEvent<string>).detail ?? ""));
     window.addEventListener(LEAD_SEARCH_EVENT, onSearch);
     return () => window.removeEventListener(LEAD_SEARCH_EVENT, onSearch);

@@ -5,7 +5,9 @@ import { connection } from "next/server";
 import { Badge, Card, PageHeader, SectionHeading, Td, Th } from "../_components/ui";
 import { daysAgoUTC, getPrimaryWorkspace, prisma } from "../_lib/db";
 import { formatMoney, formatNumber, formatRoas } from "../_lib/format";
-import { campaignWorkflowStyle, entityStatusStyle } from "../_lib/labels";
+import { entityStatusStyle } from "../_lib/labels";
+import { campaignStage } from "../_lib/stages";
+import { StageBar } from "../_components/stage-bar";
 
 const LINK_CLASS =
   "underline decoration-slate-300 underline-offset-2 hover:text-violet-700 hover:decoration-violet-600";
@@ -43,7 +45,7 @@ function EmptyWithAction({ message, href, action }: { message: string; href: str
 async function Campaigns() {
   await connection();
   const workspace = await getPrimaryWorkspace();
-  if (!workspace) return <EmptyWithAction message="Çalışma alanı bulunamadı." href="/" action="Genel bakışa dönün." />;
+  if (!workspace) return <EmptyWithAction message="Çalışma alanı bulunamadı." href="/" action="Bugün sayfasına dönün." />;
 
   const since = daysAgoUTC(6);
   const [campaigns, grouped, policy] = await Promise.all([
@@ -101,7 +103,8 @@ async function Campaigns() {
                 const revenue = sum?.conversionValue ?? 0;
                 const roas = spend > 0 ? revenue / spend : null;
                 // Meta'ya hiç yüklenmemiş kampanyanın Meta durumu yoktur; onay akışındaki yeri gösterilir.
-                const status = c.metaCampaignId ? entityStatusStyle(c.status) : campaignWorkflowStyle(c.workflowStatus);
+                // Yüklenmemiş kampanyada aşama şeridi (K8-C) iş akışı etiketini kendisi çizer.
+                const status = c.metaCampaignId ? entityStatusStyle(c.status) : null;
                 // Tüm tutarlar minor unit; para birimi reklam hesabından (ADR-0011).
                 const currency = c.adAccount.currency || "EUR";
                 return (
@@ -114,8 +117,8 @@ async function Campaigns() {
                     <Td className="text-muted">
                       {c.adAccount.name} · {currency}
                     </Td>
-                    <Td>
-                      <Badge tone={status.tone}>{status.label}</Badge>
+                    <Td className="relative">
+                      {status ? <Badge tone={status.tone}>{status.label}</Badge> : <StageBar stage={campaignStage(c.workflowStatus)} />}
                     </Td>
                     <Td align="right">{formatMoney(c.dailyBudget, currency)}</Td>
                     <Td align="right">{formatNumber(c._count.adsets)}</Td>

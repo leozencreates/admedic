@@ -4,6 +4,8 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { api } from "../_lib/client-api";
 import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 import { ConfirmDialog, Dialog } from "../_components/dialog";
+import { StageBar } from "../_components/stage-bar";
+import { campaignStage } from "../_lib/stages";
 import { METHOD_LABEL, OBJECTIVE_LABEL, PLANNER_MARKETS, marketLanguages } from "../_lib/campaign-plan";
 import type { PlanAdSet, PlanReasons } from "../_lib/campaign-plan";
 import { BRIEF_LANGUAGES } from "../_lib/creative-lang";
@@ -11,7 +13,6 @@ import { formatDate, formatDay, formatMoney } from "../_lib/format";
 import {
   adEffectiveStatusStyle,
   budgetModeLabel,
-  campaignWorkflowStyle,
   countryName,
   languageName,
   membershipStatusLabel,
@@ -1016,7 +1017,7 @@ export default function CampaignPlannerPage() {
   }
   function campaignRow(c: CampaignData) {
     const progress = liveProgress[c.id] ?? c.publish;
-    const status = campaignWorkflowStyle(c.workflowStatus, {
+    const stage = campaignStage(c.workflowStatus, {
       publishIncomplete: c.workflowStatus === "APPROVED" && progress.status === "IN_PROGRESS",
       metaPaused: c.workflowStatus === "ACTIVE" && c.status === "PAUSED",
     });
@@ -1048,7 +1049,7 @@ export default function CampaignPlannerPage() {
               >
                 {c.name}
               </h3>
-              <Badge tone={status.tone}>{status.label}</Badge>
+              <StageBar stage={stage} />
             </div>
             <p className="text-xs text-muted">{summary.join(" · ")}</p>
             {c.rejectionReason && <p className="text-xs text-rose-700">Düzeltme gerekçesi: {c.rejectionReason}</p>}
@@ -1426,7 +1427,7 @@ export default function CampaignPlannerPage() {
       <Card>
         <SectionHeading
           title="Kampanyalar"
-          description="Akış: onaya gönder → onay → Meta'ya kapalı yükleme (kampanya, reklam setleri, reklamlar) → harcama yetkisi olan kişinin etkinleştirmesi."
+          description="Her kampanya onaydan geçer, Meta'ya kapalı yüklenir ve harcamayı yalnızca harcama yetkisi olan kişi başlatır."
         />
         {focusMissing && !campaignsError && (
           <p className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted">

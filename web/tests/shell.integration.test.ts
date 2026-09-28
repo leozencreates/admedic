@@ -30,7 +30,6 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("kabuk özeti /api/shell", (
   const tokens: Partial<Record<Role, string>> = {};
   const userIds: string[] = [];
   const orgIds: string[] = [];
-  let workspaceId = "";
   const as = (role: Role) => cookieJar.set(SESSION_COOKIE, tokens[role]!);
   const summary = async () => {
     const res = await shellGet();
@@ -50,7 +49,6 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("kabuk özeti /api/shell", (
       });
       orgIds.push(org.id);
       const wsId = org.workspaces[0].id;
-      if (!foreign) workspaceId = wsId;
       // Her iki çalışma alanında: 2 yanıt bekleyen + 1 görüşülen lead, 1 devir + 1 performans uyarısı (+1 çözülmüş).
       for (const status of ["NEW", "NEW", "CONTACTED"] as const) {
         await prisma.lead.create({

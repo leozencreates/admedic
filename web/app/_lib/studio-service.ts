@@ -36,6 +36,8 @@ export const DraftActionSchema = z.discriminatedUnion("action", [
     .object({
       action: z.enum(["approve", "reject", "experiment"]),
       version: z.number().int().positive(),
+      /** Düzeltme isteğinin gerekçesi (yalnızca `reject`; denetim kaydına yazılır, gönderene gösterilir). */
+      reason: z.string().trim().min(3).max(500).optional(),
     })
     .strict(),
 ]);
@@ -343,6 +345,7 @@ export async function changeDraft(
       risk: policyMeta.risk,
       ...(input.action === "edit" ? { content } : {}),
       ...(warningAcknowledged ? { policyWarningAcknowledged: true } : {}),
+      ...(input.action === "reject" && "reason" in input && input.reason ? { reason: input.reason } : {}),
     });
     return { id };
   });
