@@ -144,6 +144,6 @@ $opener = {
 Start-Job -ScriptBlock $opener -ArgumentList "http://localhost:3000/login" | Out-Null
 
 Write-Step "Web paneli başlatılıyor: http://localhost:3000  (durdurmak için Ctrl+C)"
-Write-Host "    Giriş: e-posta + parola + çalışma alanı ID'si (pnpm --filter @admedic/web user:create ile oluşturulan kullanıcı)." -ForegroundColor DarkGray
+Write-Host "    Giriş: yukarıdaki demo verisi çıktısındaki 'Demo girişi' bağlantısı (çalışma alanı kimliği dolu gelir)." -ForegroundColor DarkGray
 Write-Host "    Değişiklikleri görmek için: docs/remaining-work.md §0 ve README 'Bu turda değişenler'." -ForegroundColor DarkGray
 cmd /c "pnpm web:dev"
