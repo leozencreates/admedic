@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       );
     }
     const [a, b] = result.variants;
-    if (!a || !b) throw new HttpError(502, "AI iki başlık varyantı üretemedi.");
+    if (!a || !b) throw new HttpError(502, "AI iki başlık varyantı üretemedi. Tekrar deneyin.");
     const content: DraftContent = {
       ...enriched,
       variants: [a, b],

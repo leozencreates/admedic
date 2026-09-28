@@ -1,6 +1,6 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-28 (kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
+Son güncelleme: 2026-09-28 (içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
@@ -200,5 +200,5 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 
 ## 11. i18n (spec §4)
 
-- Nav/layout/login/hesap TR–EN; sayfa içerikleri ve API hata mesajları hâlâ yalnızca Türkçe.
-  `t()` altyapısı hazır (`web/app/_lib/i18n.ts`, çerez `ui-lang`).
+- Kabuk, menü, sayfa başlıkları ve oturum açma TR–EN; sayfa içerikleri ve API hata mesajları hâlâ yalnızca
+  Türkçe. Altyapı ve geçiş taslağı: `docs/i18n-sayfa-metinleri.md` (ADR-0021).

@@ -94,7 +94,7 @@ export async function GET(
     requireRole(actor, CARE_ROLES);
     const { id } = await params;
     const conversation = await resolveConversation(id, actor);
-    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const messages = await prisma.message.findMany({
       where: { conversationId: conversation.id },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -129,7 +129,7 @@ export async function POST(
       create: true,
       channelHint: input.channel,
     });
-    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     if (conversation.status === "CLOSED")
       throw new HttpError(409, "Kapalı konuşmaya mesaj gönderilemez.");
     // Asistanın devrettiği, henüz sahipsiz konuşmaya yazan ekip üyesi konuşmayı devralmış olur.
@@ -137,9 +137,9 @@ export async function POST(
 
     const channel = input.channel ?? conversation.channel;
     if (channel !== conversation.channel)
-      throw new HttpError(422, "Mesaj kanalı konuşma kanalıyla eşleşmelidir.");
+      throw new HttpError(422, "Mesaj kanalı konuşma kanalıyla eşleşmelidir. Konuşmanın kanalını seçip tekrar gönderin.");
     if (channel === "SMS")
-      throw new HttpError(422, "SMS kanalı için gönderim bağlantısı henüz yapılandırılmadı.");
+      throw new HttpError(422, "SMS gönderimi henüz kurulmadı. Mesajı konuşmanın açıldığı kanaldan gönderin.");
 
     const rawTemplate = input.templateName?.trim() ?? "";
     const templateName = rawTemplate ? normalizeTemplateName(rawTemplate) : null;

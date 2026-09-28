@@ -26,22 +26,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const image = decodeAdImage(input);
     const campaign = await ownedCampaign(actor, id);
     if (!EDITABLE.includes(campaign.workflowStatus))
-      throw new HttpError(409, "Görsel yalnızca taslak veya reddedilmiş kampanyada değiştirilebilir.");
-    if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
+      throw new HttpError(409, "Görsel yalnızca taslak veya reddedilmiş kampanyada değiştirilebilir. Onaydaki ya da yayındaki kampanya için yeni kampanya oluşturun.");
+    if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun.");
     const live = await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId);
     const rawAccountId = campaign.adAccount.metaAccountId ?? (live.mockMode ? MOCK_AD_ACCOUNT_ID : null);
-    if (!rawAccountId) throw new HttpError(400, "Reklam hesabının Meta kimliği (metaAccountId) tanımlı değil.");
+    if (!rawAccountId) throw new HttpError(400, "Reklam hesabının Meta kimliği tanımlı değil. Meta bağlantıları sayfasından Meta ile yeniden bağlanın.");
     const uploaded = await createMetaClient().uploadAdImage(
       rawAccountId.replace(/^act_/, ""),
       { bytesBase64: image.base64, filename: image.filename },
       live.token,
     );
-    if (!uploaded.hash) throw new HttpError(502, "Meta görsel hash'i döndürmedi.");
+    if (!uploaded.hash) throw new HttpError(502, "Görsel Meta'ya yüklenemedi (Meta görsel kimliği döndürmedi). Birkaç dakika sonra tekrar deneyin.");
     await prisma.$transaction(async (tx) => {
       await lockCampaignRow(tx, actor, id);
       const fresh = await ownedCampaign(actor, id, tx);
       if (!EDITABLE.includes(fresh.workflowStatus))
-        throw new HttpError(409, "Kampanya bu sırada onaya gönderildi; görsel bağlanmadı.");
+        throw new HttpError(409, "Kampanya bu sırada onaya gönderildi; görsel bağlanmadı. Sayfayı yenileyip kampanyanın durumunu kontrol edin.");
       await tx.campaign.update({
         where: { id },
         data: { imageHash: uploaded.hash, imageUrl: uploaded.url ?? null },

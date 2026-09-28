@@ -5,7 +5,7 @@ import { api } from "../_lib/client-api";
 import { rtlFor } from "../_lib/creative-lang";
 import { formatDay } from "../_lib/format";
 import { languageName, policyRiskStyle, studioStatusStyle } from "../_lib/labels";
-import { Badge, PageHeader } from "./ui";
+import { Badge, IntroPanel, PageHeader } from "./ui";
 type Item = {
   id: string;
   name: string;
@@ -20,7 +20,8 @@ type Item = {
   experiment: { id: string } | null;
 };
 const STATUSES = ["DRAFT", "IN_REVIEW", "APPROVED", "REJECTED"] as const;
-export function Library() {
+/** `canCreate`: rol yeni reklam taslağı oluşturabilir mi (OWNER, ADMIN, MEDIA_BUYER). */
+export function Library({ canCreate = true }: { canCreate?: boolean }) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +46,8 @@ export function Library() {
       (!status || d.status === status) &&
       d.name.toLocaleLowerCase("tr").includes(query.toLocaleLowerCase("tr")),
   );
+  // Hiç taslak yokken sayaçlar ve süzgeçler gizlenir; yalnızca tanıtım paneli görünür.
+  const empty = !loading && error === null && items.length === 0;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -52,79 +55,94 @@ export function Library() {
         crumbs={[{ label: "Reklamlar" }]}
         description="Taslakları düzenleyin, içerik kontrollerini inceleyin ve ekibinizle onaylayın."
         actions={
-          <Link href="/studio" className="primary-button">
-            Yeni reklam oluştur
-          </Link>
+          canCreate ? (
+            <Link href="/studio" className="primary-button">
+              Reklam oluştur
+            </Link>
+          ) : undefined
         }
       />
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          ["Toplam taslak", items.length],
-          [
-            "Onay bekleyen",
-            items.filter((x) => x.status === "IN_REVIEW").length,
-          ],
-          ["Onaylanan", items.filter((x) => x.status === "APPROVED").length],
-        ].map(([label, value]) => (
-          <div className="studio-card" key={label}>
-            <p className="section-kicker">{label}</p>
-            <strong className="text-3xl">{loading || error !== null ? "—" : value}</strong>
-          </div>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <label className="field min-w-[200px] flex-1">
-          Reklam ara
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Klinik veya hizmet adı…"
-          />
-        </label>
-        <label className="field">
-          Durum
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Tüm durumlar</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {studioStatusStyle(s).label}
-              </option>
+      {empty ? null : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ["Toplam taslak", items.length],
+              [
+                "Onay bekleyen",
+                items.filter((x) => x.status === "IN_REVIEW").length,
+              ],
+              ["Onaylanan", items.filter((x) => x.status === "APPROVED").length],
+            ].map(([label, value]) => (
+              <div className="studio-card" key={label}>
+                <p className="section-kicker">{label}</p>
+                <strong className="text-3xl">{loading || error !== null ? "—" : value}</strong>
+              </div>
             ))}
-          </select>
-        </label>
-      </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <label className="field min-w-[200px] flex-1">
+              Reklam ara
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Klinik veya hizmet adı…"
+              />
+            </label>
+            <label className="field">
+              Durum
+              <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="">Tüm durumlar</option>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {studioStatusStyle(s).label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </>
+      )}
       {loading ? (
         <div className="studio-card animate-pulse" role="status">
           Kütüphane yükleniyor…
         </div>
       ) : error !== null ? (
         <div className="studio-card" role="alert">
-          <p className="font-medium text-rose-800">Reklam kütüphanesi yüklenemedi.</p>
+          <p className="font-medium text-rose-800">
+            Reklam kütüphanesi yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.
+          </p>
           {error && <p className="mt-1 text-sm text-slate-700">{error}</p>}
           <button className="secondary-button mt-4" onClick={load}>
             Tekrar dene
           </button>
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="studio-card py-12 text-center">
-          {items.length ? (
-            <>
-              <h2>Filtreye uygun reklam yok</h2>
-              <p className="mt-2 text-sm text-muted">
-                Aramayı ya da durum filtresini değiştirin.
-              </p>
-            </>
-          ) : (
-            <>
-              <h2>İlk reklamınızı oluşturun</h2>
-              <p className="mt-2 text-sm text-muted">
-                Kaydettiğiniz reklamlar ve onay durumları burada görünecek.
-              </p>
-              <Link href="/studio" className="primary-button mt-5">
+      ) : items.length === 0 ? (
+        <IntroPanel
+          title="Henüz reklam taslağı yok"
+          action={
+            canCreate ? (
+              <Link href="/studio" className="primary-button">
                 Reklam oluştur
               </Link>
-            </>
-          )}
+            ) : undefined
+          }
+        >
+          Reklam oluştur sayfasında hazırlanıp kaydedilen taslaklar, içerik kontrolü sonuçları ve onay durumlarıyla
+          burada listelenir. Onaylanan taslaktan A/B deneyi oluşturabilirsiniz.
+        </IntroPanel>
+      ) : filtered.length === 0 ? (
+        <div className="studio-card space-y-2 py-8 text-center">
+          <p className="text-sm text-ink-2">Süzgeçle eşleşen reklam yok.</p>
+          <button
+            type="button"
+            className="text-link text-sm"
+            onClick={() => {
+              setQuery("");
+              setStatus("");
+            }}
+          >
+            Süzgeçleri temizle
+          </button>
         </div>
       ) : (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -154,14 +172,14 @@ export function Library() {
                 </div>
                 <div className="flex gap-3">
                   <Link href={`/studio?id=${item.id}`} className="primary-button">
-                    İncele
+                    İncele<span className="sr-only">: {item.name}</span>
                   </Link>
                   {item.experiment && (
                     <Link
                       href={`/tests/${item.experiment.id}`}
                       className="secondary-button"
                     >
-                      Deneye git
+                      Deneyi aç<span className="sr-only">: {item.name}</span>
                     </Link>
                   )}
                 </div>
@@ -170,9 +188,9 @@ export function Library() {
           })}
         </div>
       )}
-      <p className="text-xs text-muted">
-        Son güncellenen en fazla 100 taslak gösterilir.
-      </p>
+      {empty ? null : (
+        <p className="text-xs text-muted">Son güncellenen en fazla 100 taslak gösterilir.</p>
+      )}
     </div>
   );
 }

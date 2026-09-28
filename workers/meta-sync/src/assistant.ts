@@ -197,7 +197,7 @@ async function deliver(
     });
     return { id: result.id ?? null, error: result.error ?? null };
   }
-  return { id: null, error: "SMS kanalı için gönderim bağlantısı henüz yapılandırılmadı." };
+  return { id: null, error: "SMS gönderimi henüz desteklenmiyor. Hastaya WhatsApp ya da e-postayla ulaşın." };
 }
 
 async function finalizeOutgoing(

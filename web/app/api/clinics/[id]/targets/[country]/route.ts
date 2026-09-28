@@ -29,14 +29,14 @@ export async function PATCH(
       where: { clinicId: id, country },
       include: { clinic: { select: { workspaceId: true } } },
     });
-    if (!target) throw new HttpError(404, "Hedef pazar bulunamadı.");
+    if (!target) throw new HttpError(404, "Pazar hedefi bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     const clinic = target.clinic;
     const actorWorkspace = await prisma.workspace.findUnique({
       where: { id: actor.workspaceId },
       select: { id: true },
     });
     if (clinic.workspaceId !== actorWorkspace?.id)
-      throw new HttpError(403, "Bu kayda ait değil.");
+      throw new HttpError(403, "Bu pazar hedefi seçili kliniğe ait değil. Sayfayı yenileyip doğru kliniği seçin.");
     const updated = await prisma.marketTarget.update({
       where: { id: target.id },
       data: {
@@ -69,9 +69,9 @@ export async function DELETE(
       where: { clinicId: id, country },
       include: { clinic: { select: { workspaceId: true } } },
     });
-    if (!target) throw new HttpError(404, "Hedef pazar bulunamadı.");
+    if (!target) throw new HttpError(404, "Pazar hedefi bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     if (target.clinic.workspaceId !== actor.workspaceId)
-      throw new HttpError(403, "Bu kayda ait değil.");
+      throw new HttpError(403, "Bu pazar hedefi seçili kliniğe ait değil. Sayfayı yenileyip doğru kliniği seçin.");
     await prisma.marketTarget.delete({ where: { id: target.id } });
     await logAudit({ actor, action: "MARKET_TARGET_DELETED", entityType: "MARKET_TARGET", entityId: target.id, before: { country } });
     return { ok: true };

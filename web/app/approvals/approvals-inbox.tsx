@@ -6,7 +6,7 @@ import { api } from "../_lib/client-api";
 import { formatDate, formatDuration, formatMoney, formatNumber } from "../_lib/format";
 import { campaignStage } from "../_lib/stages";
 import { ConfirmDialog, Dialog } from "../_components/dialog";
-import { EmptyState, IntroPanel } from "../_components/ui";
+import { IntroPanel } from "../_components/ui";
 import { StageBar } from "../_components/stage-bar";
 
 export type InboxKind = "CONTENT" | "CAMPAIGN" | "ACTIVATION" | "RECOMMENDATION";
@@ -103,7 +103,7 @@ export function ApprovalsInbox({
       await call();
       done(item, message);
     } catch (e) {
-      setRowError({ id: item.id, text: e instanceof Error ? e.message : "İşlem tamamlanamadı. Tekrar deneyin." });
+      setRowError({ id: item.id, text: e instanceof Error ? e.message : "İşlem tamamlanamadı. Bağlantınızı kontrol edip tekrar deneyin." });
     } finally {
       setBusyId(null);
     }
@@ -156,7 +156,7 @@ export function ApprovalsInbox({
       }
       setPending(null);
     } catch (e) {
-      setDialogError(e instanceof Error ? e.message : "İşlem tamamlanamadı. Tekrar deneyin.");
+      setDialogError(e instanceof Error ? e.message : "İşlem tamamlanamadı. Bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setDialogBusy(false);
     }
@@ -222,7 +222,10 @@ export function ApprovalsInbox({
             ya da yeni bir bütçe önerisi geldiğinde burada görünür.
           </IntroPanel>
         ) : (
-          <EmptyState message="Onayda bekleyen ya da düzeltme istenen işiniz yok." />
+          <IntroPanel title="Onayda bekleyen işiniz yok">
+            Onaya gönderdiğiniz reklam içerikleri ve kampanyalar burada izlenir. Onaylayan kişi düzeltme isterse gerekçesiyle
+            birlikte burada görünür.
+          </IntroPanel>
         )
       ) : null}
 
@@ -276,13 +279,18 @@ export function ApprovalsInbox({
                     }`}
                   >
                     {kind === "ALL" ? "Tümü" : KIND_LABEL[kind].tab}
-                    <span className="tabular-nums text-ink-3">{count}</span>
+                    <span className="tabular-nums text-ink-3">{formatNumber(count)}</span>
                   </button>
                 );
               })}
           </div>
           {visible.length === 0 ? (
-            <p className="mt-4 text-sm text-ink-2">Bu türde bekleyen iş kalmadı.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-ink-2">
+              <p>Süzgeçle eşleşen iş kalmadı.</p>
+              <button type="button" className="ghost-button" onClick={() => setFilter("ALL")}>
+                Süzgeci temizle
+              </button>
+            </div>
           ) : (
             <ul className="mt-2 divide-y divide-line-soft">
               {visible.map((item) => {

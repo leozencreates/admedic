@@ -71,15 +71,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const partialPublish = campaign.workflowStatus === "APPROVED" && Boolean(campaign.metaCampaignId);
     if (input.action === "PAUSE") {
       if (campaign.workflowStatus !== "ACTIVE" || !campaign.metaCampaignId)
-        throw new HttpError(409, "Yalnızca aktif kampanya duraklatılabilir.");
+        throw new HttpError(409, "Yalnızca yayındaki kampanya duraklatılabilir. Sayfayı yenileyip kampanyanın durumunu kontrol edin.");
     } else {
       if (!["ACTIVE", "PUBLISHED_PAUSED"].includes(campaign.workflowStatus) && !partialPublish)
-        throw new HttpError(409, "Yalnızca yayındaki (veya yayını yarım kalmış) kampanya arşivlenebilir.");
-      if (!campaign.metaCampaignId) throw new HttpError(409, "Kampanyanın Meta kimliği bulunamadı.");
+        throw new HttpError(409, "Yalnızca yayındaki (veya yayını yarım kalmış) kampanya arşivlenebilir. Sayfayı yenileyip kampanyanın durumunu kontrol edin.");
+      if (!campaign.metaCampaignId) throw new HttpError(409, "Kampanyanın Meta kimliği bulunamadı; kampanya Meta'da yayınlanmamış olabilir. Sayfayı yenileyip durumunu kontrol edin.");
       if (partialPublish && campaign.publishLockedUntil && campaign.publishLockedUntil > new Date())
         throw new HttpError(409, "Yayın şu anda sürüyor; bitmesini bekleyip tekrar deneyin.");
     }
-    if (!campaign.adAccount?.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
+    if (!campaign.adAccount?.connectionId) throw new HttpError(400, "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun.");
     const live = await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId);
     const paused = await createMetaClient().setStatus(
       { entityType: "campaign", entityId: campaign.metaCampaignId!, status: "PAUSED" },

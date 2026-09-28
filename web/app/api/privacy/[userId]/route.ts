@@ -24,7 +24,7 @@ export async function GET(_request: Request, { params }: Context) {
       where: { id, workspaceId: actor.workspaceId, organizationId: actor.orgId },
       include: { conversations: { include: { messages: true } }, consentRecords: true },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const leadData = {
       ...lead,
       email: safeDecrypt(lead.email),
@@ -74,7 +74,7 @@ export async function DELETE(request: Request, { params }: Context) {
     const { userId: id } = await params;
     await prisma.$transaction(async (tx) => {
       const found = await anonymizeLead(tx, { id, workspaceId: actor.workspaceId, orgId: actor.orgId }, { userId: actor.userId });
-      if (!found) throw new HttpError(404, "Lead bulunamadı.");
+      if (!found) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     });
     return { ok: true, anonymized: true };
   });

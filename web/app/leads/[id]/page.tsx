@@ -208,7 +208,7 @@ export default function LeadDetailPage() {
       setStatusNotice(`Durum güncellendi: ${leadStatusStyle(nextStatus).label}.`);
       return null;
     } catch (e) {
-      return e instanceof Error ? e.message : "Durum güncellenemedi. Tekrar deneyin.";
+      return e instanceof Error ? e.message : "Durum güncellenemedi. Bağlantınızı kontrol edip tekrar deneyin.";
     } finally {
       setStatusBusy(null);
     }
@@ -321,7 +321,7 @@ export default function LeadDetailPage() {
       setNotice("Açık rıza kaydedildi.");
       await load();
     } catch (e) {
-      setConsentErrors({ submit: e instanceof Error ? e.message : "Açık rıza kaydedilemedi. Tekrar deneyin." });
+      setConsentErrors({ submit: e instanceof Error ? e.message : "Açık rıza kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin." });
     } finally {
       setConsentBusy(false);
     }
@@ -337,7 +337,7 @@ export default function LeadDetailPage() {
       setNotice("Rıza geri çekildi olarak kaydedildi.");
       await load();
     } catch (e) {
-      setWithdrawError(e instanceof Error ? e.message : "Kaydedilemedi. Tekrar deneyin.");
+      setWithdrawError(e instanceof Error ? e.message : "Rızanın geri çekildiği kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setConsentBusy(false);
     }
@@ -482,11 +482,10 @@ export default function LeadDetailPage() {
               )}
             </section>
           )}
-          {refetchNotice && (
-            <p role="status" className="border-b border-line-soft px-4 py-2 text-sm text-emerald-700">
-              {refetchNotice}
-            </p>
-          )}
+          {/* Canlı bölge hep yerinde kalır ki bildirim ekran okuyucuya duyurulsun. */}
+          <p role="status" className={refetchNotice ? "border-b border-line-soft px-4 py-2 text-sm text-emerald-700" : "sr-only"}>
+            {refetchNotice}
+          </p>
 
           <section className="border-b border-line-soft px-4 py-4">
             <h2 className="text-base font-semibold text-ink">Kişi bilgileri</h2>
@@ -609,7 +608,7 @@ export default function LeadDetailPage() {
               </p>
             )}
             {/* Canlı bölge hep yerinde kalır ki güncelleme ekran okuyucuya duyurulsun. */}
-            <p role="status" className={statusNotice ? "mt-3 text-sm text-emerald-700" : undefined}>
+            <p role="status" className={statusNotice ? "mt-3 text-sm text-emerald-700" : "sr-only"}>
               {statusNotice}
             </p>
           </section>
@@ -658,11 +657,9 @@ export default function LeadDetailPage() {
                 {error}
               </p>
             )}
-            {notice && (
-              <p role="status" className="mt-3 text-sm text-emerald-800">
-                {notice}
-              </p>
-            )}
+            <p role="status" className={notice ? "mt-3 text-sm text-emerald-800" : "sr-only"}>
+              {notice}
+            </p>
             {(lead.consents ?? []).length > 0 && (
               <div className="mt-4 space-y-2">
                 <h3 className="text-sm font-semibold text-ink">Kayıt geçmişi</h3>

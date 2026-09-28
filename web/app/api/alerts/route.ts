@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     let status: z.infer<typeof StatusFilter> | undefined;
     if (raw) {
       const parsed = StatusFilter.safeParse(raw);
-      if (!parsed.success) throw new HttpError(400, "Geçersiz durum filtresi.");
+      if (!parsed.success) throw new HttpError(400, "Geçersiz durum filtresi. Süzgeçleri temizleyip tekrar deneyin.");
       status = parsed.data;
     }
     const alerts = await prisma.alert.findMany({

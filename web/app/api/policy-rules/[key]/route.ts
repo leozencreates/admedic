@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ key
       where: { key },
       orderBy: { version: "desc" },
     });
-    if (!rules.length) throw new HttpError(404, "Kural bulunamadı.");
+    if (!rules.length) throw new HttpError(404, "Kural bulunamadı; silinmiş olabilir. İçerik kuralları sayfasını yenileyin.");
     return { key, rules };
   });
 }
@@ -50,7 +50,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ke
       orderBy: { version: "desc" },
       select: { id: true, version: true, matcher: true, phrases: true, risk: true, reason: true, suggestion: true, active: true },
     });
-    if (!target) throw new HttpError(404, "Kural bulunamadı.");
+    if (!target) throw new HttpError(404, "Kural bulunamadı; silinmiş olabilir. İçerik kuralları sayfasını yenileyin.");
     if (target.version !== input.expectedPreviousVersion)
       throw new HttpError(409, "Kural sürümü değişti. Güncel sürümü yeniden yükleyin.");
     if (input.intendedVersion !== target.version)
@@ -68,7 +68,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ke
       active: input.active ?? target.active,
     };
     if (next.matcher === "PHRASES_V1" && next.phrases.length === 0)
-      throw new HttpError(400, "Phrases kuralı en az bir ifade içermeli.");
+      throw new HttpError(400, "İfade listesi kuralı en az bir ifade içermeli. İfadeler alanına virgülle ayırarak en az bir ifade girin.");
     const changed = (Object.keys(next) as Array<keyof typeof next>).filter((field) => {
       const a = next[field];
       const b = target[field];

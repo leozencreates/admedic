@@ -31,8 +31,8 @@ export async function POST(request: Request) {
       where: { id: input.experimentId, draft: { workspaceId: actor.workspaceId } },
       select: { id: true, status: true },
     });
-    if (!experiment) throw new HttpError(404, "Deney bulunamadı.");
-    if (experiment.status !== "COMPLETED") throw new HttpError(409, "Öneri yalnızca tamamlanan deney için oluşturulabilir.");
+    if (!experiment) throw new HttpError(404, "A/B testi bulunamadı; silinmiş olabilir. A/B testleri sayfasından yeniden açın.");
+    if (experiment.status !== "COMPLETED") throw new HttpError(409, "Öneri yalnızca tamamlanan A/B testi için oluşturulabilir. Testin tamamlanmasını bekleyin.");
     const recs = await generateRecommendations({ experimentId: experiment.id, workspaceId: actor.workspaceId });
     if (!recs.length) throw new HttpError(409, "Oluşturulacak öneri yok.");
     const saved = await persistRecommendations(experiment.id, recs, actor);

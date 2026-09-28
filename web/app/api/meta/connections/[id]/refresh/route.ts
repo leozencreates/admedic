@@ -17,7 +17,7 @@ export async function POST(
     const { id } = await params;
     const conn = await prisma.metaConnection.findUnique({ where: { id } });
     if (!conn || conn.orgId !== actor.orgId)
-      throw new HttpError(404, "Meta bağlantısı bulunamadı.");
+      throw new HttpError(404, "Meta bağlantısı bulunamadı. Meta bağlantıları sayfasını yenileyin; bağlantı yoksa Meta ile bağlantı kurun.");
 
     const before = {
       status: conn.status,

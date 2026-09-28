@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       where: { id: input.creativeId, workspaceId: { equals: actor.workspaceId } },
       include: { ads: { select: { id: true, name: true, status: true } }, experimentVariants: { select: { id: true, config: true } } }
     });
-    if (!creative) throw new HttpError(404, "Kreatif bulunamadı.");
+    if (!creative) throw new HttpError(404, "Reklam içeriği bulunamadı; silinmiş olabilir. Çok dilli üretim sayfasından yeniden oluşturun.");
     const variants = creative.experimentVariants ?? [];
     const adapted = (variants as Array<{ id: string; config?: { imageUrl?: string } }>).map((variant) => ({
       variantId: variant.id,

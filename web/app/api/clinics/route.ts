@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     requireRole(actor, EDIT_ROLES);
     const input = await body(request, ClinicSchema);
     const slug = input.slug ?? slugify(input.name);
-    if (slug.length < 2) throw new HttpError(400, "Klinik adından slug türetilemedi; slug alanını doldurun.");
+    if (slug.length < 2) throw new HttpError(400, "Klinik adından kısa ad türetilemedi. Klinik adına en az bir harf veya rakam ekleyin.");
     const clinic = await prisma.$transaction(async (tx) => {
       const created = await tx.clinicProfile.create({
         data: {

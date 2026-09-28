@@ -12,7 +12,7 @@ export async function ownedCampaign(actor: Actor, id: string, db: Prisma.Transac
       },
     },
   });
-  if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+  if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
   return campaign;
 }
 

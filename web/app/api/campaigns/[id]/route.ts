@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const actor = await requireActor();
     const { id } = await params;
     const [campaign] = await loadCampaignViews(actor, { id });
-    if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+    if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
 
     const adSets = await prisma.adSet.findMany({
       where: { campaignId: id },

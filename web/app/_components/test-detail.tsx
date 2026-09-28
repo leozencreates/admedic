@@ -49,7 +49,9 @@ export function TestDetail({
     setNotice("");
     try {
       if (!metrics.every(validMetrics) || !Number.isInteger(elapsed))
-        throw new Error("Geçerli metrikler ve gün sayısı girin.");
+        throw new Error(
+          "Metrikler kaydedilmedi: harcama, tıklama ve lead sıfır ya da pozitif olmalı, lead sayısı tıklamayı geçmemeli ve gün sayısı tam sayı olmalı. Değerleri düzeltip tekrar kaydedin.",
+        );
       await api(`/api/experiments/${test.id}`, "PATCH", {
         version: test.version,
         metrics,
@@ -65,7 +67,7 @@ export function TestDetail({
       setDirty(false);
       setNotice("Deney kaydedildi.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Deney kaydedilemedi. Tekrar deneyin.");
+      setError(e instanceof Error ? e.message : "Deney kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setBusy(false);
     }
@@ -91,7 +93,7 @@ export function TestDetail({
       <div className="space-y-2 text-sm text-ink-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={experimentStatusStyle(test.status).tone}>{experimentStatusStyle(test.status).label}</Badge>
-          <span className="text-xs text-ink-3">Manuel ölçüm · Meta&apos;da yayınlanmaz</span>
+          <span className="text-xs text-ink-3">Elle girilen ölçüm · Meta&apos;da yayınlanmaz</span>
           <span className="text-xs text-ink-3">
             {dirty ? "Kaydedilmemiş değişiklikler" : `Kayıt sürümü ${test.version}`}
           </span>
@@ -247,7 +249,7 @@ export function TestDetail({
                   </strong>
                 </div>
               </div>
-              <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
                 <div
                   className={`h-full rounded-full ${i ? "bg-cyan-500" : "bg-violet-500"}`}
                   style={{

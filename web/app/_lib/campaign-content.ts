@@ -82,13 +82,13 @@ export async function loadApprovedDrafts(
 ): Promise<ContentDraft[]> {
   const unique = Array.from(new Set(draftIds.map((id) => id.trim())));
   const rows = await db.studioDraft.findMany({ where: { id: { in: unique }, workspaceId } });
-  if (rows.length !== unique.length) throw new HttpError(404, "Stüdyo taslağı bulunamadı.");
+  if (rows.length !== unique.length) throw new HttpError(404, "Reklam taslağı bulunamadı; silinmiş olabilir. Reklam kütüphanesinden başka bir taslak seçin.");
   const byId = new Map(rows.map((r) => [r.id, r]));
   const drafts: ContentDraft[] = [];
   for (const id of unique) {
     const row = byId.get(id)!;
     if (row.status !== "APPROVED")
-      throw new HttpError(409, `Yalnızca onaylı stüdyo taslakları bağlanabilir ("${row.name}" onaylı değil).`);
+      throw new HttpError(409, `Yalnızca onaylı reklam taslakları bağlanabilir ("${row.name}" onaylı değil). Taslağı onaylatın ya da onaylı bir taslak seçin.`);
     const parsed = DraftSchema.safeParse(row.content);
     if (!parsed.success) throw new HttpError(422, `"${row.name}" taslağının içeriği geçersiz; stüdyoda yeniden kaydedin.`);
     const content = parsed.data;
@@ -112,7 +112,7 @@ export async function loadApprovedDrafts(
   for (const d of drafts) perLanguage.set(d.language, (perLanguage.get(d.language) ?? 0) + 1);
   for (const [language, count] of perLanguage)
     if (count > MAX_DRAFTS_PER_LANGUAGE)
-      throw new HttpError(422, `Dil başına en fazla ${MAX_DRAFTS_PER_LANGUAGE} taslak bağlanabilir (${language}: ${count}).`);
+      throw new HttpError(422, `Dil başına en fazla ${MAX_DRAFTS_PER_LANGUAGE} taslak bağlanabilir (${language}: ${count}). Fazla taslakları çıkarıp tekrar deneyin.`);
   return drafts;
 }
 

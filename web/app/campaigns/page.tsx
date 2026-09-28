@@ -2,7 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Plus } from "lucide-react";
 
-import { EmptyState, IntroPanel, PageHeader, Td, Th } from "../_components/ui";
+import { IntroPanel, PageHeader, Td, Th } from "../_components/ui";
 import { StageBar } from "../_components/stage-bar";
 import { EDIT_ROLES, requirePageActor } from "../_lib/auth";
 import { EMPTY_METRICS, campaignMetrics, cpl, roas, sinceDays, type Metrics } from "../_lib/campaign-metrics";
@@ -14,7 +14,7 @@ import { campaignStage, isExternalCampaign, type StageInfo } from "../_lib/stage
 /**
  * Kampanyalar (ADR-0020 · K5-C): tek kampanya listesi. Her satır aşama şeridi ve son 7 günün harcaması, lead
  * sayısı, lead başı maliyeti ve reklam getirisiyle kampanya sayfasına (`/campaigns/<id>`) götürür.
- * Önce bir insandan eylem bekleyenler, sonra son 7 günde en çok harcayanlar. Yeni kampanya planlayıcıda oluşturulur.
+ * Önce bir insandan eylem bekleyenler, sonra son 7 günde en çok harcayanlar. Yeni kampanya /campaign-planner'da oluşturulur.
  */
 type Filter = "all" | "action" | "live" | "archived";
 const FILTERS: { key: Filter; label: string }[] = [
@@ -85,7 +85,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
             ) : undefined
           }
         >
-          Planlayıcı hedefinize göre pazar, dil ve bütçe önerir. Kampanya onaydan geçer, Meta&apos;ya kapalı yüklenir ve
+          Kampanyalar, hedefinize göre pazar, dil ve bütçenin önerildiği Yeni kampanya ekranında oluşturulur. Kampanya onaydan geçer, Meta&apos;ya kapalı yüklenir ve
           harcamayı yalnızca harcama yetkisi olan kişi başlatır.
         </IntroPanel>
       ) : (
@@ -107,7 +107,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                 >
                   {f.label}
                   <span className={`tabular-nums ${f.key === "action" && counts.action > 0 ? "rounded-full bg-warn-badge px-1.5 text-warn" : "text-ink-3"}`}>
-                    {counts[f.key]}
+                    {formatNumber(counts[f.key])}
                   </span>
                 </Link>
               );
@@ -115,8 +115,11 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
           </nav>
 
           {visible.length === 0 ? (
-            <div className="p-4">
-              <EmptyState message="Bu süzgeçte kampanya yok." />
+            <div className="flex flex-wrap items-center gap-3 p-4 text-sm text-ink-2">
+              <p>Süzgeçle eşleşen kampanya yok.</p>
+              <Link href="/campaigns" className="ghost-button">
+                Süzgeci temizle
+              </Link>
             </div>
           ) : (
             <>
@@ -174,7 +177,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                         <span className="mt-1.5 block text-xs text-ink-2">
                           7 gün: {formatMoney(m.spend, currency)} · {formatNumber(m.leads)} lead
                           {unit != null ? ` · lead başı ${formatMoney(unit, currency, { precise: true })}` : ""}
-                          {" · "}ROAS {formatRoas(roas(m))}
+                          {" · "}getiri (ROAS) {formatRoas(roas(m))}
                         </span>
                       </Link>
                     </li>

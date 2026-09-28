@@ -39,11 +39,11 @@ export async function POST(request: Request) {
     requireRole(actor, ["OWNER", "ADMIN"]);
     const input = await body(request, InvoiceActionSchema);
     const { mock } = billingMode();
-    if (!mock) throw new HttpError(409, "Faturalar Stripe üzerinden ödenir; elle ödeme yalnızca mock modda kullanılabilir.");
+    if (!mock) throw new HttpError(409, "Faturalar Stripe üzerinden ödenir; elle ödeme yalnızca deneme modunda kullanılabilir.");
     const invoice = await prisma.invoice.findFirst({ where: { id: input.invoiceId, organizationId: actor.orgId } });
-    if (!invoice) throw new HttpError(404, "Fatura bulunamadı.");
-    if (invoice.status === "PAID") throw new HttpError(409, "Fatura zaten ödenmiş.");
-    if (invoice.status === "VOID") throw new HttpError(409, "İptal edilmiş fatura ödenemez.");
+    if (!invoice) throw new HttpError(404, "Fatura bulunamadı. Faturalar sayfasını yenileyin.");
+    if (invoice.status === "PAID") throw new HttpError(409, "Fatura zaten ödenmiş. Güncel durumu görmek için sayfayı yenileyin.");
+    if (invoice.status === "VOID") throw new HttpError(409, "İptal edilmiş fatura ödenemez. Açık fatura yoksa planı yeniden seçin.");
     const paid = await prisma.$transaction(async (tx) => {
       const updated = await markInvoicePaid(tx, invoice);
       await logAudit(

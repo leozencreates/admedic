@@ -62,14 +62,14 @@ function jpegSize(buf: Buffer): { width: number; height: number } | null {
  */
 export function decodeAdImage(input: z.infer<typeof ImageUploadSchema>): DecodedAdImage {
   const raw = input.dataBase64.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s+/g, "");
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) throw new HttpError(400, "Görsel verisi geçerli base64 değil.");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) throw new HttpError(400, "Görsel verisi okunamadı. Dosyayı yeniden seçip tekrar yükleyin.");
   const buf = Buffer.from(raw, "base64");
-  if (buf.length === 0) throw new HttpError(400, "Görsel boş.");
+  if (buf.length === 0) throw new HttpError(400, "Görsel dosyası boş. Başka bir JPEG veya PNG seçin.");
   if (buf.length > MAX_AD_IMAGE_BYTES)
-    throw new HttpError(413, `Görsel en fazla ${Math.round(MAX_AD_IMAGE_BYTES / (1024 * 1024))} MB olabilir.`);
+    throw new HttpError(413, `Görsel en fazla ${Math.round(MAX_AD_IMAGE_BYTES / (1024 * 1024))} MB olabilir. Daha küçük bir dosya seçin.`);
   const isJpeg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
   const isPng = buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (!isJpeg && !isPng) throw new HttpError(422, "Yalnızca JPEG veya PNG görsel yüklenebilir.");
+  if (!isJpeg && !isPng) throw new HttpError(422, "Yalnızca JPEG veya PNG görsel yüklenebilir. Dosyayı bu biçimlerden birinde kaydedip yeniden yükleyin.");
   const type = isJpeg ? "image/jpeg" : "image/png";
   const size = isJpeg ? jpegSize(buf) : pngSize(buf);
   const base = input.filename.replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "reklam-gorseli";

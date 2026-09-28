@@ -71,7 +71,7 @@ export async function requireLiveMetaConnection(
 ): Promise<LiveMetaConnectionResult> {
   const conn = await prisma.metaConnection.findUnique({ where: { id: connId } });
   if (!conn || conn.orgId !== orgId)
-    throw new HttpError(400, "Meta bağlantısı bulunamadı.");
+    throw new HttpError(400, "Meta bağlantısı bulunamadı. Meta bağlantıları sayfasını yenileyin; bağlantı yoksa Meta ile bağlantı kurun.");
   if (conn.status !== "CONNECTED")
     throw new HttpError(
       conn.status === "EXPIRED"
@@ -90,12 +90,12 @@ export async function requireLiveMetaConnection(
       expiresAt: conn.expiresAt,
     };
   if (!conn.tokenCiphertext)
-    throw new HttpError(400, "Meta erişim token'ı bulunamadı.");
+    throw new HttpError(400, "Meta erişim anahtarı bulunamadı. Meta bağlantıları sayfasından Meta ile yeniden bağlanın.");
   if (conn.expiresAt && conn.expiresAt.getTime() <= Date.now()) {
     await markConnectionBroken(conn.id, "EXPIRED", "Token süresi doldu.");
     throw new HttpError(
       400,
-      "Meta erişim token'ının süresi doldu. Bağlantı sayfasından yeniden bağlanın.",
+      "Meta erişim anahtarının süresi doldu. Meta bağlantıları sayfasından yeniden bağlanın.",
     );
   }
   let current = conn;
@@ -137,13 +137,13 @@ export interface RefreshMetaResult {
 export async function refreshMetaConnection(connId: string): Promise<RefreshMetaResult> {
   const env = loadEnv();
   if (!env.META_APP_ID || !env.META_APP_SECRET)
-    throw new HttpError(400, "Token yenileme için META_APP_ID/META_APP_SECRET ayarlanmamış.");
+    throw new HttpError(400, "Meta uygulama ayarları eksik (META_APP_ID/META_APP_SECRET); bağlantı yenilenemiyor. Sistem yöneticinize bildirin.");
   const conn = await prisma.metaConnection.findUnique({ where: { id: connId } });
-  if (!conn) throw new HttpError(404, "Meta bağlantısı bulunamadı.");
+  if (!conn) throw new HttpError(404, "Meta bağlantısı bulunamadı. Meta bağlantıları sayfasını yenileyin; bağlantı yoksa Meta ile bağlantı kurun.");
   if (conn.status === "REVOKED")
     throw new HttpError(
       409,
-      "Bağlantı kesilmiş veya iptal edilmiş; 'Meta ile Bağlantı Kur' ile yeniden bağlanın.",
+      "Bağlantı kesilmiş veya iptal edilmiş; “Meta ile bağlantı kur” düğmesiyle yeniden bağlanın.",
     );
   if (env.META_MOCK_MODE) {
     const mock = await prisma.metaConnection.update({
@@ -162,12 +162,12 @@ export async function refreshMetaConnection(connId: string): Promise<RefreshMeta
     };
   }
   if (!conn.tokenCiphertext)
-    throw new HttpError(400, "Saklı token bulunamadı; yeniden bağlanın.");
+    throw new HttpError(400, "Kayıtlı Meta erişim anahtarı bulunamadı. Meta ile yeniden bağlanın.");
   if (conn.expiresAt && conn.expiresAt.getTime() <= Date.now()) {
     await markConnectionBroken(conn.id, "EXPIRED", "Token süresi doldu.");
     throw new HttpError(
       409,
-      "Süresi dolmuş Meta token'ı yenilenemez (Meta kuralı); bağlantıyı yeniden kurun.",
+      "Süresi dolmuş Meta erişim anahtarı yenilenemez (Meta kuralı). Meta ile yeniden bağlanın.",
     );
   }
 
@@ -306,7 +306,7 @@ export async function resolvePublishPage(input: {
     if (pages.length > 1)
       throw new HttpError(
         422,
-        "Birden fazla Facebook Sayfası bağlı; Meta bağlantıları sayfasında reklam hesabı bağlantısına yayın sayfasının kimliğini (Sayfa ID) girin.",
+        "Birden fazla Facebook Sayfası bağlı. Meta bağlantıları sayfasında “Kimlik numaralarını düzenle” ile reklamların yayınlanacağı Facebook Sayfası kimliğini girin.",
       );
     pageId = pages[0]?.pageId ?? null;
   }
@@ -315,7 +315,7 @@ export async function resolvePublishPage(input: {
       return { pageId: MOCK_PAGE_ID, pageToken: input.needPageToken ? MOCK_PAGE_TOKEN : null };
     throw new HttpError(
       422,
-      "Reklamların yayınlanacağı Facebook Sayfası bulunamadı; Meta bağlantıları sayfasından sayfaları keşfedin veya Sayfa ID girin.",
+      "Reklamların yayınlanacağı Facebook Sayfası bulunamadı. Meta ile yeniden bağlanın ya da Meta bağlantıları sayfasında Facebook Sayfası kimliğini girin.",
     );
   }
   if (!input.needPageToken) return { pageId, pageToken: null };
@@ -324,12 +324,12 @@ export async function resolvePublishPage(input: {
   if (!page?.tokenCiphertext)
     throw new HttpError(
       422,
-      "Instant Form için sayfa erişim token'ı bulunamadı; Meta bağlantıları sayfasından sayfaları yeniden keşfedin.",
+      "Anında Form için sayfa erişim anahtarı bulunamadı. Meta bağlantıları sayfasından Meta ile yeniden bağlanın.",
     );
   if (page.scopes.length > 0 && !page.scopes.includes("pages_manage_ads"))
     throw new HttpError(
       422,
-      "Instant Form oluşturmak için Meta'da pages_manage_ads izni gerekli; Meta bağlantısını yeniden yetkilendirin.",
+      "Anında Form oluşturmak için Meta'da pages_manage_ads izni gerekli; Meta ile yeniden bağlanıp bu izni verin.",
     );
   return { pageId, pageToken: decrypt(page.tokenCiphertext) };
 }

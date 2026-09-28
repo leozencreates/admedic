@@ -21,7 +21,7 @@ export async function GET(_request: Request) {
     if (!env.META_APP_ID)
       throw new HttpError(
         400,
-        "Meta uygulama kimliği ayarlanmamış (META_APP_ID ortam değişkeni).",
+        "Meta uygulama kimliği ayarlanmamış (META_APP_ID); Meta bağlantısı başlatılamıyor. Sistem yöneticinize bildirin.",
       );
     const { state } = createOAuthState(env.AUTH_SECRET, actor.userId, actor.orgId);
     const scopes = [...META_OAUTH_SCOPES];

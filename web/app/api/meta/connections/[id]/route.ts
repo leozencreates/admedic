@@ -48,7 +48,7 @@ export async function PATCH(
     const input = await body(request, PatchSchema);
     const conn = await prisma.metaConnection.findUnique({ where: { id } });
     if (!conn || conn.orgId !== actor.orgId)
-      throw new HttpError(404, "Meta bağlantısı bulunamadı.");
+      throw new HttpError(404, "Meta bağlantısı bulunamadı. Meta bağlantıları sayfasını yenileyin; bağlantı yoksa Meta ile bağlantı kurun.");
 
     const data: Record<string, string | null> = {};
     const before: Record<string, string | null> = {};
@@ -76,7 +76,7 @@ export async function PATCH(
         select: { id: true },
       });
       if (clash)
-        throw new HttpError(409, "Bu kimlik başka bir organizasyonun bağlantısında kayıtlı; eşleme reddedildi.");
+        throw new HttpError(409, "Bu kimlik başka bir kuruluşun bağlantısında kayıtlı; eşleme reddedildi. Kimlik numarasını kontrol edin.");
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -109,7 +109,7 @@ export async function DELETE(
     const { id } = await params;
     const conn = await prisma.metaConnection.findUnique({ where: { id } });
     if (!conn || conn.orgId !== actor.orgId)
-      throw new HttpError(404, "Meta bağlantısı bulunamadı.");
+      throw new HttpError(404, "Meta bağlantısı bulunamadı. Meta bağlantıları sayfasını yenileyin; bağlantı yoksa Meta ile bağlantı kurun.");
 
     const adAccounts = await prisma.adAccount.findMany({
       where: { connectionId: conn.id },

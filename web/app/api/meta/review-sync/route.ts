@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       take: 50,
       select: { id: true, name: true, adAccount: { select: { connectionId: true } } },
     });
-    if (input.campaignId && campaigns.length === 0) throw new HttpError(404, "Meta'da yayınlanmış kampanya bulunamadı.");
+    if (input.campaignId && campaigns.length === 0) throw new HttpError(404, "Meta'da yayınlanmış kampanya bulunamadı. Önce kampanyayı yayınlayın.");
     const results = [];
     for (const campaign of campaigns) results.push(await syncCampaignAdReviews(campaign, actor.orgId));
     await logAudit({

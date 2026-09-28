@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const experiment = await prisma.studioExperiment.findFirst({
       where: { id, draft: { workspaceId: actor.workspaceId } }, select: { id: true, status: true },
     });
-    if (!experiment) throw new HttpError(404, "Deney bulunamadı.");
+    if (!experiment) throw new HttpError(404, "A/B testi bulunamadı; silinmiş olabilir. A/B testleri sayfasından yeniden açın.");
     throw new HttpError(
       409,
       "Bu deney manuel ölçüm kullanıyor: otomatik Meta senkronizasyonu yok. Varyantların harcama/tıklama/lead değerlerini deney sayfasından girin; " +

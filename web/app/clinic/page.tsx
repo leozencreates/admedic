@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
-import { Card, EmptyState, SectionHeading, Badge, PageHeader } from "../_components/ui";
+import { Card, EmptyState, SectionHeading, Badge, PageHeader, IntroPanel } from "../_components/ui";
+import { formatMoney } from "../_lib/format";
 import { ConfirmDialog } from "../_components/dialog";
 import { BRIEF_LANGUAGES } from "../_lib/creative-lang";
 import { countryName, entityStatusStyle, languageName } from "../_lib/labels";
@@ -84,26 +85,19 @@ const TARGET_MARKET_LABEL: Record<string, string> = {
   UK: "Birleşik Krallık",
   NETHERLANDS: "Hollanda",
   USA: "ABD",
-  GULF: "Körfez Ülkeleri",
+  GULF: "Körfez ülkeleri",
   OTHER: "Diğer",
 };
 const CATEGORY_LABEL: Record<string, string> = {
   MEDICAL: "Tıbbi",
   DENTAL: "Diş",
-  WELLNESS: "Sağlıklı Yaşam",
+  WELLNESS: "Sağlıklı yaşam",
   SURGICAL: "Cerrahi",
   DIAGNOSTIC: "Teşhis",
   PSYCHIATRIC: "Psikiyatri",
   OTHER: "Diğer",
 };
 
-function money(cents: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("tr-TR", { style: "currency", currency, maximumFractionDigits: 0 }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(0)} ${currency}`;
-  }
-}
 
 export default function ClinicPage() {
   const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -156,7 +150,7 @@ export default function ClinicPage() {
       setClinics(c.clinics);
       if (c.clinics.length === 0) setShowCreate(true);
     } catch (e) {
-      fail(e, "Veri alınamadı.");
+      fail(e, "Klinikler yüklenemedi. Bağlantınızı kontrol edip sayfayı yenileyin.");
     }
     try {
       const o = await api<{ settings: OrgSettings }>(`/api/org/settings`);
@@ -203,7 +197,7 @@ export default function ClinicPage() {
         brandBannedPhrases: (clinic.brandBannedPhrases ?? []).join(", "),
       });
     } catch (e) {
-      fail(e, "Profil yüklenemedi.");
+      fail(e, "Klinik profili yüklenemedi. Kliniği yeniden seçin ya da sayfayı yenileyin.");
     }
   }
 
@@ -247,7 +241,7 @@ export default function ClinicPage() {
       await load();
       await select(clinic.id);
     } catch (e) {
-      fail(e, "Klinik oluşturulamadı.");
+      fail(e, "Klinik oluşturulamadı. Bağlantınızı kontrol edip tekrar deneyin.");
     }
   }
 
@@ -275,10 +269,10 @@ export default function ClinicPage() {
       };
       // Düz nesne gönderilir; `api()` JSON'a çevirir (çift kodlama yok).
       const r = await api<{ changed: string[] }>(`/api/clinics/${selectedId}`, "PATCH", payload);
-      ok(r.changed.length > 0 ? "Klinik profili & marka kılavuzu kaydedildi." : "Değişiklik yok.");
+      ok(r.changed.length > 0 ? "Klinik profili ve marka bilgileri kaydedildi." : "Değişiklik yapılmadı.");
       load();
     } catch (e) {
-      fail(e, "Kaydedilemedi.");
+      fail(e, "Klinik profili kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.");
     }
   }
 
@@ -318,7 +312,7 @@ export default function ClinicPage() {
     try {
       if (editingService) {
         const r = await api<{ changed: string[] }>(`/api/services/${editingService}`, "PATCH", servicePayload(serviceForm));
-        ok(r.changed.length > 0 ? "Hizmet güncellendi." : "Değişiklik yok.");
+        ok(r.changed.length > 0 ? "Hizmet güncellendi." : "Değişiklik yapılmadı.");
       } else {
         await api(`/api/services/clinics/${selectedId}`, "POST", servicePayload(serviceForm));
         ok("Hizmet eklendi.");
@@ -327,7 +321,7 @@ export default function ClinicPage() {
       setEditingService(null);
       loadCatalog(selectedId);
     } catch (e) {
-      fail(e, editingService ? "Hizmet güncellenemedi." : "Hizmet eklenemedi.");
+      fail(e, editingService ? "Hizmet güncellenemedi. Alanları kontrol edip tekrar deneyin." : "Hizmet eklenemedi. Alanları kontrol edip tekrar deneyin.");
     }
   }
 
@@ -339,7 +333,7 @@ export default function ClinicPage() {
       ok("Hizmet arşivlendi.");
       loadCatalog(selectedId!);
     } catch (e) {
-      fail(e, "Hizmet arşivlenemedi.");
+      fail(e, "Hizmet arşivlenemedi. Tekrar deneyin.");
     }
   }
 
@@ -349,7 +343,7 @@ export default function ClinicPage() {
       await api(`/api/services/${id}`, "PATCH", { status });
       loadCatalog(selectedId!);
     } catch (e) {
-      fail(e, "Hizmet durumu güncellenemedi.");
+      fail(e, "Hizmet durumu güncellenemedi. Tekrar deneyin.");
     }
   }
 
@@ -380,7 +374,7 @@ export default function ClinicPage() {
       setEditingTarget(null);
       loadCatalog(selectedId);
     } catch (e) {
-      fail(e, "Pazar hedefi kaydedilemedi.");
+      fail(e, "Pazar hedefi kaydedilemedi. Ülke kodunu ve para birimini kontrol edip tekrar deneyin.");
     }
   }
 
@@ -397,7 +391,7 @@ export default function ClinicPage() {
       }
       loadCatalog(selectedId);
     } catch (e) {
-      fail(e, "Pazar hedefi silinemedi.");
+      fail(e, "Pazar hedefi silinemedi. Tekrar deneyin.");
     }
   }
 
@@ -414,7 +408,7 @@ export default function ClinicPage() {
       ok("Çalışma alanı ayarları kaydedildi.");
       load();
     } catch (e) {
-      fail(e, "Kaydedilemedi.");
+      fail(e, "Çalışma alanı ayarları kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.");
     }
   }
 
@@ -429,7 +423,7 @@ export default function ClinicPage() {
         crumbs={[{ label: "Ayarlar" }]}
         actions={
           <button type="button" onClick={() => setShowCreate((v) => !v)} className="secondary-button" aria-expanded={showCreate}>
-            {showCreate ? "Formu gizle" : "+ Yeni klinik"}
+            {showCreate ? "Formu gizle" : "Yeni klinik"}
           </button>
         }
       />
@@ -473,9 +467,21 @@ export default function ClinicPage() {
       )}
 
       {loading ? (
-        <p role="status" className="text-sm text-muted">Yükleniyor…</p>
+        <p role="status" className="text-sm text-muted">Klinikler yükleniyor…</p>
       ) : clinics.length === 0 ? (
-        <EmptyState message="Henüz klinik profili yok. Yukarıdaki formdan ilk kliniğinizi oluşturun." />
+        <IntroPanel
+          title="İlk kliniğinizi ekleyin"
+          action={
+            showCreate ? undefined : (
+              <button type="button" className="primary-button" onClick={() => setShowCreate(true)}>
+                Klinik oluştur
+              </button>
+            )
+          }
+        >
+          Klinik profili; diller, hedef pazar, hizmet fiyatları ve yasaklı ifadelerle reklam üretimini ve içerik
+          kontrolünü besler. Klinik adını ve kategorisini girerek başlayın; diğer alanları sonra doldurabilirsiniz.
+        </IntroPanel>
       ) : (
         <Card>
           <div className="flex flex-wrap gap-2">
@@ -505,7 +511,7 @@ export default function ClinicPage() {
                 <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </label>
               <label className="field">
-                Uluslararası Sağlık Turizmi Yetki Belgesi No
+                Uluslararası Sağlık Turizmi Yetki Belgesi numarası
                 <input className={inputCls} value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder="örn. SB-2024-12345" />
               </label>
               <label className="field">
@@ -569,7 +575,7 @@ export default function ClinicPage() {
                 <input className={inputCls} value={form.brandLogo} onChange={(e) => setForm({ ...form, brandLogo: e.target.value })} placeholder="https://…" />
               </label>
               <label className="field">
-                Marka renkleri (hex, virgülle)
+                Marka renkleri (renk kodu, virgülle)
                 <input className={inputCls} value={form.brandColors} onChange={(e) => setForm({ ...form, brandColors: e.target.value })} placeholder="#1e3a8a, #f59e0b" />
               </label>
               <label className="field sm:col-span-2">
@@ -645,17 +651,18 @@ export default function ClinicPage() {
                 )}
               </div>
             </form>
-            {services.length === 0 ? <EmptyState message="Henüz hizmet yok." /> : (
+            {services.length === 0 ? <EmptyState message="Henüz hizmet yok. Yukarıdaki formdan ilk hizmeti ekleyin; başlangıç fiyatı reklam metnine gerçek veri olarak girer." /> : (
               <div className="mt-4 space-y-2">
                 {services.map((s) => (
                   <div key={s.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 ${editingService === s.id ? "ring-2 ring-violet-300" : ""}`}>
                     <div>
                       <p className="text-sm font-medium text-slate-900">
                         {s.name} {s.status !== "ACTIVE" && <span className="text-xs text-muted">({entityStatusStyle(s.status).label})</span>}
+                        {editingService === s.id && <span className="ml-1 text-xs font-normal text-muted">(düzenleniyor)</span>}
                       </p>
                       <p className="text-xs text-muted">
                         {CATEGORY_LABEL[s.category] ?? s.category}
-                        {s.priceCents ? ` · ${s.showStartingPrice ? "Başlangıç " : ""}${money(s.priceCents, s.currency || "EUR")}` : ""}
+                        {s.priceCents ? ` · ${s.showStartingPrice ? "Başlangıç " : ""}${formatMoney(s.priceCents, s.currency || "EUR")}` : ""}
                         {s.priceCents && !s.showStartingPrice ? " (fiyat reklamda gizli)" : ""}
                         {s.durationDays ? ` · ${s.durationDays} gün` : ""}
                         {s.packageIncludes.length > 0 ? ` · ${s.packageIncludes.join(", ")}` : ""}
@@ -725,7 +732,7 @@ export default function ClinicPage() {
                 )}
               </div>
             </form>
-            {targets.length === 0 ? <EmptyState message="Henüz pazar hedefi yok." /> : (
+            {targets.length === 0 ? <EmptyState message="Henüz pazar hedefi yok. Yukarıdaki formdan ülke kodu, dil ve para birimiyle ilk hedefi ekleyin." /> : (
               <div className="mt-4 flex flex-wrap gap-2">
                 {targets.map((t) => (
                   <span key={t.id} className={`flex items-center gap-3 rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-700 ${editingTarget === t.country ? "ring-2 ring-violet-300" : ""}`}>

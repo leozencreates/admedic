@@ -53,10 +53,10 @@ export async function attachCampaignContent(
   input: { draftIds: string[]; landingUrl?: string | null },
 ): Promise<ContentAttachResult> {
   if (!["DRAFT", "REJECTED"].includes(campaign.workflowStatus))
-    throw new HttpError(409, "İçerik yalnızca taslak veya reddedilmiş kampanyada değiştirilebilir.");
+    throw new HttpError(409, "İçerik yalnızca taslak veya reddedilmiş kampanyada değiştirilebilir. Onaydaki ya da yayındaki kampanya için yeni kampanya oluşturun.");
   const plan = parsePlanShape(campaign.plan);
   if (!plan)
-    throw new HttpError(422, "İçerik bağlamak için planlayıcıdan oluşturulmuş kampanya (pazar/ad set yapısı) gerekli.");
+    throw new HttpError(422, "İçerik bağlamak için pazar ve reklam seti yapısı olan bir kampanya gerekli. Kampanyayı Yeni kampanya sayfasından oluşturun.");
   const drafts = await loadApprovedDrafts(tx, actor.workspaceId, input.draftIds);
   const previous = parseCampaignContent(campaign.content);
   const landingUrl = input.landingUrl === undefined ? (previous?.landingUrl ?? null) : input.landingUrl;

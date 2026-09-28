@@ -66,11 +66,11 @@ export async function POST(request: Request) {
       throw new HttpError(409, "Rıza (consentGiven) olmadan dönüşüm olayı gönderilmez.");
     if (input.campaignId) {
       const campaign = await prisma.campaign.findFirst({ where: { id: input.campaignId, workspaceId: actor.workspaceId }, select: { id: true } });
-      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
     }
 
     const pixel = await resolvePixelTarget(actor.orgId);
-    if (!pixel) throw new HttpError(400, "Pixel/Dataset ID ayarlanmadı.");
+    if (!pixel) throw new HttpError(400, "Meta Pikseli kimliği girilmemiş. Meta bağlantıları sayfasında “Kimlik numaralarını düzenle” ile piksel kimliğini girin.");
 
     const dedupe = input.eventId
       ? input.eventId

@@ -124,7 +124,7 @@ async function deliver(
     });
     return { id: result.id ?? null, error: result.error ?? null };
   }
-  return { id: null, error: "SMS kanalı için gönderim bağlantısı henüz yapılandırılmadı." };
+  return { id: null, error: "SMS gönderimi henüz desteklenmiyor. Hastaya WhatsApp ya da e-postayla ulaşın." };
 }
 
 async function finalizeOutgoing(
@@ -171,7 +171,7 @@ async function escalate(
       select: { status: true },
     });
     if (current?.status !== "ACTIVE")
-      throw new HttpError(409, "Asistan durduruldu; koordinatör devraldı.");
+      throw new HttpError(409, "Asistan durduruldu; konuşmayı koordinatör devraldı. Yanıtı konuşma ekranından elle gönderin.");
     const now = new Date();
     await tx.conversation.update({
       where: { id: conversation.id },
@@ -228,7 +228,7 @@ async function escalate(
  */
 export async function respondToInbound(conversationId: string, options: RespondOptions): Promise<RespondResult> {
   let conversation = await loadConversation(conversationId, options.workspaceId);
-  if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+  if (!conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
   if (conversation.status !== "ACTIVE")
     throw new HttpError(409, "Bu konuşmada asistan durduruldu; koordinatör devralmalı.");
   if (options.simulatedInbound) {
@@ -246,7 +246,7 @@ export async function respondToInbound(conversationId: string, options: RespondO
   }
   const last = conversation.messages[0];
   if (!last || last.direction !== "INCOMING")
-    throw new HttpError(409, "Yanıtlanacak yeni gelen mesaj yok.");
+    throw new HttpError(409, "Yanıtlanacak yeni gelen mesaj yok. Hastadan yeni mesaj geldiğinde tekrar deneyin.");
   // 24 saatlik pencere (spec 3.8): pencere dışında serbest metin gönderilemez; koordinatör şablon kullanır.
   if (Date.now() - last.createdAt.getTime() > WINDOW_MS)
     throw new HttpError(409, "24 saatlik mesajlaşma penceresi dışında; koordinatör şablon mesajıyla devam etmeli.");
@@ -318,9 +318,9 @@ export async function respondToInbound(conversationId: string, options: RespondO
       select: { status: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
     });
     if (current?.status !== "ACTIVE")
-      throw new HttpError(409, "Asistan durduruldu; koordinatör devraldı.");
+      throw new HttpError(409, "Asistan durduruldu; konuşmayı koordinatör devraldı. Yanıtı konuşma ekranından elle gönderin.");
     if (current.messages[0]?.id !== last.id)
-      throw new HttpError(409, "Konuşma bu arada değişti; yanıt yeniden üretilmeli.");
+      throw new HttpError(409, "Konuşma bu arada değişti. Yanıtı yeniden üretin.");
     const message = await tx.message.create({
       data: {
         conversationId: conversation.id,

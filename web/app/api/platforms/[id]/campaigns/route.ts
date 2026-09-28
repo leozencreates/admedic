@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       where: { id, workspaceId: actor.workspaceId },
       include: { campaigns: { select: { id: true, name: true, status: true } } },
     });
-    if (!account) throw new HttpError(404, "Reklam hesabı bulunamadı.");
+    if (!account) throw new HttpError(404, "Reklam hesabı bulunamadı. Platformlar sayfasından hesabı kontrol edin ya da Meta ile yeniden bağlanın.");
     return { campaigns: account.campaigns };
   });
 }

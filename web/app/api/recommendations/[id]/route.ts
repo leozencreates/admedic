@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const actor = await requireActor();
     const { id } = await params;
     const rec = await prisma.recommendation.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!rec) throw new HttpError(404, "Öneri bulunamadı.");
+    if (!rec) throw new HttpError(404, "Öneri bulunamadı; silinmiş olabilir. Öneriler sayfasını yenileyin.");
     return { recommendation: rec };
   });
 }
@@ -36,22 +36,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const input = await body(request, PatchSchema);
     const rec = await prisma.recommendation.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!rec) throw new HttpError(404, "Öneri bulunamadı.");
+    if (!rec) throw new HttpError(404, "Öneri bulunamadı; silinmiş olabilir. Öneriler sayfasını yenileyin.");
     const action = { ...((rec.action as Record<string, unknown> | null) ?? {}) };
     const data: { status?: "PENDING" | "REJECTED"; action?: Record<string, unknown> } = {};
 
     if (input.status === "REJECTED") {
       if (rec.status !== "PENDING" && rec.status !== "APPROVED")
-        throw new HttpError(409, "Yalnızca bekleyen veya onaylanmış öneri reddedilebilir.");
+        throw new HttpError(409, "Yalnızca bekleyen veya onaylanmış öneri reddedilebilir. Önerinin durumu değişmiş olabilir; sayfayı yenileyin.");
       data.status = "REJECTED";
     } else if (input.status === "PENDING") {
-      if (rec.status !== "DRAFT") throw new HttpError(409, "Yalnızca taslak öneri onaya gönderilebilir.");
+      if (rec.status !== "DRAFT") throw new HttpError(409, "Yalnızca taslak öneri onaya gönderilebilir. Önerinin durumu değişmiş olabilir; sayfayı yenileyin.");
       data.status = "PENDING";
     }
 
     if (input.campaignId !== undefined) {
       if (rec.status === "APPLIED" || rec.status === "REJECTED" || rec.status === "EXPIRED")
-        throw new HttpError(409, "Kapatılmış öneri için hedef kampanya değiştirilemez.");
+        throw new HttpError(409, "Kapatılmış öneri için hedef kampanya değiştirilemez. Gerekirse yeni bir öneri oluşturun.");
       if (input.campaignId === null) {
         delete action.campaignId;
       } else {
@@ -59,7 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           where: { id: input.campaignId, workspaceId: actor.workspaceId },
           select: { id: true },
         });
-        if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+        if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
         action.campaignId = campaign.id;
       }
       data.action = action;

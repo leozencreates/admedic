@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const actor = await requireActor();
     const { id } = await params;
     const alert = await prisma.alert.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!alert) throw new HttpError(404, "Uyarı bulunamadı.");
+    if (!alert) throw new HttpError(404, "Uyarı bulunamadı; silinmiş olabilir. Uyarılar sayfasını yenileyin.");
     return { alert };
   });
 }
@@ -30,7 +30,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const input = await body(request, AlertStatusSchema);
     const alert = await prisma.alert.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!alert) throw new HttpError(404, "Uyarı bulunamadı.");
+    if (!alert) throw new HttpError(404, "Uyarı bulunamadı; silinmiş olabilir. Uyarılar sayfasını yenileyin.");
     if (alert.status === input.status) return { ok: true, alert };
     if (alert.status === "RESOLVED") throw new HttpError(409, "Çözülen uyarı yeniden açılamaz.");
     const resolvedAt = input.status === "RESOLVED" ? new Date() : null;

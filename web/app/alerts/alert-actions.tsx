@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
 
 /** Uyarı durum düğmeleri: "Görüldü olarak işaretle" (ACKED) ve "Çözüldü olarak kapat" (RESOLVED). */
-export function AlertActions({ id, status }: { id: string; status: string }) {
+export function AlertActions({ id, status, title }: { id: string; status: string; title?: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
@@ -30,11 +30,11 @@ export function AlertActions({ id, status }: { id: string; status: string }) {
     <div className="mt-3 flex flex-wrap items-center gap-2">
       {status === "OPEN" ? (
         <button type="button" className="secondary-button text-xs" disabled={disabled} onClick={() => void update("ACKED")}>
-          Görüldü olarak işaretle
+          Görüldü olarak işaretle{title ? <span className="sr-only">: {title}</span> : null}
         </button>
       ) : null}
       <button type="button" className="primary-button text-xs" disabled={disabled} onClick={() => void update("RESOLVED")}>
-        Çözüldü olarak kapat
+        Çözüldü olarak kapat{title ? <span className="sr-only">: {title}</span> : null}
       </button>
       {error ? (
         <span className="text-xs text-rose-700" role="alert">

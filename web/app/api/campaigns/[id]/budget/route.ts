@@ -24,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const input = await body(request, BudgetSchema);
     const dailyBudgetCents = Math.round(input.dailyBudget * 100);
-    if (dailyBudgetCents < 1) throw new HttpError(400, "Günlük bütçe en az 0,01 olmalıdır.");
+    if (dailyBudgetCents < 1) throw new HttpError(400, "Günlük bütçe en az 0,01 olmalıdır. Daha yüksek bir tutar girin.");
     return prisma.$transaction(async (tx) => {
       // Artış olup olmadığına karar vermeden önce bütçe düzenlemelerini sıraya sok.
       await tx.$queryRaw`SELECT "id" FROM "Campaign"
@@ -33,11 +33,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         where: { id, workspaceId: actor.workspaceId, adAccount: { orgId: actor.orgId } },
         include: { adAccount: { select: { currency: true, connectionId: true } } },
       });
-      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
       if (campaign.status === "DELETED" || campaign.workflowStatus === "ARCHIVED")
-        throw new HttpError(409, "Arşivlenmiş veya silinmiş kampanyanın bütçesi değiştirilemez.");
+        throw new HttpError(409, "Arşivlenmiş veya silinmiş kampanyanın bütçesi değiştirilemez. Gerekirse yeni bir kampanya oluşturun.");
       if (campaign.budgetType === "LIFETIME" || campaign.lifetimeBudget != null)
-        throw new HttpError(409, "Bu uç yalnızca günlük bütçeli kampanyalar içindir.");
+        throw new HttpError(409, "Bütçe buradan yalnızca günlük bütçeli kampanyalarda değiştirilebilir.");
       const currentCents = campaign.dailyBudget ?? 0;
       if (dailyBudgetCents === campaign.dailyBudget)
         return { campaign: { id, dailyBudgetCents: currentCents, dailyBudget: currentCents / 100 } };

@@ -124,7 +124,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         },
       },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const consents = await prisma.consentRecord.findMany({
       where: { leadId: lead.id, workspaceId: actor.workspaceId },
       orderBy: { createdAt: "desc" },
@@ -182,22 +182,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const lead = await prisma.lead.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
 
     const targetStatus = input.status ?? lead.status;
     if (input.lostReason !== undefined) {
       if (input.lostReason === null || !input.lostReason.trim())
-        throw new HttpError(422, "Kayıp nedeni boş olamaz veya silinemez.");
+        throw new HttpError(422, "Kayıp nedeni boş olamaz veya silinemez. Bir kayıp nedeni girin.");
       if (targetStatus !== "LOST")
-        throw new HttpError(422, "lostReason yalnızca LOST durumuna geçerken veya LOST iken kabul edilir.");
+        throw new HttpError(422, "Kayıp nedeni yalnızca lead kayıp olarak işaretlenirken ya da kayıp durumundayken girilebilir.");
     }
     if (input.status) {
       const allowed = VALID_TRANSITIONS[lead.status] ?? [];
       if (!allowed.includes(input.status)) {
-        throw new HttpError(409, `Geçersiz durum geçişi: ${lead.status} → ${input.status}`);
+        throw new HttpError(409, "Lead bu durumdan seçilen duruma geçirilemez. Sayfayı yenileyip geçerli bir durum seçin.");
       }
       if (input.status === "LOST" && !input.lostReason?.trim()) {
-        throw new HttpError(422, "LOST geçişi için lostReason zorunludur.");
+        throw new HttpError(422, "Lead'i kayıp olarak işaretlemek için kayıp nedeni girin.");
       }
     }
 
@@ -234,9 +234,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (!input.consentEvidence)
         throw new HttpError(422, "Açık rızanın nasıl ve hangi tarihte alındığını girin.");
       consentObtainedAt = parseObtainedAt(input.consentEvidence.obtainedAt);
-      if (!consentObtainedAt) throw new HttpError(422, "Rızanın alındığı tarih geçersiz.");
+      if (!consentObtainedAt) throw new HttpError(422, "Rızanın alındığı tarih geçersiz. Tarihi yeniden seçin.");
       if (consentObtainedAt.getTime() > Date.now() + 5 * 60_000)
-        throw new HttpError(422, "Rızanın alındığı tarih ileri bir tarih olamaz.");
+        throw new HttpError(422, "Rızanın alındığı tarih ileri bir tarih olamaz. Bugün ya da daha önceki bir tarih seçin.");
     } else if (input.consentEvidence) {
       throw new HttpError(422, "Rıza kanıtı yalnızca açık rıza kaydedilirken gönderilir.");
     }
@@ -248,7 +248,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           where: { organizationId: actor.orgId, lookupHash: nextHash, id: { not: id } },
           select: { id: true },
         });
-        if (clash) throw new HttpError(409, "Bu telefon/e-posta aynı organizasyonda başka bir lead'e kayıtlı.");
+        if (clash) throw new HttpError(409, "Bu telefon ya da e-posta başka bir lead'e kayıtlı. Lead'ler sayfasında mevcut kaydı bulup onu güncelleyin.");
       }
       if (input.consentGiven === true) {
         const granted = await tx.consentRecord.findFirst({
@@ -329,7 +329,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         where: { id, workspaceId: actor.workspaceId, organizationId: actor.orgId },
         select: { status: true },
       });
-      if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+      if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
       await logAudit({
         actor,
         action: "LEAD_DELETED",
@@ -343,7 +343,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         { id, workspaceId: actor.workspaceId, orgId: actor.orgId },
         { userId: actor.userId },
       );
-      if (!found) throw new HttpError(404, "Lead bulunamadı.");
+      if (!found) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     });
     return { ok: true, anonymized: true };
   });

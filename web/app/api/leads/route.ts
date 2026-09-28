@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       const existing = await tx.lead.findFirst({
         where: { organizationId: actor.orgId, lookupHash: hash }, select: { id: true },
       });
-      if (existing) throw new HttpError(409, "Bu kişi zaten kayıtlı.");
+      if (existing) throw new HttpError(409, "Bu kişi zaten kayıtlı. Lead'ler sayfasında mevcut kaydı arayın.");
     }
     const lead = await tx.lead.create({
       data: {

@@ -26,10 +26,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const hasJson = request.headers.get("content-type")?.startsWith("application/json") ?? false;
     const input: z.infer<typeof ApplySchema> = hasJson ? await body(request, ApplySchema) : {};
     const rec = await prisma.recommendation.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!rec) throw new HttpError(404, "Öneri bulunamadı.");
+    if (!rec) throw new HttpError(404, "Öneri bulunamadı; silinmiş olabilir. Öneriler sayfasını yenileyin.");
     if (rec.status === "APPLIED") throw new HttpError(409, "Bu öneri zaten uygulanmış.");
     if (rec.status !== "APPROVED")
-      throw new HttpError(409, "Öneri uygulanmadan önce onaylanmalı (OWNER/ADMIN).");
+      throw new HttpError(409, "Öneri henüz onaylanmadı. Uygulamadan önce hesap sahibi ya da yöneticiden onaylamasını isteyin.");
 
     const action = ((rec.action as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
     const kind = recommendationKind(rec);
@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const targetCampaignId =
       (typeof action.campaignId === "string" && action.campaignId.trim()) || input.campaignId?.trim() || null;
-    if (!targetCampaignId) throw new HttpError(422, "Uygulanacak kampanya belirtilmedi (action.campaignId).");
+    if (!targetCampaignId) throw new HttpError(422, "Önerinin uygulanacağı kampanya seçilmedi. Öneride hedef kampanyayı seçin.");
 
     let metaSynced = false;
     const result = await prisma.$transaction(async (tx) => {
@@ -50,8 +50,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         where: { id: targetCampaignId, workspaceId: actor.workspaceId, adAccount: { orgId: actor.orgId } },
         include: { adAccount: { select: { currency: true, connectionId: true } } },
       });
-      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
-      if (campaign.workflowStatus === "ARCHIVED") throw new HttpError(409, "Arşivlenmiş kampanyaya uygulanamaz.");
+      if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
+      if (campaign.workflowStatus === "ARCHIVED") throw new HttpError(409, "Öneri arşivlenmiş kampanyaya uygulanamaz. Öneride başka bir hedef kampanya seçin.");
       const currentCents = campaign.dailyBudget;
       if (currentCents === null || currentCents === undefined || currentCents <= 0)
         throw new HttpError(422, "Kampanyanın günlük bütçesi tanımlı değil; önce bütçe girin.");
@@ -62,14 +62,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       } else if (kind === "BUDGET_REALLOCATION") {
         const split = Number((action.budgetSplit as unknown[] | undefined)?.[0] ?? 70);
         if (!Number.isFinite(split) || split <= 0 || split > 100)
-          throw new HttpError(422, "Bütçe dağıtım oranı geçersiz.");
+          throw new HttpError(422, "Önerideki bütçe dağıtım oranı geçersiz; öneri uygulanamaz. Öneriyi reddedip bütçeyi kampanya sayfasından elle değiştirin.");
         newCents = Math.round((currentCents * split) / 100);
       } else {
         const pct = Number(action.pct ?? 20);
-        if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) throw new HttpError(422, "Bütçe azaltma oranı geçersiz.");
+        if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) throw new HttpError(422, "Önerideki bütçe azaltma oranı geçersiz; öneri uygulanamaz. Öneriyi reddedip bütçeyi kampanya sayfasından elle değiştirin.");
         newCents = Math.round(currentCents * (1 - pct / 100));
       }
-      if (newCents < 1) throw new HttpError(422, "Bütçe çok küçük.");
+      if (newCents < 1) throw new HttpError(422, "Hesaplanan yeni bütçe çok küçük; öneri uygulanamaz. Bütçeyi kampanya sayfasından elle değiştirin.");
 
       // Artışta harcama yetkisi + toplam aylık üst sınır; yayındaysa Meta önce güncellenir (CBO/ABO).
       const outcome = newCents === currentCents

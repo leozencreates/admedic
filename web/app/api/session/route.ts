@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     if (!user || !workspace)
       throw new HttpError(
         401,
-        "E-posta, parola veya çalışma alanı bilgileri geçersiz.",
+        "E-posta, parola veya çalışma alanı bilgileri geçersiz. Bilgileri kontrol edip tekrar deneyin.",
       );
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 8 * 3600_000);

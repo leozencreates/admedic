@@ -173,7 +173,7 @@ export function AppShell({
 
   if (isLogin) {
     return (
-      <main id="icerik" lang="tr" className="login-main">
+      <main id="icerik" lang={lang} className="login-main">
         {children}
       </main>
     );

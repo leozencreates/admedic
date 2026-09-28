@@ -107,7 +107,7 @@ export async function PATCH(request: Request) {
         if (loosens && actor.role !== "OWNER")
           throw new HttpError(
             403,
-            "Aylık üst sınırı yükseltmek veya kaldırmak yalnızca kuruluş sahibi (Owner) tarafından yapılabilir.",
+            "Aylık üst sınırı yükseltmek veya kaldırmak yalnızca hesap sahibi tarafından yapılabilir. Hesap sahibinden bu değişikliği yapmasını isteyin.",
           );
       }
       const after = await tx.organization.update({

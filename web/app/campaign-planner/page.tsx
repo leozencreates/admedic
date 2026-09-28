@@ -169,7 +169,7 @@ export default function CampaignPlannerPage() {
             : `Aylık harcama üst sınırı kaydedildi: ${money(o.settings.monthlyAdBudgetCapCents, o.settings.currency)}.`,
       });
     } catch (e) {
-      setCapNote({ tone: "error", text: errorText(e, "Aylık üst sınır kaydedilemedi. Tekrar deneyin.") });
+      setCapNote({ tone: "error", text: errorText(e, "Aylık üst sınır kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.") });
     }
     setSavingCap(false);
   }
@@ -185,7 +185,7 @@ export default function CampaignPlannerPage() {
       });
       await load();
     } catch (e) {
-      setAuthorityNote({ tone: "error", text: errorText(e, "Harcama yetkisi güncellenemedi. Tekrar deneyin.") });
+      setAuthorityNote({ tone: "error", text: errorText(e, "Harcama yetkisi güncellenemedi. Bağlantınızı kontrol edip tekrar deneyin.") });
     }
     setAuthorityBusy(null);
   }
@@ -320,7 +320,7 @@ export default function CampaignPlannerPage() {
             description="Kampanyayı etkinleştirmek ve bütçeyi artırmak yalnızca hesap sahibine ya da hesap sahibinin yetki verdiği yönetici veya reklam uzmanına açıktır. Her değişiklik denetim kaydına yazılır."
           />
           {delegableMembers.length === 0 ? (
-            <EmptyState message="Yetki verilebilecek başka üye yok." />
+            <EmptyState message="Yetki verilebilecek başka üye yok. Ekibe yönetici ya da reklam uzmanı katıldığında harcama yetkisini buradan verebilirsiniz." />
           ) : (
             <ul className="space-y-2">
               {delegableMembers.map((m) => {

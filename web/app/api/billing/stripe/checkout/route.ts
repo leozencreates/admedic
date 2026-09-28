@@ -71,7 +71,7 @@ export async function POST(request: Request) {
 
     // Gerçek mod: Stripe Checkout. Yerel abonelik dokunulmaz; webhook etkinleştirir.
     const price = planPriceId(input.plan, env);
-    if (!price) throw new HttpError(503, `${input.plan} planı için STRIPE_PRICE_* ayarlanmadı.`);
+    if (!price) throw new HttpError(503, `${input.plan} planı için STRIPE_PRICE_* ayarlanmadı. Sistem yöneticinize bildirin.`);
     const stripe = getStripe(env);
     let customerId: string;
     const customer = await prisma.stripeCustomer.findUnique({ where: { organizationId: actor.orgId } });
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       console.error(`[billing] Stripe checkout oturumu açılamadı: ${error instanceof Error ? error.message.slice(0, 200) : "unknown"}`);
       throw new HttpError(502, "Stripe Checkout oturumu açılamadı; daha sonra tekrar deneyin.");
     }
-    if (!session.url) throw new HttpError(502, "Stripe Checkout bağlantısı alınamadı.");
+    if (!session.url) throw new HttpError(502, "Stripe ödeme sayfası bağlantısı alınamadı. Birkaç dakika sonra tekrar deneyin.");
     await logAudit({
       actor,
       action: "CHECKOUT_STARTED",

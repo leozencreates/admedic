@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       where: { id, workspaceId: actor.workspaceId },
       include: { messages: { orderBy: { createdAt: "asc" }, take: 100 } },
     });
-    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     return { conversation: { id: conversation.id, status: conversation.status, messages: conversation.messages } };
   });
 }

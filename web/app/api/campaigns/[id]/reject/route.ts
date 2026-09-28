@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await lockCampaignRow(tx, actor, id);
       const campaign = await ownedCampaign(actor, id, tx);
       if (campaign.workflowStatus !== "IN_REVIEW")
-        throw new HttpError(409, "Yalnızca incelemedeki kampanya reddedilebilir.");
+        throw new HttpError(409, "Yalnızca incelemedeki kampanya reddedilebilir. Kampanyanın durumu değişmiş olabilir; sayfayı yenileyin.");
       const moved = await tx.campaign.updateMany({
         where: { id, workspaceId: actor.workspaceId, workflowStatus: "IN_REVIEW" },
         data: {

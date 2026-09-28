@@ -19,7 +19,7 @@ import { rtlFor } from "../_lib/creative-lang";
 import { formatMoneyUnits } from "../_lib/format";
 import { languageName, policyRiskStyle, studioStatusStyle, type StatusStyle } from "../_lib/labels";
 import type { StudioPolicy } from "../_lib/studio-service";
-import { Badge, PageHeader } from "./ui";
+import { Badge, IntroPanel, PageHeader } from "./ui";
 
 type Saved = {
   id: string;
@@ -52,7 +52,7 @@ async function patchDraft(id: string, payload: unknown): Promise<PatchResult> {
   return { ok: response.ok, status: response.status, data };
 }
 /** İşlem sunucudan hata metni gelmeden başarısız olduğunda. */
-const FAILED = "İşlem tamamlanamadı. Tekrar deneyin.";
+const FAILED = "İşlem tamamlanamadı. Bağlantınızı kontrol edip tekrar deneyin.";
 const RISK_HEADING: Record<string, string> = {
   HIGH: "Yüksek risk: düzeltilmesi gereken ifadeler var",
   MEDIUM: "Orta risk: uyarıyla onaya gönderilebilir",
@@ -243,7 +243,7 @@ export function Studio({
         "Bu tarayıcıdaki eski taslak açıldı. Reklam kütüphanesine kaydetmek için Kaydet'e basın.",
       );
     } catch {
-      setError("Bu tarayıcıda geçerli eski taslak bulunamadı.");
+      setError("Bu tarayıcıda geçerli eski taslak bulunamadı. AI ile ya da boş taslakla yeni bir taslak başlatın.");
     }
   }
   const submitBlocked = busy || policy?.risk === "HIGH" || (policy?.risk === "MEDIUM" && !ackWarning);
@@ -359,7 +359,7 @@ export function Studio({
                 </label>
               </div>
               <button className="primary-button w-full" type="submit">
-                {busy ? "İşleniyor…" : "✦ AI ile varyantları hazırla"}
+                {busy ? "İşleniyor…" : "AI ile varyantları hazırla"}
               </button>
               <button
                 className="secondary-button w-full"
@@ -381,17 +381,15 @@ export function Studio({
             Brif değişiklikleri üretim düğmesine bastığınızda uygulanır. Hasta
             bilgisi girmeyin.
           </p>
-          <Link href="/library" className="mt-5 block text-sm text-violet-600">
-            ← Reklam kütüphanesi
+          <Link href="/library" className="text-link mt-5 inline-block text-sm">
+            Reklam kütüphanesi
           </Link>
         </section>
         <section className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="section-kicker">Adım 2 — Reklam önizlemesi</div>
-              <h2 className="text-xl font-semibold">
-                Aynı hedef. İki farklı başlık.
-              </h2>
+              <h2 className="text-xl font-semibold">İki başlık varyantı</h2>
             </div>
             <Badge tone={headerStatus.tone}>{headerStatus.label}</Badge>
           </div>
@@ -409,16 +407,19 @@ export function Studio({
             </div>
           )}
           {!draft ? (
-            <div className="studio-card flex min-h-80 flex-col items-center justify-center text-center">
-              <div className="mb-5 rounded-2xl bg-violet-50 p-5 text-3xl text-violet-600">
-                ✦
-              </div>
-              <h2>Bir sonraki reklamınız burada başlıyor</h2>
-              <p className="mt-3 max-w-sm text-sm leading-6 text-muted">
-                Brifi doldurun. AI'ın ürettiği iki düzenlenebilir reklam kartı
-                burada görünecek.
-              </p>
-            </div>
+            <IntroPanel title="Reklam taslağı burada hazırlanır">
+              {canEdit ? (
+                <>
+                  Soldaki brifi doldurup AI ile iki başlık varyantı hazırlayın ya da boş taslakla başlayın.
+                  Kaydettiğiniz taslak içerik kontrolünden geçer; onaylandıktan sonra A/B deneyine dönüştürülür.
+                </>
+              ) : (
+                <>
+                  Rolünüz yeni taslak oluşturamaz. Kayıtlı taslakları Reklam kütüphanesinden açıp
+                  inceleyebilirsiniz.
+                </>
+              )}
+            </IntroPanel>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2">
@@ -437,7 +438,7 @@ export function Studio({
                       dir={rtlFor(draft.language)}
                       className={`ad-art ${i ? "ad-art-b" : ""}`}
                     >
-                      <span>
+                      <span className="normal-case tracking-normal">
                         {draft.market} · {languageName(draft.language)}
                       </span>
                       <strong>{draft.service}</strong>
@@ -539,6 +540,7 @@ export function Studio({
                       f.risk === "MEDIUM" ? "bg-amber-50 text-amber-800" : "bg-rose-50 text-rose-800"
                     }`}
                   >
+                    <p className="text-xs font-semibold">{policyRiskStyle(f.risk).label}</p>
                     <strong>{f.reason}</strong>
                     <p className="mt-1">{f.suggestion}</p>
                   </div>
@@ -623,7 +625,7 @@ export function Studio({
                     </button>
                   )}
                   <button className="secondary-button" onClick={download}>
-                    JSON indir
+                    Taslağı indir (JSON)
                   </button>
                   {saved &&
                     !dirty &&
@@ -672,7 +674,7 @@ export function Studio({
                       className="secondary-button"
                       href={`/tests/${saved.experimentId}`}
                     >
-                      Kayıtlı deneye git
+                      Deneyi aç
                     </Link>
                   )}
                 </div>

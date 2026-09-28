@@ -5,12 +5,17 @@ import { api } from "../_lib/client-api";
 import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
 import { safeNextPath } from "../_lib/navigation";
 
+/** Oturum açma formu (ADR-0021): metinler `i18n.ts` sözlüğünden (TR/EN); uygulama adı `APP_NAME`'den gelir. */
+
 export function Login({
+  appName,
   lang = DEFAULT_LANGUAGE,
   initialEmail = "",
   initialWorkspace = "",
   next,
 }: {
+  /** Uygulama adı (`APP_NAME` ortam değişkeni); koda yazılmaz. */
+  appName: string;
   lang?: Language;
   initialEmail?: string;
   initialWorkspace?: string;
@@ -34,14 +39,11 @@ export function Login({
     }
   }
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <header className="studio-hero">
-        <span className="eyebrow">{t("login.eyebrow", lang)}</span>
-        <h1>{t("login.title", lang)}</h1>
-        <p>{t("login.lead", lang)}</p>
-      </header>
+    <div className="mx-auto max-w-md space-y-6">
+      <p className="text-lg font-semibold text-ink">{appName}</p>
       <section className="studio-card">
-        <h2>{t("login.heading", lang)}</h2>
+        <h1 className="text-xl font-semibold text-ink">{t("login.heading", lang)}</h1>
+        <p className="mt-1 text-sm text-ink-2">{t("login.lead", lang)}</p>
         <form action={login} className="mt-6 space-y-4">
           <label className="field">
             {t("login.email", lang)}
@@ -81,7 +83,7 @@ export function Login({
             {error}
           </p>
         </form>
-        <details className="mt-6 text-xs leading-6 text-slate-500">
+        <details className="mt-6 text-xs leading-6 text-ink-3">
           <summary className="cursor-pointer">{t("login.firstSetupSummary", lang)}</summary>
           <p>
             {t("login.firstSetupBefore", lang)}{" "}

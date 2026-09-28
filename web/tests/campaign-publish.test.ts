@@ -205,7 +205,7 @@ describe("reklam görseli", () => {
   it("desteklenmeyen tür, bozuk base64 ve sınırı aşan boyut reddedilir", () => {
     const gif = Buffer.from("GIF89a-----------------").toString("base64");
     expect(() => decodeAdImage({ filename: "a.gif", dataBase64: gif })).toThrow(/JPEG veya PNG/);
-    expect(() => decodeAdImage({ filename: "a.png", dataBase64: "!!!!not-base64!!!!" })).toThrow(/base64/);
+    expect(() => decodeAdImage({ filename: "a.png", dataBase64: "!!!!not-base64!!!!" })).toThrow(/Görsel verisi okunamadı/);
     const huge = Buffer.alloc(MAX_AD_IMAGE_BYTES + 1);
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(huge, 0);
     expect(() => decodeAdImage({ filename: "a.png", dataBase64: huge.toString("base64") })).toThrow(/en fazla/);

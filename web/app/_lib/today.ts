@@ -7,7 +7,7 @@
  */
 import { prisma, type Prisma } from "@admedic/database";
 import type { Actor } from "./auth";
-import { formatMoney, formatNumber } from "./format";
+import { formatMoney, formatNumber, formatPercent } from "./format";
 import { HANDOFF_ALERT_TYPE } from "./lead-assistant";
 import { needsReplySummary } from "./inbox";
 import {
@@ -276,7 +276,7 @@ export async function todayKpis(actor: Actor, now = new Date()): Promise<Kpi[]> 
     {
       key: "qualified",
       label: "Nitelikli lead oranı, 30 gün",
-      value: leads30.length ? `%${formatNumber(Math.round((qualified / leads30.length) * 100))}` : "—",
+      value: leads30.length ? formatPercent((qualified / leads30.length) * 100, 0) : "—",
       hint: leads30.length ? `${formatNumber(qualified)} / ${formatNumber(leads30.length)} lead` : "Son 30 günde lead yok.",
       warn: false,
     },
@@ -315,7 +315,7 @@ export async function setupSteps(actor: Actor): Promise<SetupStep[]> {
       href: "/clinic",
     },
     { key: "cap", label: "Aylık harcama üst sınırını belirleyin", hint: "Etkin kampanyaların aylık toplamı bu sınırı aşamaz.", done: org.monthlyAdBudgetCap != null, href: "/campaign-planner" },
-    { key: "campaign", label: "İlk kampanyanızı onaya gönderin", hint: "Planlayıcı pazar, dil ve bütçeyi önerir.", done: campaigns > 0, href: "/campaign-planner" },
+    { key: "campaign", label: "İlk kampanyanızı onaya gönderin", hint: "Yeni kampanya ekranı pazar, dil ve bütçeyi önerir.", done: campaigns > 0, href: "/campaign-planner" },
   ];
 }
 

@@ -99,7 +99,7 @@ export default function PoliciesPage() {
         ) : rulesError !== null ? (
           <LoadError title="İçerik kuralları yüklenemedi." message={rulesError} onRetry={() => void load()} />
         ) : rules.length === 0 ? (
-          <EmptyState message="Henüz politika kuralı yok." />
+          <EmptyState message="Henüz içerik kuralı yok. Kurallar eklendiğinde reklam metinleri yayından önce bu kurallarla kontrol edilir." />
         ) : (
           <div className="space-y-3">
             {rules.map((r) => {
@@ -130,7 +130,7 @@ export default function PoliciesPage() {
         ) : policyError !== null ? (
           <LoadError title="Optimizasyon politikası yüklenemedi." message={policyError} onRetry={() => void load()} />
         ) : !policy ? (
-          <EmptyState message="Bu çalışma alanı için optimizasyon politikası tanımlı değil." />
+          <EmptyState message="Bu çalışma alanı için optimizasyon politikası tanımlı değil. Bütçe koruma sınırlarını tanımlatmak için yöneticinize başvurun." />
         ) : (
           <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
             <p>Durum: {enabled && <Badge tone={enabled.tone}>{enabled.label}</Badge>}</p>

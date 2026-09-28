@@ -62,10 +62,10 @@ export async function applyDailyBudgetChange(
         409,
         "Meta yayını yarım kaldı; bütçeyi değiştirmeden önce yayını tamamlayın veya kampanyayı arşivleyin.",
       );
-    throw new HttpError(409, "Kampanyanın yayın durumu ile Meta bağlantısı tutarsız.");
+    throw new HttpError(409, "Kampanyanın yayın durumu Meta'daki kayıtla uyuşmuyor. Sayfayı yenileyip tekrar deneyin; sorun sürerse yöneticinize bildirin.");
   }
   if (published && !campaign.metaCampaignId)
-    throw new HttpError(409, "Kampanyanın yayın durumu ile Meta bağlantısı tutarsız.");
+    throw new HttpError(409, "Kampanyanın yayın durumu Meta'daki kayıtla uyuşmuyor. Sayfayı yenileyip tekrar deneyin; sorun sürerse yöneticinize bildirin.");
 
   const abo = isAdSetBudgetPlan(campaign.plan);
   const adSets = abo
@@ -77,7 +77,7 @@ export async function applyDailyBudgetChange(
     : [];
   let metaLevel: BudgetChangeOutcome["metaLevel"] = null;
   if (published && newCents !== currentCents) {
-    if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
+    if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun.");
     const live = await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId);
     try {
       const pushed = await pushBudgetToMeta({

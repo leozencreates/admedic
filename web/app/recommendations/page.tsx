@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { api } from "../_lib/client-api";
-import { Badge, PageHeader } from "../_components/ui";
+import { Badge, IntroPanel, PageHeader } from "../_components/ui";
 import { formatDate, formatMoney, formatMoneyUnits, formatNumber } from "../_lib/format";
 import { priorityLabel, recommendationStatusStyle } from "../_lib/labels";
 import {
@@ -99,102 +100,122 @@ export default function RecommendationsPage() {
         description="Tamamlanan A/B testlerinden üretilen öneriler; onaylamadığınız hiçbir öneri uygulanmaz."
         crumbs={[{ label: "Performans" }]}
       />
-      <p className="text-sm text-muted">
-        {formatNumber(pending)} öneri onay bekliyor · {formatNumber(applied)} öneri uygulandı
-      </p>
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">{error}</div>}
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Duruma göre süz">
-        {FILTERS.map((s) => {
-          const active = filter === s;
-          return (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={active}
-              className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition ${active ? "bg-brand-strong text-white ring-brand-strong" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
-              onClick={() => setFilter(s)}
-            >
-              {active ? <span aria-hidden="true">✓ </span> : null}
-              {s === "ALL" ? "Tümü" : recommendationStatusStyle(s).label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="space-y-3">
-        {filtered.length === 0 ? (
+      {recs.length === 0 && !error ? (
+        <IntroPanel
+          title="Henüz öneri yok"
+          action={
+            <Link href="/tests" className="secondary-button">
+              A/B testleri
+            </Link>
+          }
+        >
+          Bir A/B testi tamamlandığında kazanan varyanta bütçe kaydırma ya da zayıf reklamı durdurma gibi öneriler burada
+          oluşur. Her öneriyi önce onaylarsınız; onaylanmayan öneri uygulanmaz.
+        </IntroPanel>
+      ) : null}
+      {recs.length > 0 ? (
+        <>
           <p className="text-sm text-muted">
-            {recs.length === 0 ? "Henüz öneri yok. Öneriler tamamlanan A/B testlerinden oluşturulur." : "Bu filtrede öneri yok."}
+            {formatNumber(pending)} öneri onay bekliyor · {formatNumber(applied)} öneri uygulandı
           </p>
-        ) : (
-          filtered.map((r) => {
-            const kind = recommendationKind(r);
-            const applicable = isApplicableRecommendation(kind);
-            const status = recommendationStatusStyle(r.status);
-            const currency = typeof r.expectedImpact?.currency === "string" ? r.expectedImpact.currency : "EUR";
-            const presetCampaign = typeof r.action?.campaignId === "string" ? r.action.campaignId : "";
-            const impacts = Object.entries(r.expectedImpact ?? {})
-              .map(([k, v]) => ({ key: k, label: impactLabel(k, v, currency) }))
-              .filter((i): i is { key: string; label: string } => i.label !== null);
-            return (
-              <article key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={status.tone}>{status.label}</Badge>
-                  <Badge tone="gray">{priorityLabel(r.priority)}</Badge>
-                  <span className="text-sm font-medium text-slate-700">{RECOMMENDATION_KIND_LABEL[kind] ?? "Diğer öneri"}</span>
-                  {!applicable && <span className="text-xs text-muted">Değerlendirme notu — otomatik uygulanmaz</span>}
-                </div>
-                <h2 className="mt-2 text-base font-semibold text-slate-900">{r.title}</h2>
-                <p className="mt-1 text-sm text-slate-600">{r.description}</p>
-                <p className="mt-1 text-xs text-muted">{r.reasoning}</p>
-                {impacts.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {impacts.map((i) => (
-                      <span key={i.key} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{i.label}</span>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {r.status === "PENDING" && (
-                    <>
-                      <button type="button" className="primary-button text-xs" onClick={() => void approve(r.id)}>Onayla</button>
-                      <button type="button" className="secondary-button text-xs" onClick={() => void dismiss(r.id)}>Yok say</button>
-                    </>
-                  )}
-                  {r.status === "APPROVED" && applicable && (
-                    <>
-                      {presetCampaign ? (
-                        <span className="text-xs text-slate-600">
-                          Hedef kampanya: {campaigns.find((c) => c.id === presetCampaign)?.name ?? "Bilinmeyen kampanya"}
-                        </span>
-                      ) : (
-                        <select
-                          className="input w-auto max-w-full py-2 text-xs"
-                          value={targets[r.id] ?? ""}
-                          onChange={(e) => setTargets((t) => ({ ...t, [r.id]: e.target.value }))}
-                          aria-label="Hedef kampanya"
-                        >
-                          <option value="">Kampanya seçin…</option>
-                          {campaigns.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}{c.budgetCents != null ? ` — ${formatMoney(c.budgetCents, c.currency)}/gün` : " — günlük bütçe yok"}
-                            </option>
-                          ))}
-                        </select>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Duruma göre süz">
+            {FILTERS.map((s) => {
+              const active = filter === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={active}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition ${active ? "bg-brand-strong text-white ring-brand-strong" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
+                  onClick={() => setFilter(s)}
+                >
+                  {active ? <span aria-hidden="true">✓ </span> : null}
+                  {s === "ALL" ? "Tümü" : recommendationStatusStyle(s).label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="space-y-3">
+            {filtered.length === 0 ? (
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
+                <p>Süzgeçle eşleşen öneri yok.</p>
+                <button type="button" className="ghost-button" onClick={() => setFilter("ALL")}>
+                  Süzgeci temizle
+                </button>
+              </div>
+            ) : (
+              filtered.map((r) => {
+                const kind = recommendationKind(r);
+                const applicable = isApplicableRecommendation(kind);
+                const status = recommendationStatusStyle(r.status);
+                const currency = typeof r.expectedImpact?.currency === "string" ? r.expectedImpact.currency : "EUR";
+                const presetCampaign = typeof r.action?.campaignId === "string" ? r.action.campaignId : "";
+                const impacts = Object.entries(r.expectedImpact ?? {})
+                  .map(([k, v]) => ({ key: k, label: impactLabel(k, v, currency) }))
+                  .filter((i): i is { key: string; label: string } => i.label !== null);
+                return (
+                  <article key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                      <Badge tone="gray">{priorityLabel(r.priority)}</Badge>
+                      <span className="text-sm font-medium text-slate-700">{RECOMMENDATION_KIND_LABEL[kind] ?? "Diğer öneri"}</span>
+                      {!applicable && <span className="text-xs text-muted">Değerlendirme notu — otomatik uygulanmaz</span>}
+                    </div>
+                    <h2 id={`oneri-${r.id}`} className="mt-2 text-base font-semibold text-slate-900">{r.title}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{r.description}</p>
+                    <p className="mt-1 text-xs text-muted">{r.reasoning}</p>
+                    {impacts.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {impacts.map((i) => (
+                          <span key={i.key} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{i.label}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {r.status === "PENDING" && (
+                        <>
+                          <button type="button" className="primary-button text-xs" aria-describedby={`oneri-${r.id}`} onClick={() => void approve(r.id)}>Onayla</button>
+                          <button type="button" className="secondary-button text-xs" aria-describedby={`oneri-${r.id}`} onClick={() => void dismiss(r.id)}>Yok say</button>
+                        </>
                       )}
-                      <button type="button" className="primary-button text-xs" onClick={() => void apply(r)}>Uygula</button>
-                      <button type="button" className="secondary-button text-xs" onClick={() => void dismiss(r.id)}>Yok say</button>
-                    </>
-                  )}
-                  {r.status === "APPROVED" && !applicable && (
-                    <button type="button" className="secondary-button text-xs" onClick={() => void dismiss(r.id)}>Yok say</button>
-                  )}
-                  <span className="ml-auto text-xs text-muted">{formatDate(r.createdAt)}</span>
-                </div>
-              </article>
-            );
-          })
-        )}
-      </div>
+                      {r.status === "APPROVED" && applicable && (
+                        <>
+                          {presetCampaign ? (
+                            <span className="text-xs text-slate-600">
+                              Hedef kampanya: {campaigns.find((c) => c.id === presetCampaign)?.name ?? "Bilinmeyen kampanya"}
+                            </span>
+                          ) : (
+                            <select
+                              className="input w-auto max-w-full py-2 text-xs"
+                              value={targets[r.id] ?? ""}
+                              onChange={(e) => setTargets((t) => ({ ...t, [r.id]: e.target.value }))}
+                              aria-label="Hedef kampanya"
+                            >
+                              <option value="">Kampanya seçin…</option>
+                              {campaigns.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}{c.budgetCents != null ? ` — ${formatMoney(c.budgetCents, c.currency)}/gün` : " — günlük bütçe yok"}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <button type="button" className="primary-button text-xs" aria-describedby={`oneri-${r.id}`} onClick={() => void apply(r)}>Uygula</button>
+                          <button type="button" className="secondary-button text-xs" aria-describedby={`oneri-${r.id}`} onClick={() => void dismiss(r.id)}>Yok say</button>
+                        </>
+                      )}
+                      {r.status === "APPROVED" && !applicable && (
+                        <button type="button" className="secondary-button text-xs" aria-describedby={`oneri-${r.id}`} onClick={() => void dismiss(r.id)}>Yok say</button>
+                      )}
+                      <span className="ml-auto text-xs text-muted">{formatDate(r.createdAt)}</span>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

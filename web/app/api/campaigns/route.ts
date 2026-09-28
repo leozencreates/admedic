@@ -50,14 +50,14 @@ export async function POST(request: Request) {
     const objective = input.objective ?? "MAX_ROAS";
     const dailyBudgetCents = Math.round((input.budget ?? 1000) * 100);
     if ((input.ageMin ?? 18) < 18 || (input.ageMax ?? 54) < 18)
-      throw new HttpError(422, "18 yaş altı hedefleme engellenir.");
+      throw new HttpError(422, "18 yaş altı hedeflenemez. Alt yaş sınırını en az 18 yapın.");
     if ((input.ageMin ?? 18) > (input.ageMax ?? 54))
-      throw new HttpError(422, "Alt yaş sınırı üst yaş sınırını aşamaz.");
+      throw new HttpError(422, "Alt yaş sınırı üst yaş sınırını aşamaz. Yaş aralığını düzeltin.");
     const adAccount = await prisma.adAccount.findFirst({
       where: { orgId: actor.orgId, workspaceId: actor.workspaceId, status: "ACTIVE" },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
-    if (!adAccount) throw new HttpError(400, "Reklam hesabı bulunamadı.");
+    if (!adAccount) throw new HttpError(400, "Reklam hesabı bulunamadı. Platformlar sayfasından hesabı kontrol edin ya da Meta ile yeniden bağlanın.");
     const currency = adAccount.currency ?? "EUR";
     // Toplam aylık üst sınır: aktif kampanyaların aylık toplamı + bu taslağın günlük bütçesi × 30 (minor unit).
     const cap = await checkMonthlyCap(prisma, { orgId: actor.orgId, currency, dailyBudgetCents });

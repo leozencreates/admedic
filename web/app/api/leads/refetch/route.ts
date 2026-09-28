@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         where: { id: input.leadId, workspaceId: actor.workspaceId },
         select: { metadata: true },
       });
-      if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+      if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
       const metadata = lead.metadata as Record<string, unknown> | null;
       if (metadata?.pendingFetch !== true) throw new HttpError(409, "Bu lead'in alanları zaten çekilmiş.");
     }

@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { loadEnv } from "@admedic/config";
 import { CircleCheck, Circle } from "lucide-react";
 
-import { Card, EmptyState, PageHeader, Td, Th } from "./_components/ui";
+import { IntroPanel, PageHeader, Td, Th } from "./_components/ui";
 import { requirePageActor } from "./_lib/auth";
 import { formatDuration, formatMoney, formatNumber, formatRoas } from "./_lib/format";
 import { t } from "./_lib/i18n";
@@ -172,9 +172,10 @@ export default async function TodayPage() {
 function Extremes({ best, worst }: { best: CampaignRow[]; worst: CampaignRow[] }) {
   if (!best.length)
     return (
-      <Card>
-        <EmptyState message="Son 7 günde harcama yapan kampanya yok." />
-      </Card>
+      <IntroPanel title="Henüz kampanya sonucu yok">
+        Kampanyalar Meta'da harcama yapmaya başladığında son 7 günün en yüksek ve en düşük reklam getirisi burada
+        karşılaştırılır.
+      </IntroPanel>
     );
   const table = (rows: CampaignRow[], caption: string) => (
     <div className="overflow-x-auto">

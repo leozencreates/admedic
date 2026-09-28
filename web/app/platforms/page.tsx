@@ -4,7 +4,7 @@ import Link from "next/link";
 import { api } from "../_lib/client-api";
 import { formatDate } from "../_lib/format";
 import { entityStatusStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
+import { Badge, Card, IntroPanel, PageHeader, SectionHeading } from "../_components/ui";
 interface Platform { id: string; name: string; status: string; syncedAt: string | null; metaAccountId: string | null }
 export default function PlatformsPage() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
@@ -51,7 +51,12 @@ export default function PlatformsPage() {
             </button>
           </div>
         ) : platforms.length === 0 ? (
-          <EmptyState message="Henüz reklam hesabı yok. Meta hesabınızı Meta bağlantıları sayfasından bağlayın." />
+          <IntroPanel
+            title="Henüz reklam hesabı yok"
+            action={<Link href="/meta-connections" className="primary-button">Meta bağlantılarına git</Link>}
+          >
+            Meta ile bağlandığınızda reklam hesaplarınız, durumları ve son eşitleme zamanlarıyla burada listelenir.
+          </IntroPanel>
         ) : (
           <div className="space-y-3">
             {platforms.map((p) => {

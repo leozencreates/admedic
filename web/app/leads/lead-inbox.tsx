@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
 import { LEAD_SEARCH_EVENT } from "../_components/app-shell";
-import { Badge } from "../_components/ui";
+import { Badge, IntroPanel } from "../_components/ui";
 import { api } from "../_lib/client-api";
 import { formatDuration, formatRelative } from "../_lib/format";
 import { LEAD_STAGES, channelLabel, countryName, languageName, leadStatusStyle } from "../_lib/labels";
@@ -238,16 +238,24 @@ export function LeadInbox({ selectedId }: { selectedId: string | null }) {
               Tekrar dene
             </button>
           </div>
+        ) : visible.length === 0 && !filtered && leads.length === 0 ? (
+          <div className="p-3">
+            <IntroPanel title="Henüz lead yok">
+              Reklamlarınızdaki Anında Form&apos;dan ve mesaj kanallarından (WhatsApp, Instagram, Messenger) gelen
+              başvurular burada toplanır. İlk lead geldiğinde konuşmayı buradan yanıtlayabilir ve durumunu
+              izleyebilirsiniz.
+            </IntroPanel>
+          </div>
         ) : visible.length === 0 ? (
           <div className="space-y-2 p-4 text-sm text-ink-2">
             <p>
               {filtered
-                ? "Aramanızla eşleşen lead yok."
+                ? "Süzgeçle eşleşen lead yok."
                 : activeTab === "waiting"
-                  ? "Yanıt bekleyen lead yok."
+                  ? "Yanıt bekleyen lead yok. Yeni mesaj geldiğinde burada görünür."
                   : activeTab === "claimed"
                     ? "Devralınmış konuşma yok."
-                    : "Henüz lead yok. Reklamlarınızdan gelen başvurular burada görünür."}
+                    : "Bu sekmede lead yok."}
             </p>
             {filtered ? (
               <button

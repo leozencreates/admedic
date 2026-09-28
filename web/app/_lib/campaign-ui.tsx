@@ -7,7 +7,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { METHOD_LABEL, OBJECTIVE_LABEL } from "./campaign-plan";
 import type { PlanReasons } from "./campaign-plan";
-import { formatMoney } from "./format";
+import { formatMoney, formatNumber } from "./format";
 import { countryName, languageName, objectiveLabel } from "./labels";
 
 export const SETTINGS_ROLES = ["OWNER", "ADMIN"];
@@ -86,8 +86,11 @@ export function countriesText(codes: readonly string[]): string {
   return codes.length ? codes.map((code) => countryName(code)).join(", ") : "—";
 }
 export function progressText(p: PublishProgress): string {
-  const parts = [`reklam seti ${p.adSets.published}/${p.adSets.total}`, `reklam ${p.ads.published}/${p.ads.expected}`];
-  if (p.leadForms) parts.push(`Anında Form ${p.leadForms}`);
+  const parts = [
+    `reklam seti ${formatNumber(p.adSets.published)}/${formatNumber(p.adSets.total)}`,
+    `reklam ${formatNumber(p.ads.published)}/${formatNumber(p.ads.expected)}`,
+  ];
+  if (p.leadForms) parts.push(`Anında Form ${formatNumber(p.leadForms)}`);
   return parts.join(" · ");
 }
 /** Sunucunun Türkçe hata metni; yanıt JSON değilse ya da ağ yoksa anlaşılır bir metin. */
@@ -111,7 +114,7 @@ export function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("Dosya okunamadı."));
+    reader.onerror = () => reject(reader.error ?? new Error("Dosya okunamadı. Dosyayı yeniden seçip tekrar deneyin."));
     reader.readAsDataURL(file);
   });
 }
@@ -177,6 +180,7 @@ export function Chip({
     >
       {selected ? <span aria-hidden="true">✓</span> : null}
       {children}
+      {muted ? <span className="sr-only"> (planın dilleri dışında)</span> : null}
     </button>
   );
 }
@@ -205,7 +209,7 @@ export function DraftPicker({
       <p className="text-xs text-muted">
         Onaylı reklam içeriği yok.{" "}
         <Link href="/studio" className={LINK_TEXT}>
-          Reklam Oluştur
+          Reklam oluştur
         </Link>{" "}
         sayfasında içerik üretip onaylayın.
       </p>

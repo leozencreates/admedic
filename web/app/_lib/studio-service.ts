@@ -212,7 +212,7 @@ export async function getDraft(actor: Actor, id: string) {
     where: { id, workspaceId: actor.workspaceId },
     include: { experiment: true },
   });
-  if (!draft) throw new HttpError(404, "Taslak bulunamadı.");
+  if (!draft) throw new HttpError(404, "Taslak bulunamadı; silinmiş olabilir. Reklam kütüphanesinden yeniden açın.");
   return draft;
 }
 /**
@@ -233,7 +233,7 @@ export async function changeDraft(
   const draft = await prisma.studioDraft.findFirst({
     where: { id, workspaceId: actor.workspaceId },
   });
-  if (!draft) throw new HttpError(404, "Taslak bulunamadı.");
+  if (!draft) throw new HttpError(404, "Taslak bulunamadı; silinmiş olabilir. Reklam kütüphanesinden yeniden açın.");
   if (draft.version !== input.version)
     throw new HttpError(
       409,
@@ -247,17 +247,17 @@ export async function changeDraft(
   if (input.action === "edit") status = "DRAFT";
   else if (input.action === "submit") {
     if (!["DRAFT", "REJECTED"].includes(status))
-      throw new HttpError(409, "Bu taslak zaten incelemede veya onaylı.");
+      throw new HttpError(409, "Bu taslak zaten incelemede veya onaylı. Durumunu Onaylar sayfasından izleyin.");
     status = "IN_REVIEW";
   } else if (input.action === "approve" || input.action === "reject") {
     if (status !== "IN_REVIEW")
       throw new HttpError(
         409,
-        "Yalnızca incelemedeki taslak için karar verilebilir.",
+        "Yalnızca incelemedeki taslak için karar verilebilir. Taslağın durumu değişmiş olabilir; sayfayı yenileyin.",
       );
     status = input.action === "approve" ? "APPROVED" : "REJECTED";
   } else if (status !== "APPROVED")
-    throw new HttpError(409, "Deney oluşturmadan önce taslak onaylanmalı.");
+    throw new HttpError(409, "Taslak henüz onaylanmadı. A/B testi oluşturmadan önce taslağı onaylatın.");
 
   const recompute = input.action !== "reject";
   const policy = recompute ? await policyFor(content, actor.workspaceId) : null;
@@ -280,7 +280,7 @@ export async function changeDraft(
     if (a.headline === b.headline || a.text !== b.text || a.cta !== b.cta)
       throw new HttpError(
         422,
-        "Başlık testinde başlıklar farklı, metin ve CTA aynı olmalı.",
+        "Başlık testinde yalnızca başlıklar farklı olmalı; metin ve eylem çağrısı (CTA) aynı kalmalı. Varyantları buna göre düzenleyin.",
       );
   }
   const before = {
@@ -371,7 +371,7 @@ export async function getExperiment(actor: Actor, id: string) {
   const experiment = await prisma.studioExperiment.findFirst({
     where: { id, draft: { workspaceId: actor.workspaceId } },
   });
-  if (!experiment) throw new HttpError(404, "Deney bulunamadı.");
+  if (!experiment) throw new HttpError(404, "A/B testi bulunamadı; silinmiş olabilir. A/B testleri sayfasından yeniden açın.");
   return experiment;
 }
 export async function updateExperiment(
@@ -384,13 +384,13 @@ export async function updateExperiment(
     const exp = await tx.studioExperiment.findFirst({
       where: { id, draft: { workspaceId: actor.workspaceId } },
     });
-    if (!exp) throw new HttpError(404, "Deney bulunamadı.");
+    if (!exp) throw new HttpError(404, "A/B testi bulunamadı; silinmiş olabilir. A/B testleri sayfasından yeniden açın.");
     if (exp.status === "COMPLETED")
-      throw new HttpError(409, "Tamamlanan deney değiştirilemez.");
+      throw new HttpError(409, "Tamamlanan A/B testi değiştirilemez. Yeni bir test için yeni taslak oluşturun.");
     if (exp.status === "RUNNING" && input.status === "DRAFT")
-      throw new HttpError(409, "Başlatılan deney taslağa döndürülemez.");
+      throw new HttpError(409, "Başlatılan A/B testi taslağa döndürülemez. Değişiklik gerekiyorsa yeni bir test oluşturun.");
     if (input.elapsedDays < exp.elapsedDays)
-      throw new HttpError(422, "Geçen gün sayısı azaltılamaz.");
+      throw new HttpError(422, "Geçen gün sayısı azaltılamaz. Mevcut değere eşit ya da daha büyük bir sayı girin.");
     const content = DraftSchema.parse(exp.snapshot);
     if (
       input.status === "COMPLETED" &&

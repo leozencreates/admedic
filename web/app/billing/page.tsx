@@ -139,16 +139,22 @@ export default function BillingPage() {
   }
 
   if (loading) {
-    return <div className="studio-card animate-pulse" role="status">Fatura bilgileri yükleniyor…</div>;
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Faturalar" crumbs={[{ label: "Ayarlar" }]} />
+        <div className="studio-card animate-pulse" role="status">Fatura bilgileri yükleniyor…</div>
+      </div>
+    );
   }
   if (loadError !== null) {
     return (
       <div className="space-y-4">
+        <PageHeader title="Faturalar" crumbs={[{ label: "Ayarlar" }]} />
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800" role="alert">
           <p className="font-medium">Abonelik ve fatura bilgileri yüklenemedi.</p>
           {loadError && <p className="mt-1">{loadError}</p>}
         </div>
-        <button className="primary-button" onClick={() => void load()}>Tekrar dene</button>
+        <button type="button" className="primary-button" onClick={() => void load()}>Tekrar dene</button>
       </div>
     );
   }
@@ -196,7 +202,7 @@ export default function BillingPage() {
           <p className="mt-4 text-sm text-muted">Henüz abonelik yok. Aşağıdan bir plan seçin.</p>
         )}
         {!showPlans && (
-          <button className="mt-4 primary-button" disabled={busy} onClick={() => setShowPlans(true)}>
+          <button type="button" className="mt-4 primary-button" disabled={busy} onClick={() => setShowPlans(true)}>
             {subscription ? "Planı değiştir" : "Plan seç"}
           </button>
         )}
@@ -205,6 +211,7 @@ export default function BillingPage() {
             <div className="flex flex-wrap gap-3">
               {plans.map((p) => (
                 <button
+                  type="button"
                   key={p.code}
                   className="primary-button"
                   disabled={busy || p.code === subscription?.plan}
@@ -213,7 +220,7 @@ export default function BillingPage() {
                   {p.label}{p.amountCents > 0 ? ` · ${money(p.amountCents, p.currency)}/ay` : " · ücretsiz"}
                 </button>
               ))}
-              <button className="secondary-button" disabled={busy} onClick={() => setShowPlans(false)}>Vazgeç</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => setShowPlans(false)}>Vazgeç</button>
             </div>
             <p className="text-xs text-muted">
               {mock
@@ -228,7 +235,7 @@ export default function BillingPage() {
         <h2>Fatura geçmişi</h2>
         <div className="mt-4 space-y-2">
           {invoices.length === 0 ? (
-            <p className="text-sm text-muted">Henüz fatura yok.</p>
+            <p className="text-sm text-muted">Henüz fatura yok. Ücretli bir plan seçtiğinizde faturalarınız burada listelenir.</p>
           ) : (
             invoices.map((inv) => (
               <div key={inv.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-slate-200 p-3 text-sm">
@@ -244,7 +251,7 @@ export default function BillingPage() {
                   ) : inv.status === "VOID" ? (
                     <span className="text-xs text-muted">—</span>
                   ) : mock ? (
-                    <button className="primary-button text-xs" disabled={busy} onClick={() => void payInvoice(inv.id)}>Öde (deneme)</button>
+                    <button type="button" className="primary-button text-xs" disabled={busy} onClick={() => void payInvoice(inv.id)}>Öde (deneme)</button>
                   ) : (
                     <span className="text-xs text-muted">Son ödeme: {formatDay(inv.dueAt)} · Stripe üzerinden ödenir</span>
                   )}

@@ -97,7 +97,7 @@ export async function sendLeadConversion(input: SendLeadConversionInput): Promis
     if (!(await leadHasMarketingConsent(lead)))
       return { status: "SKIPPED", reason: "NO_CONSENT", message: "Bu lead için pazarlama rızası verilmemiş; CAPI dönüşümü gönderilmedi.", eventName };
     const pixel = await resolvePixelTarget(lead.organizationId);
-    if (!pixel) return { status: "SKIPPED", reason: "NO_PIXEL", message: "Pixel/Dataset ID ayarlanmadı.", eventName };
+    if (!pixel) return { status: "SKIPPED", reason: "NO_PIXEL", message: "Meta Pikseli kimliği girilmemiş. Meta bağlantıları sayfasında piksel kimliğini girin.", eventName };
 
     const occurredAt = input.occurredAt ?? new Date();
     const externalId = eventIdFor({ prefix: "crm", leadId: lead.id, eventName, date: occurredAt });
@@ -143,7 +143,7 @@ export async function sendLeadConversion(input: SendLeadConversionInput): Promis
       eventsReceived = result.eventsReceived;
       mockMode = result.mock;
     } catch (err) {
-      const message = isAdmedicError(err) ? err.message : "Meta CAPI isteği başarısız.";
+      const message = isAdmedicError(err) ? err.message : "Dönüşüm Meta'ya bildirilemedi. Meta bağlantısını kontrol edin; bildirim bir sonraki denemede yeniden gönderilir.";
       return { status: "FAILED", reason: "META_ERROR", message, eventName, eventId: externalId };
     }
 

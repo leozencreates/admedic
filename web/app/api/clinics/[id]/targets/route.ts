@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const clinic = await prisma.clinicProfile.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
-    if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+    if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     const targets = await prisma.marketTarget.findMany({
       where: { clinicId: id },
       orderBy: { country: "asc" },
@@ -43,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const clinic = await tx.clinicProfile.findFirst({
         where: { id, workspaceId: actor.workspaceId },
       });
-      if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+      if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
       const existing = await tx.marketTarget.findUnique({
         where: { clinicId_country: { clinicId: id, country: input.country } },
       });

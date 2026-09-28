@@ -31,7 +31,7 @@ export async function PATCH(request: Request) {
     requireRole(actor, ["OWNER", "ADMIN"]);
     const input = await body(request, UpdateSubscriptionSchema);
     const { mock } = billingMode();
-    if (!mock) throw new HttpError(409, "Plan değişikliği Stripe Checkout üzerinden yapılır (POST /api/billing/stripe/checkout).");
+    if (!mock) throw new HttpError(409, "Plan değişikliği Stripe ödeme sayfası üzerinden yapılır. Faturalar sayfasında “Planı değiştir” düğmesini kullanın.");
     const existing = await prisma.subscription.findUnique({ where: { organizationId: actor.orgId } });
     const result = await prisma.$transaction(async (tx) => {
       const applied = await applyPlanLocally(tx, actor.orgId, input.plan);

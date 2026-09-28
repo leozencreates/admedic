@@ -63,7 +63,7 @@ export async function requirePlatformAdmin() {
     select: { isPlatformAdmin: true },
   });
   if (!user?.isPlatformAdmin)
-    throw new HttpError(403, "Platform Admin yetkisi gerekli.");
+    throw new HttpError(403, "Bu işlem için platform yöneticisi yetkisi gerekiyor.");
   return actor;
 }
 export async function quota(key: string, limit: number, seconds: number) {

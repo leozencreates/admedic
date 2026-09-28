@@ -23,7 +23,7 @@ export function Experiment({
   ]);
   const [duration, setDuration] = useState(initialDuration);
   const [elapsed, setElapsed] = useState(0);
-  const [source, setSource] = useState("Manuel veri girişi");
+  const [source, setSource] = useState("Elle girilen veriler");
   const [currency, setCurrency] = useState("EUR");
   useEffect(() => {
     void defaultAccountCurrency().then(setCurrency);
@@ -68,7 +68,7 @@ export function Experiment({
               ]);
               setElapsed(7);
               setDuration(7);
-              setSource("Demo — örnek veriler");
+              setSource("Örnek veriler (demo)");
             }}
           >
             Örnek verilerle incele
@@ -78,7 +78,7 @@ export function Experiment({
             onClick={() => {
               setMetrics([{ ...empty }, { ...empty }]);
               setElapsed(0);
-              setSource("Manuel veri girişi");
+              setSource("Elle girilen veriler");
             }}
           >
             Temizle
@@ -143,7 +143,7 @@ export function Experiment({
                   </p>
                 </div>
               </div>
-              <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
                 <div
                   className={`h-full rounded-full ${i ? "bg-cyan-500" : "bg-violet-500"}`}
                   style={{
@@ -177,7 +177,7 @@ export function Experiment({
         </p>
         <p className="mt-4 text-xs leading-5 text-muted">
           Bu analiz tıklama → lead oranını karşılaştırır; lead kalitesi veya
-          ROAS ölçmez. Wilson aralıklarının ayrışması konservatif bir karar
+          ROAS ölçmez. Wilson aralıklarının ayrışması temkinli bir karar
           ölçütüdür. Sonuca bakarak testi sürekli uzatmak istatistiksel
           güvenilirliği bozar. Bütçe ve yayın değişikliği uygulanmaz.
         </p>

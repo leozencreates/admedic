@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatMoneyUnits } from "../_lib/format";
 import { experimentStatusStyle, languageName } from "../_lib/labels";
-import { Badge, PageHeader } from "./ui";
+import { Badge, IntroPanel, PageHeader } from "./ui";
 type Test = {
   id: string;
   status: string;
@@ -12,7 +12,8 @@ type Test = {
   draft: { name: string };
   snapshot: { duration: number; language: string; budget: number };
 };
-export function TestLibrary() {
+/** `canCreate`: rol onaylı reklamdan deney oluşturabilir mi (OWNER, ADMIN, MEDIA_BUYER). */
+export function TestLibrary({ canCreate = true }: { canCreate?: boolean }) {
   const [items, setItems] = useState<Test[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +43,11 @@ export function TestLibrary() {
         description="Onaylı reklamlardan oluşturulan deneyleri ve elle girilen sonuçlarını izleyin; Meta'da otomatik yayın yapılmaz."
         actions={
           <>
-            <Link href="/library" className="primary-button">
-              Onaylı reklamdan deney oluştur
-            </Link>
+            {canCreate ? (
+              <Link href="/library" className="primary-button">
+                Onaylı reklamdan deney oluştur
+              </Link>
+            ) : null}
             <Link href="/experiments" className="secondary-button">
               Test hesaplayıcı
             </Link>
@@ -57,20 +60,29 @@ export function TestLibrary() {
         </div>
       ) : error !== null ? (
         <div className="studio-card" role="alert">
-          <p className="font-medium text-rose-800">Deneyler yüklenemedi.</p>
+          <p className="font-medium text-rose-800">
+            Deneyler yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.
+          </p>
           {error && <p className="mt-1 text-sm text-slate-700">{error}</p>}
           <button className="secondary-button mt-3" onClick={load}>
             Tekrar dene
           </button>
         </div>
       ) : !items.length ? (
-        <div className="studio-card py-12 text-center">
-          <h2>Henüz kayıtlı deney yok</h2>
-          <p className="mt-3 text-sm text-muted">
-            Kütüphanedeki bir reklamı onaylayın ve “A/B deneyi oluştur”
-            düğmesini kullanın.
-          </p>
-        </div>
+        <IntroPanel
+          title="Henüz A/B testi yok"
+          action={
+            canCreate ? (
+              <Link href="/library" className="primary-button">
+                Reklam kütüphanesini aç
+              </Link>
+            ) : undefined
+          }
+        >
+          A/B testi, onaylı bir reklamın iki başlığını aynı bütçe ve süreyle karşılaştırır; sonuçları siz girersiniz,
+          Meta&apos;da yayın yapılmaz. Başlamak için kütüphanede onaylanmış bir reklamı açıp “A/B deneyi oluştur”
+          düğmesini kullanın.
+        </IntroPanel>
       ) : (
         <div className="grid gap-5 md:grid-cols-2">
           {items.map((item) => {
@@ -92,7 +104,7 @@ export function TestLibrary() {
                   {item.elapsedDays} / {item.snapshot.duration} gün · Planlanan
                   bütçe {formatMoneyUnits(item.snapshot.budget, currency)}
                 </p>
-                <div className="my-4 h-2 rounded-full bg-slate-100">
+                <div className="my-4 h-2 rounded-full bg-slate-100" aria-hidden="true">
                   <div
                     className="h-full rounded-full bg-violet-500"
                     style={{
@@ -106,9 +118,9 @@ export function TestLibrary() {
           })}
         </div>
       )}
-      <p className="text-xs text-muted">
-        Son güncellenen en fazla 100 deney gösterilir.
-      </p>
+      {items.length > 0 ? (
+        <p className="text-xs text-muted">Son güncellenen en fazla 100 deney gösterilir.</p>
+      ) : null}
     </div>
   );
 }

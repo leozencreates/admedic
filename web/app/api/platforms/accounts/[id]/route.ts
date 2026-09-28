@@ -23,7 +23,7 @@ export async function PATCH(
       const account = await tx.adAccount.findFirst({
         where: { id, workspaceId: actor.workspaceId, orgId: actor.orgId },
       });
-      if (!account) throw new HttpError(404, "Reklam hesabı bulunamadı.");
+      if (!account) throw new HttpError(404, "Reklam hesabı bulunamadı. Platformlar sayfasından hesabı kontrol edin ya da Meta ile yeniden bağlanın.");
       if (input.isDefault) {
         await tx.adAccount.updateMany({
           where: { orgId: actor.orgId, workspaceId: actor.workspaceId, isDefault: true },

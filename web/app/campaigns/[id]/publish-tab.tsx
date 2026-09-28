@@ -1,7 +1,7 @@
 "use client";
 import { Badge, Card, SectionHeading, type Tone } from "../../_components/ui";
 import { BTN_SECONDARY, progressText, type CampaignData, type PublishProgress } from "../../_lib/campaign-ui";
-import { formatDate } from "../../_lib/format";
+import { formatDate, formatNumber } from "../../_lib/format";
 import { adEffectiveStatusStyle, metaReviewStyle, publishStepLabel } from "../../_lib/labels";
 import type { CampaignAction } from "./types";
 
@@ -15,12 +15,12 @@ const PUBLISH_STATUS: Record<PublishProgress["status"], { label: string; tone: T
 /** Meta reklam incelemesi (reklam düzeyi; ADR-0015): durum, sayılar ve reddedilen/sorunlu reklamların gerekçeleri. */
 function ReviewBlock({ campaign: c }: { campaign: CampaignData }) {
   const review = c.review;
-  if (!review) return <p className="text-sm text-ink-3">Meta incelemesi henüz okunmadı.</p>;
+  if (!review) return <p className="text-sm text-ink-3">Meta incelemesi henüz okunmadı. Reklamlar Meta'ya yüklendikten sonra inceleme durumu ve varsa red gerekçeleri burada görünür.</p>;
   const style = metaReviewStyle(review.status);
   const counts = [
-    review.disapproved ? `${review.disapproved} reddedildi` : "",
-    review.withIssues ? `${review.withIssues} sorunlu` : "",
-    review.pending ? `${review.pending} incelemede` : "",
+    review.disapproved ? `${formatNumber(review.disapproved)} reddedildi` : "",
+    review.withIssues ? `${formatNumber(review.withIssues)} sorunlu` : "",
+    review.pending ? `${formatNumber(review.pending)} incelemede` : "",
   ].filter(Boolean);
   return (
     <div className="space-y-2 text-sm">
@@ -30,7 +30,7 @@ function ReviewBlock({ campaign: c }: { campaign: CampaignData }) {
         {counts.length > 0 && (
           <span className="text-ink-2">
             {counts.join(" · ")}
-            {review.total ? ` (toplam ${review.total} reklam)` : ""}
+            {review.total ? ` (toplam ${formatNumber(review.total)} reklam)` : ""}
           </span>
         )}
         {review.checkedAt && <span className="text-ink-3">Son kontrol: {formatDate(review.checkedAt)}</span>}
@@ -82,7 +82,7 @@ export function PublishTab({
             </p>
           )}
           {progress.status === "EXTERNAL" && (
-            <p className="text-ink-3">Bu kampanya Meta&apos;da bu panelin yükleme akışı dışında kuruldu.</p>
+            <p className="text-ink-3">Bu kampanya doğrudan Meta&apos;da kuruldu; buradaki yükleme adımları uygulanmaz.</p>
           )}
           {lastError && (
             <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">

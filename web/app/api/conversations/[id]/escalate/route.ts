@@ -17,7 +17,7 @@ async function conflict(
   actor: Actor,
   conversation: { status: string; escalatedTo: string | null } | null,
 ): Promise<HttpError> {
-  if (!conversation) return new HttpError(404, "Konuşma bulunamadı.");
+  if (!conversation) return new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
   if (conversation.status === "CLOSED") return new HttpError(409, "Kapalı konuşma devralınamaz.");
   if (conversation.status === "ESCALATED" && conversation.escalatedTo) {
     if (conversation.escalatedTo === actor.userId) return new HttpError(409, "Konuşmayı zaten siz devraldınız.");
@@ -47,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const conversation = await prisma.conversation.findFirst({
       where: { id, lead: { workspaceId: actor.workspaceId } },
     });
-    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+    if (!conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const claim = conversation.status === "ESCALATED";
     if (conversation.status === "CLOSED" || (claim && conversation.escalatedTo)) throw await conflict(actor, conversation);
     const displayName = await userDisplayName(actor.userId);

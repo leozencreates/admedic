@@ -49,8 +49,8 @@ export function ContentTab({
         <SectionHeading title="İçerik ve görsel" />
         <p className="text-sm text-ink-2">
           {!c.plan
-            ? "Bu kampanya planlayıcıyla oluşturulmadı; reklam içeriği ve görsel bu panelden bağlanmaz."
-            : "Kampanya Meta'ya yüklendi; reklam içeriği ve görsel artık bu panelden değiştirilemez."}
+            ? "Bu kampanya Yeni kampanya ekranından oluşturulmadığı için reklam içeriği ve görsel buradan bağlanmaz."
+            : "Kampanya Meta'ya yüklendi; reklam içeriği ve görsel artık buradan değiştirilemez."}
         </p>
         {c.content && (
           <p className="mt-2 text-sm text-ink-2">

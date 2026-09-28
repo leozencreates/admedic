@@ -95,7 +95,7 @@ export function OverviewTab({
               <Fact label="Reklam setleri">{formatNumber(c.adSets)}</Fact>
               <Fact label="Meta'daki reklamlar">{formatNumber(c.ads)}</Fact>
             </dl>
-            <p className="text-xs text-ink-3">Bu kampanya planlayıcıyla oluşturulmadı; plan ve ajan gerekçesi yok.</p>
+            <p className="text-xs text-ink-3">Bu kampanya Yeni kampanya ekranından oluşturulmadığı için plan ve ajan gerekçesi yok.</p>
           </div>
         )}
         <p className="mt-4 text-xs text-ink-3">
@@ -121,7 +121,7 @@ export function OverviewTab({
       <Card>
         <SectionHeading title="Reklam setleri" />
         {adSets.length === 0 ? (
-          <EmptyState message="Bu kampanyada henüz reklam seti yok." />
+          <EmptyState message="Bu kampanyada henüz reklam seti yok. Reklam setleri kampanya Meta'ya yüklendiğinde oluşur." />
         ) : (
           <div className="-mx-5 overflow-x-auto px-5" tabIndex={0} role="region" aria-label="Reklam setleri tablosu">
             <table className="w-full min-w-[640px] text-sm">

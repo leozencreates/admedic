@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
 import { api } from "../_lib/client-api";
-import { Badge, PageHeader, StatCard } from "../_components/ui";
+import { Badge, IntroPanel, PageHeader, StatCard } from "../_components/ui";
 import {
   formatDate,
   formatDay,
@@ -238,10 +238,30 @@ export default function InsightsPage() {
   /** Birim maliyetler (CPM, CPC, CPL) iki ondalıklı. */
   const unitMoney = (cents: number | null | undefined) => formatMoney(cents, currency, { precise: true });
   const days = fillDays(daily, period.from, period.to);
+  const noData =
+    daily.length === 0 && campaigns.length === 0 && summary.totalLeads === 0 && summary.totalImpressions === 0;
+  if (noData) {
+    return (
+      <div className="space-y-6">
+        <Header />
+        <IntroPanel
+          title="Henüz performans verisi yok"
+          action={
+            <Link href="/campaigns" className="secondary-button">
+              Kampanyalar
+            </Link>
+          }
+        >
+          Kampanyalarınız Meta&apos;da yayına girdiğinde harcama, tıklama ve lead sonuçları burada günlük olarak toplanır; kampanya,
+          ülke ve dile göre karşılaştırabilirsiniz. Veriler her 30 saniyede bir yenilenir.
+        </IntroPanel>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <Header
-        description={`Son ${period.days} günün harcama, tıklama ve lead performansı; tutarlar ${currency} cinsinden.`}
+        description={`Son ${formatNumber(period.days)} günün harcama, tıklama ve lead performansı; tutarlar ${currency} cinsinden.`}
         actions={<a className="secondary-button" href="/api/reports/weekly?pdf=1">Haftalık rapor (PDF)</a>}
       />
       {/* 1440 px'te altı sütun değerleri kart kenarına dayıyordu; altı sütun yalnızca çok geniş ekranda. */}
@@ -249,7 +269,7 @@ export default function InsightsPage() {
         <StatCard
           label="Toplam harcama"
           value={money(summary.totalSpend)}
-          hint={`${formatNumber(summary.totalPurchases)} satın alma${summary.roas !== null ? ` · ROAS ${formatRoas(summary.roas)}` : ""}`}
+          hint={`${formatNumber(summary.totalPurchases)} satın alma${summary.roas !== null ? ` · reklam getirisi (ROAS) ${formatRoas(summary.roas)}` : ""}`}
         />
         <StatCard label="Gösterim" value={formatNumber(summary.totalImpressions)} hint={`Tıklama oranı (CTR): ${formatRatio(summary.ctr)}`} />
         <StatCard label="Bin gösterim maliyeti (CPM)" value={unitMoney(summary.cpmCents)} />

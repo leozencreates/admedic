@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ clin
     const clinic = await prisma.clinicProfile.findFirst({
       where: { id: clinicId, workspaceId: actor.workspaceId },
     });
-    if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+    if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     return {
       services: await prisma.service.findMany({
         where: { clinicId },
@@ -48,10 +48,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cli
     const clinic = await prisma.clinicProfile.findFirst({
       where: { id: clinicId, workspaceId: actor.workspaceId },
     });
-    if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+    if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     const input = await body(request, ServiceSchema);
     const slug = input.slug ?? slugify(input.name);
-    if (slug.length < 2) throw new HttpError(400, "Hizmet adından slug türetilemedi; slug alanını doldurun.");
+    if (slug.length < 2) throw new HttpError(400, "Hizmet adından kısa ad türetilemedi. “Kısa ad” alanını doldurun.");
     const service = await prisma.$transaction(async (tx) => {
       const created = await tx.service.create({
         data: {

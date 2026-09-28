@@ -35,7 +35,7 @@ let cached: { key: string; client: Stripe } | null = null;
 /** Stripe istemcisi (gerçek mod). Anahtar yoksa 503; API sürümü paket sabitiyle aynıdır. */
 export function getStripe(env: AppEnv = loadEnv()): Stripe {
   const key = env.STRIPE_SECRET_KEY;
-  if (!key) throw new HttpError(503, "STRIPE_SECRET_KEY ayarlanmadı; Stripe işlemleri kullanılamıyor.");
+  if (!key) throw new HttpError(503, "STRIPE_SECRET_KEY ayarlanmadı; Stripe işlemleri kullanılamıyor. Sistem yöneticinize bildirin.");
   if (!cached || cached.key !== key) cached = { key, client: new Stripe(key, { apiVersion: STRIPE_API_VERSION }) };
   return cached.client;
 }

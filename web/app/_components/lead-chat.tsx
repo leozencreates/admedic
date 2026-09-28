@@ -275,7 +275,7 @@ export function LeadChat({
       await loadMessages();
       composerRef.current?.focus({ preventScroll: true });
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Mesaj gönderilemedi. Tekrar deneyin.");
+      setSendError(err instanceof Error ? err.message : "Mesaj gönderilemedi. Bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setSending(false);
     }
@@ -298,7 +298,7 @@ export function LeadChat({
       await api(`/api/conversations/${conversation.id}/escalate`, "POST", {});
       stickToBottom.current = true;
     } catch (err) {
-      setHandoffError(err instanceof Error ? err.message : "Konuşma devralınamadı. Tekrar deneyin.");
+      setHandoffError(err instanceof Error ? err.message : "Konuşma devralınamadı. Konuşmanın güncel durumuna bakıp tekrar deneyin.");
     } finally {
       // Başarıda da çakışmada (409) da güncel durum gösterilir.
       await loadMessages();
@@ -336,7 +336,7 @@ export function LeadChat({
       </h2>
       {/* Durum şeridi: kanal + devir durumu ve Devral düğmesi. */}
       <div className={`flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2 text-sm ${stripTone}`}>
-        <p className="min-w-0">
+        <p className="min-w-0" aria-live="polite">
           <span className="font-medium text-ink">{channelLabel(channel)}</span>
           {handoff.kind !== "none" && (
             <>
@@ -370,7 +370,7 @@ export function LeadChat({
         </p>
       ) : forbidden ? (
         <p role="alert" className="flex flex-1 items-center justify-center p-6 text-center text-sm text-ink-2">
-          Mesajları görme yetkiniz yok.
+          Bu konuşmanın mesajlarını görme yetkiniz yok. Erişim gerekiyorsa hesap yöneticinize başvurun.
         </p>
       ) : (
         <div
@@ -382,7 +382,9 @@ export function LeadChat({
           className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4"
         >
           {messages.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">Henüz mesaj yok.</p>
+            <p className="py-6 text-center text-sm text-muted">
+              Henüz mesaj yok. Hasta yazdığında ya da siz ilk mesajı gönderdiğinizde konuşma burada görünür.
+            </p>
           ) : (
             <ol className="flex flex-col gap-3">
               {messages.map((msg) =>
@@ -416,7 +418,7 @@ export function LeadChat({
         <div role="alert" className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-4 py-2 text-sm text-rose-700">
           <span>
             {messages.length
-              ? "Mesajlar güncellenemedi. Bağlantınızı kontrol edin."
+              ? "Mesajlar güncellenemedi. Bağlantınızı kontrol edip tekrar deneyin."
               : "Mesajlar yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin."}
           </span>
           <button type="button" className="secondary-button" onClick={() => void loadMessages()}>

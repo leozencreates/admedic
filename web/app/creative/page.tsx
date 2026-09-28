@@ -3,7 +3,7 @@ import { useState, useEffect, useId } from "react";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatDay } from "../_lib/format";
 import { ctaDisplay, entityStatusStyle, languageName, policyRiskStyle, studioStatusStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
+import { Badge, Card, IntroPanel, PageHeader, SectionHeading } from "../_components/ui";
 import { LANG_LABEL, BRIEF_LANGUAGES, rtlFor } from "../_lib/creative-lang";
 interface CreativeData { id: string; name: string; status: string; languages: string[]; variations: number; policyRisk: string | null; primaryText?: string; headline?: string; createdAt: string; }
 interface Variant { headline: string; text: string; description?: string; cta: string }
@@ -160,6 +160,9 @@ export default function CreativePage() {
           </div>
           <button type="button" onClick={generate} disabled={generating} className="primary-button">{generating ? "Üretiliyor…" : "AI ile kreatif üret"}</button>
           {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
+          <p role="status" className="sr-only">
+            {results.length > 0 ? `${results.length} dil için varyantlar üretildi; önizleme aşağıda.` : ""}
+          </p>
         </div>
       </Card>
       {results.length > 0 && (
@@ -176,7 +179,7 @@ export default function CreativePage() {
               return (
                 <div key={r.language} className="rounded-xl border border-slate-200 p-5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{languageName(r.language)}</p>
+                    <h3 className="text-sm font-semibold text-slate-900">{languageName(r.language)}</h3>
                     <Badge tone={risk.tone}>{risk.label}</Badge>
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -237,17 +240,22 @@ export default function CreativePage() {
       <Card>
         <SectionHeading title="Kreatifler" description="Son üretilen kreatifler ve durumları." />
         {loading ? (
-          <div className="h-16 animate-pulse rounded-xl bg-slate-200/60" />
+          <div role="status" className="h-16 animate-pulse rounded-xl bg-slate-200/60">
+            <span className="sr-only">Kreatifler yükleniyor…</span>
+          </div>
         ) : loadError !== null ? (
           <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-            <p className="font-medium">Kreatifler yüklenemedi.</p>
+            <p className="font-medium">Kreatifler yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.</p>
             {loadError && <p className="mt-1">{loadError}</p>}
             <button type="button" className="secondary-button mt-3" onClick={() => void load()}>
               Tekrar dene
             </button>
           </div>
         ) : creatives.length === 0 ? (
-          <EmptyState message="Henüz kreatif yok. Yukarıdaki formla ilk kreatifinizi üretin." />
+          <IntroPanel title="Henüz kreatif yok">
+            Yukarıdaki formda kreatif adını, kliniği, hizmeti ve hedef pazarı girip dilleri seçin; her dil için ayrı,
+            içerik kontrolünden geçmiş reklam metinleri üretilir ve burada listelenir.
+          </IntroPanel>
         ) : (
           <div className="space-y-3">
             {creatives.map((c) => {

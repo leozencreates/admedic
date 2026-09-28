@@ -8,6 +8,8 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     headless: true,
     screenshot: "only-on-failure",
+    // İsteğe bağlı: önceden kurulmuş bir Chromium (ör. CI imajı). Verilmezse Playwright'ın kendi tarayıcısı kullanılır.
+    launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
   },
   webServer: {
     command: "pnpm dev",

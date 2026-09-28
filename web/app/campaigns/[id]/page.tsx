@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { api } from "../../_lib/client-api";
+import { formatNumber } from "../../_lib/format";
 import { PageHeader } from "../../_components/ui";
 import { StageBar } from "../../_components/stage-bar";
 import { campaignStage, isExternalCampaign } from "../../_lib/stages";
@@ -288,7 +289,7 @@ export default function CampaignPage() {
       else if (row?.status === "NO_ADS")
         setNotes([{ tone: "warning", text: "Bu kampanyanın Meta'ya yüklenmiş reklamı yok; incelenecek reklam bulunamadı." }]);
       else if (row?.newlyDisapproved)
-        setNotes([{ tone: "warning", text: `Meta ${row.newlyDisapproved} reklamı reddetti; gerekçeler "Meta'ya yükleme ve inceleme" sekmesinde.` }]);
+        setNotes([{ tone: "warning", text: `Meta ${formatNumber(row.newlyDisapproved)} reklamı reddetti; gerekçeler "Meta'ya yükleme ve inceleme" sekmesinde.` }]);
       else setNotes([{ tone: "success", text: "Meta inceleme durumu güncellendi." }]);
       await load();
     } catch (e) {
@@ -341,7 +342,7 @@ export default function CampaignPage() {
       setNotes([{ tone: "success", text: "Görsel yüklendi." }, ...warningNotes(result)]);
       await load();
     } catch (e) {
-      setNotes([{ tone: "error", text: errorText(e, "Görsel yüklenemedi. Tekrar deneyin.") }]);
+      setNotes([{ tone: "error", text: errorText(e, "Görsel yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.") }]);
     }
     setBusy(null);
   }
@@ -362,7 +363,7 @@ export default function CampaignPage() {
       setNotes([{ tone: "success", text: "Reklam içeriği kampanyaya bağlandı." }, ...warningNotes(result)]);
       await load();
     } catch (e) {
-      setNotes([{ tone: "error", text: errorText(e, "İçerik bağlanamadı. Tekrar deneyin.") }]);
+      setNotes([{ tone: "error", text: errorText(e, "İçerik kampanyaya bağlanamadı. Bağlantınızı kontrol edip tekrar deneyin.") }]);
     }
     setBusy(null);
     return ok;
@@ -450,7 +451,7 @@ export default function CampaignPage() {
       await load();
       focusFeedback();
     } catch (e) {
-      setRejecting((prev) => (prev ? { ...prev, busy: false, error: errorText(e, "Düzeltme isteği kaydedilemedi. Tekrar deneyin.") } : prev));
+      setRejecting((prev) => (prev ? { ...prev, busy: false, error: errorText(e, "Düzeltme isteği kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.") } : prev));
     }
     setBusy(null);
   }

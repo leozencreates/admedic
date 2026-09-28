@@ -24,7 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await lockCampaignRow(tx, actor, id);
       const campaign = await ownedCampaign(actor, id, tx);
       if (!["DRAFT", "REJECTED"].includes(campaign.workflowStatus))
-        throw new HttpError(409, "Kampanya zaten incelemede veya daha ileri bir aşamada.");
+        throw new HttpError(409, "Kampanya zaten incelemede veya daha ileri bir aşamada. Durumunu Onaylar sayfasından izleyin.");
       // Kural setinin taze anlık görüntüsü + klinik yasaklı ifadeleri (spec 3.5).
       const clinic = await clinicPolicyContext(actor.workspaceId, tx);
       const policy = await checkPolicyWithRules(campaignPolicyText(campaign), clinic.bannedPhrases, tx);

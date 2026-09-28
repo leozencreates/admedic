@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { formatDay } from "../_lib/format";
 import { entityStatusStyle, metaConnectionStyle } from "../_lib/labels";
-import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
+import { Badge, Card, EmptyState, IntroPanel, PageHeader, SectionHeading } from "../_components/ui";
 import { ConfirmDialog } from "../_components/dialog";
 import { isRequiredScope, optionalScopesMissing, scopeLabel } from "../_lib/meta-scopes";
 
@@ -335,7 +335,13 @@ export default function MetaConnectionsPage() {
         ) : connsError !== null ? (
           <LoadError title="Meta bağlantıları yüklenemedi." message={connsError} onRetry={() => void load()} />
         ) : conns.length === 0 ? (
-          <EmptyState message="Henüz Meta bağlantısı yok. Başlamak için “Meta ile bağlantı kur” düğmesini kullanın." />
+          <IntroPanel
+            title="Henüz Meta bağlantısı yok"
+            action={<button type="button" onClick={connect} className="primary-button">Meta ile bağlantı kur</button>}
+          >
+            Kampanya yayınlamak, lead almak ve mesajları yanıtlamak için Meta hesabınızı bağlayın. Bağlantı kurulduğunda
+            reklam hesaplarınız, sayfalarınız ve izinleriniz burada listelenir.
+          </IntroPanel>
         ) : (
           <div className="space-y-3">
             {conns.map((c) => {

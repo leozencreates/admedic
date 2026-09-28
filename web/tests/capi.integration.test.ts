@@ -165,7 +165,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Conversions API routes and 
     as("NOPIXEL");
     const res = await leadCapiPost(req("/api/capi/lead", { leadId: tokens.NOPIXEL_LEAD }));
     expect(res.status).toBe(400);
-    expect((await res.json() as { error: string }).error).toContain("Pixel/Dataset ID");
+    expect((await res.json() as { error: string }).error).toContain("Meta Pikseli kimliği girilmemiş");
     expect(postSpy).not.toHaveBeenCalled();
   });
 

@@ -44,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       where: { id, workspaceId: actor.workspaceId },
       include: { services: { select: { id: true, name: true, category: true, status: true } } },
     });
-    if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+    if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     return { clinic };
   });
 }
@@ -63,7 +63,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const clinic = await prisma.clinicProfile.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
-    if (!clinic) throw new HttpError(404, "Klinik bulunamadı.");
+    if (!clinic) throw new HttpError(404, "Klinik bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     const data: Record<string, unknown> = {};
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};

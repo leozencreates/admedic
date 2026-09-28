@@ -33,7 +33,7 @@ export async function syncCampaignAdReviews(
   const ids = ads.map((a) => a.metaAdId!).filter(Boolean);
   if (ids.length === 0) return { ...base, status: "NO_ADS", ads: 0 };
   if (!campaign.adAccount.connectionId)
-    return { ...base, status: "ERROR", ads: ids.length, error: "Meta bağlantısı yapılandırılmadı." };
+    return { ...base, status: "ERROR", ads: ids.length, error: "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun." };
   let token: string;
   try {
     token = (await requireLiveMetaConnection(campaign.adAccount.connectionId, orgId)).token;

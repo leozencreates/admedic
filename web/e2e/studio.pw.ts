@@ -46,7 +46,7 @@ test.describe("authenticated studio", () => {
     await expect(page).toHaveURL(/\/login/);
     await page.getByLabel("E-posta", { exact: true }).fill(email);
     await page.getByLabel("Parola", { exact: true }).fill(password);
-    await page.getByLabel("Çalışma alanı ID").fill(workspaceId);
+    await page.getByLabel("Çalışma alanı kimliği").fill(workspaceId);
     await page.getByRole("button", { name: "Çalışma alanına gir" }).click();
     // Giriş, `next` parametresiyle istenen sayfaya (/studio) geri döner.
     await expect(page).toHaveURL((url) => url.pathname === "/studio");
@@ -121,6 +121,8 @@ test.describe("authenticated studio", () => {
     await expect(
       page.getByLabel("Lead", { exact: true }).first(),
     ).toBeDisabled();
+    // Çıkış üst çubuktaki hesap menüsünde (ADR-0017).
+    await page.getByRole("button", { name: /Hesap menüsü/ }).click();
     await page.getByRole("button", { name: "Oturumu kapat" }).click();
     await expect(page).toHaveURL(/\/login/);
   });

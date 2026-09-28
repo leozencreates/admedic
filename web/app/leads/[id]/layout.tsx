@@ -6,7 +6,7 @@ import { t } from "../../_lib/i18n";
 import { uiLanguage } from "../../_lib/page-meta";
 
 /**
- * Sekme adı hastanın adını taşır ("James Carter · Lead CRM"); adı yalnızca kişisel veriyi
+ * Sekme adı hastanın adını taşır ("James Carter · Lead'ler"); adı yalnızca kişisel veriyi
  * görebilen roller (CARE_ROLES) görür, diğerleri için genel başlık.
  */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {

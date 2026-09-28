@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const lead = await prisma.lead.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const conversations = await prisma.conversation.findMany({
       where: { leadId: id },
       include: {
@@ -66,7 +66,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const lead = await prisma.lead.findFirst({
       where: { id, workspaceId: actor.workspaceId },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const conversation = await prisma.$transaction(async (tx) => {
       const created = await tx.conversation.create({
         data: {

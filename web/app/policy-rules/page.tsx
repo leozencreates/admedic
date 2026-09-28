@@ -199,7 +199,13 @@ export default function PolicyRulesPage() {
             </button>
           </div>
         ) : rules.length === 0 ? (
-          <EmptyState message="Henüz içerik kuralı yok." />
+          <EmptyState
+            message={
+              canEdit
+                ? "Henüz içerik kuralı yok. Yukarıdaki formdan ilk kuralı oluşturun; reklam metinleri yayından önce bu kurallarla kontrol edilir."
+                : "Henüz içerik kuralı yok. Platform yöneticisi kural eklediğinde burada listelenir."
+            }
+          />
         ) : (
           <div className="space-y-3">
             {rules.map((r) => {

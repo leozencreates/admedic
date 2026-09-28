@@ -236,7 +236,7 @@ function toPublishRow(row: {
   const t = isRecord(row.targeting) ? row.targeting : {};
   const language = typeof t.language === "string" ? t.language : "";
   if (!isPublishLanguage(language))
-    throw new HttpError(422, `"${row.name}" ad set'inin dili belirlenemedi; kampanyayı arşivleyip yeniden oluşturun.`);
+    throw new HttpError(422, `"${row.name}" reklam setinin dili belirlenemedi; kampanyayı arşivleyip yeniden oluşturun.`);
   const geo = isRecord(t.geo_locations) ? t.geo_locations : {};
   const countries = Array.isArray(geo.countries) ? geo.countries.filter((c): c is string => typeof c === "string") : [];
   return {
@@ -260,7 +260,7 @@ async function structureAdSets(campaignId: string, campaignName: string, content
   const languages = new Set<string>(contentLanguages(content));
   await prisma.$transaction(async (tx) => {
     const rows = await tx.adSet.findMany({ where: { campaignId }, orderBy: { createdAt: "asc" } });
-    if (rows.length === 0) throw new HttpError(422, "Kampanyanın ad set kaydı yok; planlayıcıdan yeniden oluşturun.");
+    if (rows.length === 0) throw new HttpError(422, "Kampanyanın reklam seti kaydı yok; kampanyayı Yeni kampanya sayfasından yeniden oluşturun.");
     if (rows.some((r) => r.metaAdSetId)) return; // Meta'ya yazılmış yapı değiştirilmez.
     for (const row of rows) {
       const t = isRecord(row.targeting) ? row.targeting : {};
@@ -268,7 +268,7 @@ async function structureAdSets(campaignId: string, campaignName: string, content
       const market = typeof t.market === "string" ? t.market : "";
       const covered = rowLanguages(row.targeting).filter((l) => languages.has(l));
       if (!market || covered.length === 0)
-        throw new HttpError(422, `${marketLabel(market || row.name)} pazarı için onaylı içerik yok.`);
+        throw new HttpError(422, `${marketLabel(market || row.name)} pazarı için onaylı içerik yok. Bu pazarın diline onaylı bir reklam taslağı bağlayın.`);
       const shares = row.dailyBudget != null ? splitEvenly(row.dailyBudget, covered.length) : covered.map(() => null);
       for (const [i, language] of covered.entries()) {
         const data = {
@@ -316,10 +316,10 @@ export async function publishCampaign(
     where: { id, workspaceId: actor.workspaceId, adAccount: { orgId: actor.orgId } },
     include: { adAccount: { select: { id: true, metaAccountId: true, connectionId: true, currency: true } } },
   });
-  if (!campaign) throw new HttpError(404, "Kampanya bulunamadı.");
+  if (!campaign) throw new HttpError(404, "Kampanya bulunamadı; silinmiş olabilir. Kampanyalar sayfasından yeniden açın.");
   if (campaign.workflowStatus === "PUBLISHED_PAUSED" || campaign.workflowStatus === "ACTIVE")
-    throw new HttpError(409, "Kampanya zaten Meta'da yayınlandı.");
-  if (campaign.workflowStatus !== "APPROVED") throw new HttpError(409, "Kampanya henüz onaylanmadı.");
+    throw new HttpError(409, "Kampanya zaten Meta'da yayınlandı. Güncel durumu görmek için sayfayı yenileyin.");
+  if (campaign.workflowStatus !== "APPROVED") throw new HttpError(409, "Kampanya henüz onaylanmadı. Yayınlamadan önce kampanyayı onaya gönderip onaylatın.");
 
   // Harcamaya giden yol: taze kural seti + klinik yasaklı ifadeleri, Meta'ya gidecek içerik dahil.
   const clinic = await clinicPolicyContext(actor.workspaceId);
@@ -345,11 +345,11 @@ export async function publishCampaign(
   const delivery = readiness.delivery;
   const imageHash = campaign.imageHash;
 
-  if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
+  if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun.");
   const live = await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId);
   // Canlı modda mock hesaba düşülmez: gerçek hesap kimliği zorunlu.
   const rawAccountId = campaign.adAccount.metaAccountId ?? (live.mockMode ? MOCK_AD_ACCOUNT_ID : null);
-  if (!rawAccountId) throw new HttpError(400, "Reklam hesabının Meta kimliği (metaAccountId) tanımlı değil.");
+  if (!rawAccountId) throw new HttpError(400, "Reklam hesabının Meta kimliği tanımlı değil. Meta bağlantıları sayfasından Meta ile yeniden bağlanın.");
   const accountId = rawAccountId.replace(/^act_/, "");
   const page = await resolvePublishPage({
     orgId: actor.orgId,
@@ -443,7 +443,7 @@ export async function publishCampaign(
     const draftsFor = (language: string): ContentDraft[] => content.drafts.filter((d) => d.language === language);
     for (const row of rows)
       if (draftsFor(row.language).length === 0)
-        throw new HttpError(422, `"${row.name}" ad set'i için ${row.language} dilinde onaylı içerik yok.`);
+        throw new HttpError(422, `"${row.name}" reklam seti için ${row.language} dilinde onaylı içerik yok. Bu dilde onaylı bir reklam taslağı bağlayın.`);
     const usedLanguages = Array.from(new Set(rows.map((r) => r.language)));
     const usedDrafts = content.drafts.filter((d) => usedLanguages.includes(d.language));
 
@@ -463,7 +463,7 @@ export async function publishCampaign(
         },
         token,
       );
-      if (!created.success || !created.campaignId) throw new HttpError(502, "Meta kampanya oluşturma işlemi başarısız.");
+      if (!created.success || !created.campaignId) throw new HttpError(502, "Meta'da kampanya oluşturulamadı. Birkaç dakika sonra tekrar deneyin.");
       const newCampaignId = created.campaignId;
       // Meta inceleme durumu reklam düzeyindedir; yayından sonra reklam incelemesi senkronlanır (ADR-0015).
       await recordCreated("kampanya", newCampaignId, async () => {
@@ -490,7 +490,7 @@ export async function publishCampaign(
     step = "leadForms";
     if (delivery.link === "LEAD_FORM") {
       if (!page.pageToken || !org.privacyPolicyUrl)
-        throw new HttpError(422, "Instant Form için sayfa token'ı ve gizlilik politikası bağlantısı gerekli.");
+        throw new HttpError(422, "Anında Form için sayfa erişim anahtarı ve aydınlatma metni bağlantısı gerekli. Meta ile yeniden bağlanın ve Klinik ve marka sayfasında aydınlatma metni bağlantısını girin.");
       const privacyPolicyUrl = org.privacyPolicyUrl;
       for (const draft of usedDrafts) {
         if (state.leadForms[draft.draftId]) continue;
@@ -758,7 +758,7 @@ export async function activateCampaign(actor: Actor, id: string): Promise<Activa
   if (policy.risk === "HIGH") throw new HttpError(422, "İçerik kontrolündeki yüksek riskli ifadeleri düzeltin.");
   const policyWarning = policy.risk === "MEDIUM" ? policy.findings.map((f) => f.reason).join("; ") : null;
 
-  if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı yapılandırılmadı.");
+  if (!campaign.adAccount.connectionId) throw new HttpError(400, "Meta bağlantısı kurulmamış. Meta bağlantıları sayfasından Meta ile bağlantı kurun.");
   const live = await requireLiveMetaConnection(campaign.adAccount.connectionId, actor.orgId);
   const meta = createMetaClient();
 
@@ -860,7 +860,7 @@ export async function activateCampaign(actor: Actor, id: string): Promise<Activa
       // Yanıt yine de hatayı bildirir.
     }
     if (error instanceof HttpError) throw error;
-    throw new HttpError(502, "Meta etkinleştirme işlemi başarısız; kampanya PAUSED bırakıldı. Tekrar deneyebilirsiniz.");
+    throw new HttpError(502, "Kampanya Meta'da etkinleştirilemedi ve duraklatılmış olarak bırakıldı. Birkaç dakika sonra tekrar deneyin.");
   }
   return { policyWarning, adsActivated: ads.length, adSetsActivated: adSets.length };
 }

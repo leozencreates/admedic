@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await lockCampaignRow(tx, actor, id);
       const campaign = await ownedCampaign(actor, id, tx);
       if (campaign.workflowStatus !== "IN_REVIEW")
-        throw new HttpError(409, "Yalnızca incelemedeki kampanya onaylanabilir.");
+        throw new HttpError(409, "Yalnızca incelemedeki kampanya onaylanabilir. Kampanyanın durumu değişmiş olabilir; sayfayı yenileyin.");
       // Onay anında güncel kural seti (sabit paket kuralları değil) ile yeniden kontrol (ADR-0008).
       const clinic = await clinicPolicyContext(actor.workspaceId, tx);
       const policy = await checkPolicyWithRules(campaignPolicyText(campaign), clinic.bannedPhrases, tx);
@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           imageHash: campaign.imageHash,
           privacyPolicyUrl: org.privacyPolicyUrl,
         });
-        if (!readiness.ready) throw new HttpError(422, `Onaylanamaz: ${readiness.reasons.join(" ")}`);
+        if (!readiness.ready) throw new HttpError(422, `Kampanya onaylanamaz: ${readiness.reasons.join(" ")} Eksikleri tamamlayıp tekrar deneyin.`);
       }
       const moved = await tx.campaign.updateMany({
         where: { id, workspaceId: actor.workspaceId, workflowStatus: "IN_REVIEW" },

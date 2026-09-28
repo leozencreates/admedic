@@ -51,7 +51,7 @@ export async function PATCH(
     const service = await prisma.service.findFirst({
       where: { id, clinic: { workspaceId: actor.workspaceId } },
     });
-    if (!service) throw new HttpError(404, "Hizmet bulunamadı.");
+    if (!service) throw new HttpError(404, "Hizmet bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     const data: Record<string, unknown> = {};
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
@@ -99,7 +99,7 @@ export async function DELETE(
     const service = await prisma.service.findFirst({
       where: { id, clinic: { workspaceId: actor.workspaceId } },
     });
-    if (!service) throw new HttpError(404, "Hizmet bulunamadı.");
+    if (!service) throw new HttpError(404, "Hizmet bulunamadı; silinmiş olabilir. Klinik ve marka sayfasını yenileyin.");
     if (service.status === "ARCHIVED") return { service };
     const updated = await prisma.$transaction(async (tx) => {
       const row = await tx.service.update({

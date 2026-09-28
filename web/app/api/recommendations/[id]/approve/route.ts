@@ -12,9 +12,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     requireRole(actor, ["OWNER", "ADMIN"]);
     const { id } = await params;
     const rec = await prisma.recommendation.findFirst({ where: { id, workspaceId: actor.workspaceId } });
-    if (!rec) throw new HttpError(404, "Öneri bulunamadı.");
+    if (!rec) throw new HttpError(404, "Öneri bulunamadı; silinmiş olabilir. Öneriler sayfasını yenileyin.");
     if (rec.status === "APPROVED") throw new HttpError(409, "Bu öneri zaten onaylanmış.");
-    if (rec.status !== "PENDING") throw new HttpError(409, "Yalnızca onay bekleyen öneri onaylanabilir.");
+    if (rec.status !== "PENDING") throw new HttpError(409, "Yalnızca onay bekleyen öneri onaylanabilir. Önerinin durumu değişmiş olabilir; sayfayı yenileyin.");
     const now = new Date();
     await prisma.$transaction(async (tx) => {
       const result = await tx.recommendation.updateMany({

@@ -165,7 +165,10 @@ export function PerformanceTab({ detail }: { detail: CampaignDetail }) {
   if (!hasData) {
     return (
       <Card>
-        <p className="text-sm text-ink-2">Bu kampanya için henüz performans verisi yok.</p>
+        <p className="text-sm text-ink-2">
+          Bu kampanya için henüz performans verisi yok. Kampanya etkinleştirilip Meta&apos;da harcama yapmaya başladığında
+          harcama, lead ve tıklama sonuçları burada günlük olarak görünür.
+        </p>
       </Card>
     );
   }

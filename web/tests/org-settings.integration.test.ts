@@ -110,7 +110,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("org settings: monthly cap i
     await prisma.membership.updateMany({ where: { orgId, role: "ADMIN" }, data: { canApproveSpend: true } });
     const denied = await patch("ADMIN", { monthlyAdBudgetCap: 2000 });
     expect(denied.status).toBe(403);
-    expect((await denied.json()).error).toMatch(/Owner/);
+    expect((await denied.json()).error).toMatch(/yalnızca hesap sahibi/);
     await prisma.membership.updateMany({ where: { orgId, role: "ADMIN" }, data: { canApproveSpend: false } });
     expect((await patch("ADMIN", { monthlyAdBudgetCap: 1000 })).status).toBe(200);
     expect((await patch("OWNER", { monthlyAdBudgetCap: 2000 })).status).toBe(200);

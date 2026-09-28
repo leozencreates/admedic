@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       where: { id: leadId, workspaceId: actor.workspaceId },
       select: { id: true, channel: true },
     });
-    if (!lead) throw new HttpError(404, "Lead bulunamadı.");
+    if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
 
     let conversation = conversationId
       ? await prisma.conversation.findFirst({
@@ -50,11 +50,11 @@ export async function POST(request: Request) {
           orderBy: { createdAt: "desc" },
           select: { id: true, status: true },
         });
-    if (conversationId && !conversation) throw new HttpError(404, "Konuşma bulunamadı.");
+    if (conversationId && !conversation) throw new HttpError(404, "Konuşma bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     if (conversation && conversation.status !== "ACTIVE")
       throw new HttpError(409, "Bu konuşmada asistan durduruldu; koordinatör devralmalı.");
     if (!conversation) {
-      if (!message) throw new HttpError(409, "Yanıtlanacak gelen mesaj yok.");
+      if (!message) throw new HttpError(409, "Yanıtlanacak gelen mesaj yok. Hastadan yeni mesaj geldiğinde tekrar deneyin.");
       conversation = await prisma.conversation.create({
         data: {
           leadId,

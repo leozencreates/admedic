@@ -10,6 +10,7 @@ import {
   type CampaignData,
   type OrgSettings,
 } from "../../_lib/campaign-ui";
+import { formatNumber } from "../../_lib/format";
 
 export interface ConfirmState { busy: boolean; error: string }
 export interface RejectState { reason: string; fieldError: string; error: string; busy: boolean }
@@ -62,7 +63,7 @@ function ActivationSummary({ campaign: c, settings }: { campaign: CampaignData; 
       )}
       {disapproved > 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
-          Meta {disapproved} reklamı reddetti; reddedilen reklamlar yayınlanmaz. Önce düzeltmeniz önerilir.
+          Meta {formatNumber(disapproved)} reklamı reddetti; reddedilen reklamlar yayınlanmaz. Önce düzeltmeniz önerilir.
         </p>
       )}
     </div>
