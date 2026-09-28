@@ -1,5 +1,5 @@
 import { prisma, type MessageChannel } from "@admedic/database";
-import { requireActor, requireRole, CARE_ROLES } from "../../../_lib/auth";
+import { requireActor, requireRole, ESCALATION_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { respondToInbound } from "../../../_lib/lead-assistant";
 import { z } from "zod";
@@ -31,7 +31,8 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, CARE_ROLES);
+    // Hastanın gerçek konuşmasına yanıt gönderir / kayıt ekler: yalnızca hastayla yazışabilen roller (ADR-0019).
+    requireRole(actor, ESCALATION_ROLES);
     const { leadId, message, conversationId } = await body(request, ChatSchema);
 
     const lead = await prisma.lead.findFirst({

@@ -113,17 +113,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   return respond(async () => {
     const actor = await requireActor();
     const { id } = await params;
-    const lead = await prisma.lead.findFirst({
-      where: { id, workspaceId: actor.workspaceId },
-      include: {
-        conversations: {
-          include: {
-            messages: { orderBy: { createdAt: "desc" }, take: 10 },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
+    // Mesajlar bu uçtan dönmez (hasta verisi); rol denetimli GET /api/conversations/:leadId kullanılır (ADR-0019).
+    const lead = await prisma.lead.findFirst({ where: { id, workspaceId: actor.workspaceId } });
     if (!lead) throw new HttpError(404, "Lead bulunamadı; silinmiş olabilir. Lead'ler sayfasından yeniden açın.");
     const consents = await prisma.consentRecord.findMany({
       where: { leadId: lead.id, workspaceId: actor.workspaceId },

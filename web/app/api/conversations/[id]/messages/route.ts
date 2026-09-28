@@ -1,11 +1,13 @@
 import { prisma } from "@admedic/database";
-import { requireActor } from "../../../../_lib/auth";
+import { CARE_ROLES, requireActor, requireRole } from "../../../../_lib/auth";
 import { respond, HttpError } from "../../../../_lib/http";
 export const maxDuration = 30;
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
+    // Mesaj içeriği hasta verisidir: yalnızca bakım rolleri okur (ADR-0019, GET /api/conversations/:leadId ile aynı).
+    requireRole(actor, CARE_ROLES);
     const { id } = await params;
     const conversation = await prisma.conversation.findFirst({
       where: { id, workspaceId: actor.workspaceId },
