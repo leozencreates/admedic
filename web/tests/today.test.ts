@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { scopePendingApprovals, type PendingApprovalItem, type PendingApprovals } from "../app/_lib/pending-approvals";
-import { responseDuration } from "../app/_lib/today";
+import { formatDuration } from "../app/_lib/format";
 
 const item = (kind: PendingApprovalItem["kind"], id: string, submittedById: string | null): PendingApprovalItem => ({
   kind, id, title: id, detail: null, submittedBy: null, submittedByLabel: "Gönderen",
@@ -36,12 +36,17 @@ describe("Onaylar kapsamı (ADR-0018)", () => {
   });
 });
 
-describe("ilk yanıt süresi biçimi", () => {
-  it("dakika, saat ve gün", () => {
-    expect(responseDuration(20_000)).toBe("1 dk");
-    expect(responseDuration(12 * 60_000)).toBe("12 dk");
-    expect(responseDuration(90 * 60_000)).toBe("1 sa 30 dk");
-    expect(responseDuration(3 * 3600_000)).toBe("3 sa");
-    expect(responseDuration(72 * 3600_000)).toBe("3 gün");
+describe("süre biçimi (tek biçimleyici: bekleme, kalan süre, ilk yanıt)", () => {
+  it("dakika, saat ve gün; aşağı yuvarlar", () => {
+    expect(formatDuration(20_000)).toBe("1 dk'dan az");
+    expect(formatDuration(12 * 60_000 + 59_000)).toBe("12 dk");
+    expect(formatDuration(90 * 60_000)).toBe("1 sa 30 dk");
+    expect(formatDuration(3 * 3600_000)).toBe("3 sa");
+    expect(formatDuration(23 * 3600_000 + 59 * 60_000)).toBe("23 sa 59 dk");
+    expect(formatDuration(72 * 3600_000)).toBe("3 gün");
+  });
+  it("geçersiz ya da negatif süre", () => {
+    expect(formatDuration(-1)).toBe("—");
+    expect(formatDuration(Number.NaN)).toBe("—");
   });
 });

@@ -69,4 +69,14 @@ describe("menü ağacı (ADR-0017 · K2-A)", () => {
     expect(newActionsFor("VIEWER")).toEqual([]);
     expect(newActionsFor(null)).toEqual([]);
   });
+
+  it("tek öğesi grupla aynı adı taşıyan grup başlık tekrar etmez (izleyici: Kampanyalar)", () => {
+    const campaigns = navTreeFor("VIEWER", "tr").find((g) => g.id === "campaigns")!;
+    expect(campaigns.items.map((i) => i.label)).toEqual(["Kampanyalar"]);
+    expect(campaigns.label).toBeNull();
+    expect(navTreeFor("OWNER", "tr").find((g) => g.id === "campaigns")!.label).toBe("Kampanyalar");
+  });
+  it("alt sekme çubuğunda uzun ad kısaltılır", () => {
+    expect(tabItemsFor("MEDIA_BUYER", "tr").find((t) => t.href === "/studio")?.label).toBe("Oluştur");
+  });
 });

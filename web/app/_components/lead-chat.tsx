@@ -4,7 +4,9 @@ import { ApiError, api } from "../_lib/client-api";
 import { formatDate, formatDay, formatDuration, formatRelative } from "../_lib/format";
 import { channelLabel } from "../_lib/labels";
 
-type Party = "lead" | "assistant" | "team" | "system";
+import { messageParty, type MessageParty as Party } from "../_lib/message-party";
+
+export { messageParty };
 interface ApiMessage {
   id: string;
   content: string;
@@ -39,12 +41,9 @@ type Conversation = Omit<ApiConversation, "messages">;
 const TICK_MS = 60_000;
 const WINDOW_WARN_MS = 2 * 3_600_000;
 
-/** Kalan süre: "5 sa 12 dk", "38 dk", "1 dk'dan az". */
+/** Kalan süre: "5 sa 12 dk", "38 dk", "1 dk'dan az". İstemci saati geride kalsa da 24 saati aşmaz. */
 function remainingText(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return formatDuration(ms);
-  const rest = minutes % 60;
-  return rest ? `${formatDuration(ms)} ${rest} dk` : formatDuration(ms);
+  return formatDuration(Math.min(ms, 24 * 3_600_000 - 60_000));
 }
 
 const MESSAGE_CHANNELS = ["WHATSAPP", "INSTAGRAM", "MESSENGER", "SMS"];
@@ -64,15 +63,6 @@ const BUBBLE: Record<Exclude<Party, "system">, { box: string; meta: string }> = 
 const NEAR_BOTTOM_PX = 64;
 const REFRESH_MS = 30_000;
 const WEEK_MS = 7 * 86_400_000;
-
-/** Giden mesajın kimden geldiği: sender boş/"ai"/"bot" → asistan, "system" → sistem notu, aksi halde ekip. */
-export function messageParty(msg: { direction: string; sender?: string | null }): Party {
-  if (msg.direction === "INCOMING") return "lead";
-  const sender = (msg.sender ?? "").trim().toLowerCase();
-  if (!sender || sender === "ai" || sender === "bot") return "assistant";
-  if (sender === "system") return "system";
-  return "team";
-}
 
 /** Virgülle ayrılmış şablon parametrelerini {1: "...", 2: "..."} biçimine çevirir. */
 export function parseTemplateParams(raw: string): Record<string, string> {
@@ -284,6 +274,8 @@ export function LeadChat({
   function onComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Enter gönderir, Shift+Enter yeni satır; yazı birleştirme (IME) sırasında Enter'a dokunulmaz.
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    // Şablon modunda alan yalnızca panel notudur; şablon düğmeyle gönderilir.
+    if (useTemplate) return;
     // Dokunmatik ekranda Enter yeni satırdır; gönderim düğmeyle yapılır (yanlışlıkla gönderimi önler).
     if (window.matchMedia("(pointer: coarse)").matches) return;
     e.preventDefault();
@@ -490,7 +482,7 @@ export function LeadChat({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onComposerKeyDown}
-                aria-describedby={hintId}
+                aria-describedby={useTemplate ? undefined : hintId}
                 placeholder={useTemplate ? undefined : "Yanıt yazın…"}
                 dir="auto"
               />
@@ -499,9 +491,11 @@ export function LeadChat({
               {sending ? "Gönderiliyor…" : useTemplate ? "Şablonu gönder" : "Gönder"}
             </button>
           </div>
-          <p id={hintId} className="hidden text-xs text-muted [@media(pointer:fine)]:block">
-            Klavyede Enter gönderir, Shift+Enter yeni satır açar.
-          </p>
+          {!useTemplate ? (
+            <p id={hintId} className="hidden text-xs text-muted [@media(pointer:fine)]:block">
+              Klavyede Enter gönderir, Shift+Enter yeni satır açar.
+            </p>
+          ) : null}
           {sendError && (
             <p role="alert" className="text-sm text-rose-700">
               {sendError}

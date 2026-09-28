@@ -2,7 +2,7 @@ import { prisma } from "@admedic/database";
 import { requireActor } from "../../../_lib/auth";
 import { HttpError, respond } from "../../../_lib/http";
 import { loadCampaignViews } from "../../../_lib/campaign-view";
-import { EMPTY_METRICS, campaignBreakdown, campaignMetrics, sinceDays } from "../../../_lib/campaign-metrics";
+import { EMPTY_METRICS, campaignBreakdown, sinceDays, sumMetrics } from "../../../_lib/campaign-metrics";
 
 export const maxDuration = 15;
 
@@ -29,9 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     });
     const adIds = adSets.flatMap((a) => a.ads.map((ad) => ad.id));
     const targetIds = [id, ...adSets.map((a) => a.id), ...adIds];
-    const [week, month, breakdown, decisions, budgetChanges] = await Promise.all([
-      campaignMetrics(actor.workspaceId, sinceDays(7), [id]),
-      campaignMetrics(actor.workspaceId, sinceDays(30), [id]),
+    const [breakdown, decisions, budgetChanges] = await Promise.all([
       campaignBreakdown(actor.workspaceId, id, sinceDays(30)),
       prisma.agentDecision.findMany({
         where: { workspaceId: actor.workspaceId, targetId: { in: targetIds } },
@@ -61,7 +59,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         ads: ads.length,
         metrics30: breakdown.byAdSet.get(a.id) ?? EMPTY_METRICS,
       })),
-      metrics: { days7: week.get(id) ?? EMPTY_METRICS, days30: month.get(id) ?? EMPTY_METRICS },
+      // 30 günlük toplam kırılımın kendisi; 7 günlük toplam aynı günlük seriden (tek sorgu, aynı kural).
+      metrics: { days7: sumMetrics(breakdown.daily.filter((d) => d.date >= sinceDays(7).toISOString().slice(0, 10))), days30: breakdown.total },
       daily: breakdown.daily,
       decisions: decisions.map((d) => ({ ...d, targetName: names.get(d.targetId) ?? null })),
       budgetChanges: budgetChanges.map((b) => ({ ...b, targetName: names.get(b.targetId) ?? null })),

@@ -36,15 +36,16 @@ interface Row {
   campaignId: string;
   adSetId: string | null;
   date: string;
-  sums: Partial<Record<keyof Metrics, number | null>>;
+  sums: Partial<Record<keyof Metrics | "reach", number | null>>;
 }
 
 /** Anlık görüntü satırlarını kampanya (ve reklam seti) kimliğine bağlar. */
 async function resolvedRows(workspaceId: string, since: Date, campaignIds?: string[]): Promise<Row[]> {
   const grouped = await prisma.insightSnapshot.groupBy({
     by: ["campaignId", "adSetId", "adId", "date"],
-    where: { workspaceId, date: { gte: since } },
-    _sum: { spend: true, impressions: true, clicks: true, leads: true, purchases: true, conversionValue: true },
+    // Saatlik satırlar günlüklerin ayrıntısıdır; toplamlara yalnızca günlük satırlar girer.
+    where: { workspaceId, granularity: "DAILY", date: { gte: since } },
+    _sum: { spend: true, impressions: true, clicks: true, leads: true, purchases: true, conversionValue: true, reach: true },
   });
   const adIds = [...new Set(grouped.filter((g) => g.adId).map((g) => g.adId!))];
   const adSetIds = [...new Set(grouped.filter((g) => !g.adId && g.adSetId).map((g) => g.adSetId!))];
@@ -87,11 +88,40 @@ async function resolvedRows(workspaceId: string, since: Date, campaignIds?: stri
   return rows.filter((r) => LEVEL_RANK[r.level] === topLevel.get(`${r.campaignId}|${r.date}`));
 }
 
+/**
+ * Kampanya-gün satırları (çift sayımsız, en üst düzey): İçgörüler'in günlük serisi ve kampanya kırılımı için.
+ * Erişim (reach) günler arasında toplanabilir bir metrik değildir; yalnızca oran göstergesi için taşınır.
+ */
+export async function campaignDayRows(
+  workspaceId: string,
+  since: Date,
+): Promise<Array<Metrics & { campaignId: string; date: string; reach: number }>> {
+  const out = new Map<string, Metrics & { campaignId: string; date: string; reach: number }>();
+  for (const r of await resolvedRows(workspaceId, since)) {
+    const key = `${r.campaignId}|${r.date}`;
+    const prev = out.get(key) ?? { ...EMPTY_METRICS, campaignId: r.campaignId, date: r.date, reach: 0 };
+    out.set(key, { ...prev, ...add(prev, r.sums), reach: prev.reach + (r.sums.reach ?? 0) });
+  }
+  return [...out.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Kampanya kimliği → toplam metrikler (`since` gününden bugüne). */
 export async function campaignMetrics(workspaceId: string, since: Date, campaignIds?: string[]): Promise<Map<string, Metrics>> {
   const out = new Map<string, Metrics>();
   for (const r of await resolvedRows(workspaceId, since, campaignIds)) out.set(r.campaignId, add(out.get(r.campaignId) ?? EMPTY_METRICS, r.sums));
   return out;
+}
+
+/** Metrik satırlarının toplamı (ek alanlar yok sayılır). */
+export function sumMetrics(rows: readonly Partial<Record<keyof Metrics, number | null>>[]): Metrics {
+  return rows.reduce<Metrics>((acc, r) => add(acc, r), EMPTY_METRICS);
+}
+
+/** Çalışma alanının tüm kampanyalarının toplamı ("Bugün" göstergeleri; kampanya toplamlarıyla aynı kural). */
+export async function workspaceMetrics(workspaceId: string, since: Date): Promise<Metrics> {
+  let total = EMPTY_METRICS;
+  for (const m of (await campaignMetrics(workspaceId, since)).values()) total = add(total, m);
+  return total;
 }
 
 /** Tek kampanya: günlük seri ve reklam seti kırılımı (kampanya düzeyindeki satırlar kırılıma girmez). */

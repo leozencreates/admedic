@@ -68,8 +68,12 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("alert management: list, ack
   const as = (role: string) => cookieJar.set(SESSION_COOKIE, tokens[role]);
   const own = () => prisma.alert.findFirstOrThrow({ where: { workspaceId, type: "ROAS_DROP" } });
 
-  it("GET /api/alerts yalnızca kendi workspace'ini listeler ve durum filtresi uygular", async () => {
+  it("GET /api/alerts yalnızca kendi workspace'ini listeler ve durum filtresi uygular (izleyici göremez, ADR-0022)", async () => {
     as("VIEWER");
+    expect((await listAlerts(req("/api/alerts", "GET"))).status).toBe(403);
+    as("PATIENT_COORDINATOR");
+    expect((await (await listAlerts(req("/api/alerts", "GET"))).json()).alerts).toEqual([]);
+    as("ANALYST");
     const all = await (await listAlerts(req("/api/alerts", "GET"))).json() as { alerts: Array<{ workspaceId: string; status: string }> };
     expect(all.alerts).toHaveLength(3);
     expect(all.alerts.every((a) => a.workspaceId === workspaceId)).toBe(true);
@@ -83,7 +87,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("alert management: list, ack
     expect((await getAlert(req(`/api/alerts/${(await own()).id}`, "GET"), ctx((await own()).id))).status).toBe(404);
   });
 
-  it("PATCH: CARE_ROLES yetkisi, tenant izolasyonu, Görüldü → Çözüldü geçişleri, read/resolvedAt ve audit", async () => {
+  it("PATCH: rol yetkisi (ADR-0022: devir dışı uyarıları düzenleme rolleri kapatır), tenant izolasyonu, Görüldü → Çözüldü geçişleri, read/resolvedAt ve audit", async () => {
     const alert = await own();
     as("VIEWER");
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }), ctx(alert.id))).status).toBe(403);
@@ -91,7 +95,10 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("alert management: list, ack
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }), ctx(alert.id))).status).toBe(403);
     as("FOREIGN");
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }), ctx(alert.id))).status).toBe(404);
+    // Koordinatör yalnızca devir uyarılarını görür; performans uyarısı onun için yoktur.
     as("PATIENT_COORDINATOR");
+    expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }), ctx(alert.id))).status).toBe(404);
+    as("OWNER");
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }, "https://other.invalid"), ctx(alert.id))).status).toBe(403);
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "OPEN" }), ctx(alert.id))).status).toBe(400);
 
@@ -105,7 +112,6 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("alert management: list, ack
     expect((await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "ACKED" }), ctx(alert.id))).status).toBe(200);
     expect(await prisma.auditLog.count({ where: { orgId, entityType: "ALERT", entityId: alert.id } })).toBe(1);
 
-    as("OWNER");
     const resolved = await patchAlert(req(`/api/alerts/${alert.id}`, "PATCH", { status: "RESOLVED" }), ctx(alert.id));
     expect(resolved.status).toBe(200);
     const afterResolve = await prisma.alert.findUniqueOrThrow({ where: { id: alert.id } });

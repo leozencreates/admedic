@@ -128,14 +128,17 @@ export function formatShortDay(value: Date | string | number | null | undefined)
   return `${p.day} ${p.month}`;
 }
 
-/** Süre: 45 sn → "1 dk'dan az", 12 dk, 5 sa, 2 gün (bekleme süresi gösterimi). */
+/**
+ * Süre (bekleme, kalan süre, ilk yanıt; tek biçim): 45 sn → "1 dk'dan az", "12 dk", "3 sa 5 dk", "5 sa", "2 gün".
+ * Aşağı yuvarlar (bekleme süresi abartılmaz).
+ */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "—";
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return "1 dk'dan az";
   if (minutes < 60) return `${minutes} dk`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} sa`;
+  if (hours < 24) return minutes % 60 ? `${hours} sa ${minutes % 60} dk` : `${hours} sa`;
   return `${Math.floor(hours / 24)} gün`;
 }
 
@@ -150,7 +153,11 @@ export function formatRelative(
   const d = validDate(value);
   if (!d) return "—";
   const diff = now.getTime() - d.getTime();
+  // Bir dakikadan az ileri (saat farkı) "az önce"dır; daha ileri tarih gün olarak yazılır.
+  if (diff > 7 * 86_400_000 || diff < -60_000) return formatDay(d);
   if (diff < 60_000) return "az önce";
-  if (diff > 7 * 86_400_000 || diff < 0) return formatDay(d);
+  // Göreli zaman kaba kalır ("5 sa önce"); dakika ayrıntısı yalnızca bir saatin altında.
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours >= 1 && hours < 24) return `${hours} sa önce`;
   return `${formatDuration(diff)} önce`;
 }

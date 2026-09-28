@@ -88,10 +88,20 @@ function dayIndexToIso(day: number): string {
   return new Date(day * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Arayüzle aynı biçim (tr-TR): "€250,00". Bilinmeyen para birimi kodla yazılır. */
 function money(minor: number, currency: string): string {
   const factor = minorUnitFactor(currency);
   const digits = factor === 1000 ? 3 : factor === 1 ? 0 : 2;
-  return `${(minor / factor).toFixed(digits)} ${currency}`;
+  try {
+    return new Intl.NumberFormat("tr-TR", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(minor / factor);
+  } catch {
+    return `${decimal(minor / factor, digits)} ${currency}`;
+  }
+}
+
+/** Ondalık sayı, Türkçe biçim ("2,00"). */
+function decimal(value: number, digits: number): string {
+  return value.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 function add(totals: WindowTotals, row: DailyCampaignRow, day: number): void {
@@ -158,7 +168,7 @@ export function detectAnomalies(
             type: "ROAS_DROP",
             severity: "WARNING",
             title: `ROAS düşüşü: ${c.campaignName}`,
-            message: `Son 7 gün ROAS ${curRoas.toFixed(2)}× (önceki 7 gün ${prevRoas.toFixed(2)}×); %${Math.round(drop * 100)} düşüş.`,
+            message: `Son 7 gün reklam getirisi (ROAS) ${decimal(curRoas, 2)}× (önceki 7 gün ${decimal(prevRoas, 2)}×); %${Math.round(drop * 100)} düşüş.`,
             entityType: "CAMPAIGN",
             entityId: c.campaignId,
           });
@@ -176,7 +186,7 @@ export function detectAnomalies(
           type: "SPEND_SPIKE",
           severity: "WARNING",
           title: `Harcama sıçraması: ${c.campaignName}`,
-          message: `${dayIndexToIso(latestDay)} günü harcama ${money(latestSpend, currency)}; önceki 7 gün ortalaması ${money(Math.round(prevDailyAvg), currency)}/gün (${(latestSpend / prevDailyAvg).toFixed(1)}×).`,
+          message: `${dayIndexToIso(latestDay)} günü harcama ${money(latestSpend, currency)}; önceki 7 gün ortalaması ${money(Math.round(prevDailyAvg), currency)}/gün (${decimal(latestSpend / prevDailyAvg, 1)}×).`,
           entityType: "CAMPAIGN",
           entityId: c.campaignId,
         });
@@ -191,8 +201,8 @@ export function detectAnomalies(
         alerts.push({
           type: "HIGH_CPA",
           severity: "CRITICAL",
-          title: `Yüksek CPL: ${c.campaignName}`,
-          message: `Son 7 gün CPL ${money(Math.round(curCpl), currency)} (${current.leads} lead); önceki 7 gün ${money(Math.round(prevCpl), currency)}. Artış %${Math.round((curCpl / prevCpl - 1) * 100)}.`,
+          title: `Yüksek lead başı maliyet: ${c.campaignName}`,
+          message: `Son 7 gün lead başı maliyet (CPL) ${money(Math.round(curCpl), currency)} (${current.leads} lead); önceki 7 gün ${money(Math.round(prevCpl), currency)}. Artış %${Math.round((curCpl / prevCpl - 1) * 100)}.`,
           entityType: "CAMPAIGN",
           entityId: c.campaignId,
         });
@@ -206,8 +216,8 @@ export function detectAnomalies(
         alerts.push({
           type: "CREATIVE_FATIGUE",
           severity: "INFO",
-          title: `Kreatif yorgunluğu: ${c.campaignName}`,
-          message: `Son 7 gün CTR %${(ctr * 100).toFixed(2)} (${current.impressions} gösterim, ${current.clicks} tıklama); kreatif yenilemesi önerilir.`,
+          title: `Reklam yorgunluğu: ${c.campaignName}`,
+          message: `Son 7 gün tıklama oranı (CTR) %${decimal(ctr * 100, 2)} (${current.impressions.toLocaleString("tr-TR")} gösterim, ${current.clicks.toLocaleString("tr-TR")} tıklama); reklam görselini yenilemeniz önerilir.`,
           entityType: "CAMPAIGN",
           entityId: c.campaignId,
         });

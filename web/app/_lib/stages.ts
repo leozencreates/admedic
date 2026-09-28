@@ -70,15 +70,18 @@ export function campaignStage(
   }
 }
 
-/** Lead durumu → aşama. Kayıp lead gri; son bilinen aşama bilinmediği için ilk aşamada gösterilir. */
-export function leadStage(status: string | null | undefined): StageInfo {
+/**
+ * Lead durumu → aşama. Kayıp lead gri; son bilinen aşama bilinmediği için ilk aşamada gösterilir.
+ * Amber ("bir insan bekliyor") yalnızca gelen kutusu kuralına göre yanıt bekleyen lead'de (`needsReply`, inbox.ts);
+ * asistanın yürüttüğü yeni lead amber değildir.
+ */
+export function leadStage(status: string | null | undefined, options: { needsReply?: boolean } = {}): StageInfo {
   const style = leadStatusStyle(status);
   const base = { total: LEAD_STAGE_NAMES.length, names: LEAD_STAGE_NAMES, label: style.label, tone: style.tone };
   if (status === "LOST") return { ...base, index: 0, state: "idle" };
   const index = Math.max(0, (LEAD_STAGES as readonly string[]).indexOf(status ?? ""));
-  if (status === "NEW") return { ...base, index, state: "human" };
   if (status === "TREATED") return { ...base, index, state: "done" };
-  return { ...base, index, state: "progress" };
+  return { ...base, index, state: options.needsReply ? "human" : "progress" };
 }
 
 /** Ekran okuyucu cümlesi: "Aşama 4/5 (Etkinleştirme): Etkinleştirme bekliyor". */

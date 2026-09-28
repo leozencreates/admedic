@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../_lib/client-api";
 import { formatDate } from "../_lib/format";
-import { POLICY_MATCHERS, policyMatcherLabel, policyRiskStyle, ruleActiveStyle } from "../_lib/labels";
+import { POLICY_MATCHERS, policyMatcherLabel, policyRiskStyle, policyRuleName, ruleActiveStyle } from "../_lib/labels";
 import { Card, EmptyState, SectionHeading, Badge, PageHeader } from "../_components/ui";
 
 type Rule = {
@@ -215,7 +215,7 @@ export default function PolicyRulesPage() {
                 <div key={r.id} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-medium text-slate-900">
-                      {r.key} <span className="ml-2 text-xs font-normal text-muted">v{r.version}</span>
+                      {policyRuleName(r.key)} <span className="ml-2 text-xs font-normal text-muted">{r.version}. sürüm</span>
                       <span className="ml-2 text-xs font-normal text-muted">{policyMatcherLabel(r.matcher)}</span>
                     </p>
                     <div className="flex flex-wrap items-center gap-2">

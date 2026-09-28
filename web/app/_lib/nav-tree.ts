@@ -153,13 +153,20 @@ function isNavRole(role: string | null | undefined): role is NavRole {
  */
 export function navTreeFor(role: string | null | undefined, lang: Language): NavGroupView[] {
   const known = isNavRole(role);
-  return NAV_TREE.map((group) => ({
-    id: group.id,
-    label: group.key ? t(group.key, lang) : null,
-    items: group.items
+  return NAV_TREE.map((group) => {
+    const items = group.items
       .filter((item) => !known || item.roles.includes(role))
-      .map((item) => ({ href: item.href, label: t(item.key, lang), icon: item.icon, badge: item.badge })),
-  })).filter((group) => group.items.length > 0);
+      .map((item) => ({ href: item.href, label: t(item.key, lang), icon: item.icon, badge: item.badge }));
+    const label = group.key ? t(group.key, lang) : null;
+    // Grubun tek öğesi grupla aynı adı taşıyorsa (izleyicide "Kampanyalar") başlık tekrar edilmez.
+    return { id: group.id, label: items.length === 1 && items[0].label === label ? null : label, items };
+  }).filter((group) => group.items.length > 0);
+}
+
+/** Bölümü menüde görebilen roller ve menü adı (sayfa düzeyinde rol koruması için); menüde olmayan yol → null. */
+export function navItemForSection(path: string): { roles: readonly NavRole[]; key: TranslationKey } | null {
+  const item = NAV_ITEMS.find((i) => i.href === path);
+  return item ? { roles: item.roles, key: item.key } : null;
 }
 
 /** Yol → menü öğesi (en uzun eşleşen önek). Kayıt sayfaları (`/leads/abc`) üst öğeye bağlanır. */
@@ -201,9 +208,13 @@ export function tabItemsFor(role: string | null | undefined, lang: Language): Na
     .filter((href) => visible.has(href))
     .map((href) => {
       const item = NAV_ITEMS.find((i) => i.href === href)!;
-      return { href, label: t(item.key, lang), icon: item.icon, badge: item.badge };
+      const short = TAB_SHORT_LABEL[href];
+      return { href, label: t(short ?? item.key, lang), icon: item.icon, badge: item.badge };
     });
 }
+
+/** Alt sekme çubuğunda sığmayan menü adlarının kısa hâli (telefonda ~10 karakter). */
+const TAB_SHORT_LABEL: Record<string, TranslationKey> = { "/studio": "tab.studio" };
 
 /** "+ Yeni" menüsü: role göre oluşturma kısayolları. */
 export interface NewAction {

@@ -1,12 +1,12 @@
 import { prisma } from "@admedic/database";
-import { requireActor, requireRole, CARE_ROLES } from "../../_lib/auth";
+import { requireActor, requireRole, CARE_ROLES, LEAD_READ_ROLES } from "../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { z } from "zod";
 import { encrypt } from "../../_lib/encrypt";
 import { leadLookupHash } from "../../_lib/lead-hash";
 import { logAudit } from "../../_lib/audit";
 import { presentContact, sanitizeMetadata } from "../../_lib/lead-view";
-import { inboxStates } from "../../_lib/inbox";
+import { inboxStates, needsReplySummary } from "../../_lib/inbox";
 export const maxDuration = 10;
 const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -27,20 +27,31 @@ function safeEncrypt(value: string | null | undefined): string | null {
   if (!value) return null;
   return encrypt(value);
 }
+/** Listenin en yeni lead sayısı; yanıt bekleyen daha eski lead'ler buna eklenir. */
+const LIST_LIMIT = 100;
+
 export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
-    const rows = await prisma.lead.findMany({
-      where: { workspaceId: actor.workspaceId },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      select: {
-        id: true, firstName: true, lastName: true, email: true, phone: true,
-        country: true, language: true, channel: true, status: true,
-        interestedService: true, campaignId: true, adSetId: true, adId: true,
-        createdAt: true, updatedAt: true, metadata: true, consentGiven: true,
-      },
-    });
+    requireRole(actor, LEAD_READ_ROLES);
+    const select = {
+      id: true, firstName: true, lastName: true, email: true, phone: true,
+      country: true, language: true, channel: true, status: true,
+      interestedService: true, campaignId: true, adSetId: true, adId: true,
+      createdAt: true, updatedAt: true, metadata: true, consentGiven: true,
+    } as const;
+    const [recent, waiting] = await Promise.all([
+      prisma.lead.findMany({ where: { workspaceId: actor.workspaceId }, orderBy: { createdAt: "desc" }, take: LIST_LIMIT, select }),
+      needsReplySummary(actor),
+    ]);
+    // Rozetle aynı küme: en yeni LIST_LIMIT lead'e ek olarak, daha eski ama hâlâ yanıt bekleyen lead'ler de listelenir
+    // (en uzun bekleyen "Yanıt bekleyen" sekmesinden düşmesin).
+    const seen = new Set(recent.map((r) => r.id));
+    const missing = waiting.leadIds.filter((id) => !seen.has(id));
+    const older = missing.length
+      ? await prisma.lead.findMany({ where: { workspaceId: actor.workspaceId, id: { in: missing } }, orderBy: { createdAt: "desc" }, select })
+      : [];
+    const rows = [...recent, ...older];
     // Gelen kutusu (ADR-0019): konuşma durumu, son mesaj (önizleme yalnızca bakım rollerine) ve "yanıt bekliyor".
     const inbox = await inboxStates(actor, rows);
     return {

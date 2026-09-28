@@ -55,6 +55,8 @@ export const EDIT_ROLES: Role[] = ["OWNER", "ADMIN", "MEDIA_BUYER"];
 export const CARE_ROLES: Role[] = [...EDIT_ROLES, "PATIENT_COORDINATOR"];
 /** Devralınmış (ESCALATED) konuşmada yazabilecek roller; MEDIA_BUYER hariçtir (spec 3.8). */
 export const ESCALATION_ROLES: Role[] = ["OWNER", "ADMIN", "PATIENT_COORDINATOR"];
+/** Lead kayıtlarını (ad, ilgilendiği hizmet, durum) görebilen roller — menüdeki Lead'ler ile aynı; izleyici görmez. */
+export const LEAD_READ_ROLES: Role[] = [...CARE_ROLES, "ANALYST"];
 /** Platform-global kuralları yönetme yetkisi tenant rolünden ayrıdır (spec 3.5). */
 export async function requirePlatformAdmin() {
   const actor = await requireActor();

@@ -113,3 +113,13 @@ Faz 4 öncesinde lead ekranı şöyleydi:
     alınacak.
   - Telefonda WhatsApp şablon alanları, hasta henüz yazmamışken yazma alanının büyük kısmını kaplıyor.
     Onaylı şablon listesi (şablon kaydı) geldiğinde bu alanlar tek bir seçim kutusuna iner (remaining-work §6).
+
+## Güncelleme (2026-09-29, ADR-0022)
+- Liste, rozet ve "Bugün" artık aynı lead kümesini kullanır: liste en yeni 100 lead'e ek olarak daha eski ama yanıt
+  bekleyen lead'leri de döndürür.
+- NEW durumunun etiketi "Yeni" oldu (mavi); amber "yanıt bekliyor" vurgusu yalnızca gelen kutusu kuralından gelir
+  (aşama şeridi de buna göre).
+- Mesaj okuma kuralı bütün uçlara uygulandı: `GET /api/leads/:id` mesaj döndürmez; eski
+  `GET /api/conversations/:id/messages` bakım rollerine sınırlıdır; `POST /api/ai/chat` yalnızca hastaya yazabilen
+  rollere açıktır. Devir uyarısını yalnızca hastaya yazabilen roller kapatabilir.
+- Gelen kutusu ilk açılışta bir kez yüklenir (önceden iki kez); `?status=` süzgeci uygulama içi bağlantıda da okunur.

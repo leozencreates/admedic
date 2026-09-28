@@ -75,14 +75,19 @@ export function LeadInbox({ selectedId }: { selectedId: string | null }) {
     }
   }, []);
 
-  // URL parametreleri: ?tab= (sekme), ?q= (üst çubuk araması), ?status= (durum süzgeci).
+  // URL parametreleri: ?tab= (sekme), ?q= (üst çubuk araması), ?status= (durum süzgeci). Liste düzende yaşadığı
+  // için yalnızca /leads adresine gelindiğinde (ilk açılış ya da uygulama içi bağlantı) okunur.
   useEffect(() => {
+    if (pathname !== "/leads") return;
     const params = new URLSearchParams(window.location.search);
-    setTab(parseInboxTab(params.get("tab")));
+    if (params.has("tab")) setTab(parseInboxTab(params.get("tab")));
     const q = params.get("q");
     if (q) setSearch(q);
     const status = params.get("status");
-    if (status) setStatusFilter(status);
+    if (status && (STATUS_OPTIONS as readonly string[]).includes(status)) setStatusFilter(status);
+  }, [pathname]);
+
+  useEffect(() => {
     const onSearch = (e: Event) => setSearch(String((e as CustomEvent<string>).detail ?? ""));
     window.addEventListener(LEAD_SEARCH_EVENT, onSearch);
     return () => window.removeEventListener(LEAD_SEARCH_EVENT, onSearch);
@@ -103,8 +108,12 @@ export function LeadInbox({ selectedId }: { selectedId: string | null }) {
     };
   }, [load]);
 
-  // Bir lead'e yanıt verilince liste hemen tazelensin (ayrıntı sayfasından dönüldüğünde).
+  // Bir lead'e yanıt verilince liste hemen tazelensin (ayrıntı sayfasından dönüldüğünde). İlk açılışta yukarıdaki
+  // yükleme yeter (iki kez yüklenmesin).
+  const lastPath = useRef(pathname);
   useEffect(() => {
+    if (lastPath.current === pathname) return;
+    lastPath.current = pathname;
     void load({ silent: true });
   }, [pathname, load]);
 

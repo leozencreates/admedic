@@ -6,12 +6,13 @@
  * sayfaya götürür. Bu modül hiçbir kaydı değiştirmez.
  */
 import { prisma, type Prisma } from "@admedic/database";
-import type { Actor } from "./auth";
-import { formatMoney, formatNumber, formatPercent } from "./format";
+import { ESCALATION_ROLES, type Actor } from "./auth";
+import { formatDuration, formatMoney, formatNumber, formatPercent } from "./format";
 import { HANDOFF_ALERT_TYPE } from "./lead-assistant";
 import { needsReplySummary } from "./inbox";
 import {
   PENDING_APPROVAL_LABEL,
+  approvalScanLimit,
   listCorrectionRequests,
   listPendingApprovals,
   scopePendingApprovals,
@@ -19,7 +20,7 @@ import {
 import { alertRecordLinks, campaignHref, leadHref } from "./record-refs";
 import { hasSpendAuthority } from "./spend-authority";
 import { activeMonthlyCommitmentCents } from "./spend-cap";
-import { campaignMetrics, roas, sinceDays } from "./campaign-metrics";
+import { campaignMetrics, cpl, roas, sinceDays, workspaceMetrics } from "./campaign-metrics";
 
 export type QueueTone = "problem" | "human";
 
@@ -56,7 +57,9 @@ const ALERT_KIND_ALWAYS_URGENT = ["META_DISCONNECTED", "TOKEN_EXPIRING", "AD_DIS
 const QUEUE_LIMIT = 12;
 
 const isManager = (role: string) => role === "OWNER" || role === "ADMIN";
-const isCare = (role: string) => ["OWNER", "ADMIN", "MEDIA_BUYER", "PATIENT_COORDINATOR"].includes(role);
+/** Hastaya yazabilen roller (ADR-0019): devir ve "yanıt bekliyor" satırları yalnızca onların işidir. */
+const canReply = (role: Actor["role"]) => ESCALATION_ROLES.includes(role);
+const CLOSED_LEAD = ["TREATED", "LOST"] as const;
 
 async function accountCurrency(actor: Actor): Promise<string> {
   const account = await prisma.adAccount.findFirst({
@@ -68,9 +71,11 @@ async function accountCurrency(actor: Actor): Promise<string> {
 }
 
 /** Sizden beklenenler: role göre, önce sorunlar sonra en uzun bekleyen. */
-export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; total: number }> {
+export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; total: number; more: boolean }> {
   const items: QueueItem[] = [];
   const role = actor.role;
+  /** Bir kaynak kendi sınırına ulaştıysa toplam "en az" sayıdır. */
+  let more = false;
 
   // 1) Uyarılar: yöneticiler ve reklam uzmanı kritik ya da Meta kaynaklı açık uyarıları görür.
   if (isManager(role) || role === "MEDIA_BUYER") {
@@ -86,6 +91,7 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
       take: 6,
       select: { id: true, title: true, message: true, createdAt: true, entityType: true, entityId: true },
     });
+    if (alerts.length === 6) more = true;
     const links = await alertRecordLinks(actor.workspaceId, alerts);
     for (const a of alerts)
       items.push({
@@ -99,14 +105,28 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
       });
   }
 
-  // 2) Asistanın devrettiği, kimsenin devralmadığı konuşmalar (hastayla yazışabilen roller).
-  if (isCare(role)) {
+  // 2) Asistanın devrettiği, kimsenin devralmadığı konuşmalar (hastayla yazışabilen roller; kapanmış lead'ler hariç).
+  const handoffLeadIds = new Set<string>();
+  if (canReply(role)) {
     const handoffs = await prisma.conversation.findMany({
-      where: { workspaceId: actor.workspaceId, status: "ESCALATED", escalatedTo: null },
-      orderBy: { escalatedAt: "asc" },
+      where: {
+        workspaceId: actor.workspaceId,
+        status: "ESCALATED",
+        escalatedTo: null,
+        lead: { status: { notIn: [...CLOSED_LEAD] } },
+      },
+      orderBy: [{ escalatedAt: "asc" }, { createdAt: "asc" }],
       take: 6,
-      select: { id: true, channel: true, escalatedAt: true, lead: { select: { id: true, firstName: true, lastName: true } } },
+      select: {
+        id: true,
+        channel: true,
+        escalatedAt: true,
+        createdAt: true,
+        lead: { select: { id: true, firstName: true, lastName: true } },
+      },
     });
+    if (handoffs.length === 6) more = true;
+    for (const h of handoffs) handoffLeadIds.add(h.lead.id);
     for (const h of handoffs)
       items.push({
         key: `handoff-${h.id}`,
@@ -114,19 +134,24 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
         title: [h.lead.firstName, h.lead.lastName].filter(Boolean).join(" ") || "Adsız lead",
         context: "Asistan konuşmayı devretti; henüz kimse devralmadı.",
         tone: "human",
-        since: h.escalatedAt,
+        since: h.escalatedAt ?? h.createdAt,
         action: { label: "Devral", href: leadHref(h.lead.id) },
       });
   }
 
   // 3) Onay işleri (Onaylar kutusuyla aynı kapsam) ve düzeltme istenenler.
   if (isManager(role) || role === "MEDIA_BUYER") {
-    const [all, canApproveSpend] = await Promise.all([listPendingApprovals(actor.workspaceId, { limit: 10 }), hasSpendAuthority(actor)]);
+    const [all, canApproveSpend] = await Promise.all([listPendingApprovals(actor.workspaceId, { limit: approvalScanLimit(role) }), hasSpendAuthority(actor)]);
     const scoped = scopePendingApprovals(all, actor, { canApproveSpend });
+    let approvalRows = 0;
     const canAct = (kind: string) => (kind === "ACTIVATION" ? canApproveSpend : isManager(role));
     for (const kind of ["ACTIVATION", "CAMPAIGN", "CONTENT", "RECOMMENDATION"] as const) {
       for (const item of scoped.items[kind]) {
         if (!canAct(kind)) continue; // Reklam uzmanının kendi gönderdikleri onun işi değil; Onaylar'da izlenir.
+        if (++approvalRows > 10) {
+          more = true;
+          continue;
+        }
         items.push({
           key: `approval-${kind}-${item.id}`,
           kind: PENDING_APPROVAL_LABEL[kind].section,
@@ -140,6 +165,7 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
     }
     if (role === "MEDIA_BUYER") {
       const corrections = await listCorrectionRequests(actor.workspaceId, { userId: actor.userId, limit: 6 });
+      if (corrections.length === 6) more = true;
       for (const c of corrections)
         items.push({
           key: `correction-${c.kind}-${c.id}`,
@@ -157,6 +183,7 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
         take: 6,
         select: { id: true, name: true, approvedAt: true, updatedAt: true },
       });
+      if (ready.length === 6) more = true;
       for (const c of ready)
         items.push({
           key: `ready-${c.id}`,
@@ -170,24 +197,28 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
     }
   }
 
-  // 4) Yanıt bekleyen lead'ler: tek özet satırı (liste Lead'ler sayfasında).
-  if (isCare(role)) {
-    const { count: waiting, oldest } = await needsReplySummary(actor);
-    if (waiting > 0)
+  // 4) Yanıt bekleyen diğer lead'ler: tek özet satırı (liste Lead'ler sayfasında). Yukarıda ayrı satırda
+  //    gösterilen devirler burada yeniden sayılmaz.
+  if (canReply(role)) {
+    const summary = await needsReplySummary(actor);
+    const others = summary.leadIds.filter((id) => !handoffLeadIds.has(id));
+    if (others.length > 0)
       items.push({
         key: "leads-waiting",
         kind: "Lead'ler",
-        title: `${formatNumber(waiting)} lead yanıt bekliyor`,
-        context: "En uzun bekleyenden başlayın.",
+        title: `${formatNumber(others.length)} lead yanıt bekliyor`,
+        context: handoffLeadIds.size ? "Yukarıdaki devirler dışında; en uzun bekleyenden başlayın." : "En uzun bekleyenden başlayın.",
         tone: "human",
-        since: oldest,
+        since: summary.oldest,
         action: { label: "Lead'leri aç", href: "/leads?tab=waiting" },
       });
   }
 
-  const rank = (i: QueueItem) => (i.tone === "problem" ? 0 : 1);
+  // Önce sorunlar, hemen ardından bir insan bekleyen hasta devirleri, sonra diğerleri; her grupta en uzun bekleyen önce.
+  const rank = (i: QueueItem) => (i.tone === "problem" ? 0 : i.key.startsWith("handoff-") ? 1 : 2);
   items.sort((a, b) => rank(a) - rank(b) || (a.since?.getTime() ?? Infinity) - (b.since?.getTime() ?? Infinity));
-  return { items: items.slice(0, QUEUE_LIMIT), total: items.length };
+  if (items.length > QUEUE_LIMIT) more = true;
+  return { items: items.slice(0, QUEUE_LIMIT), total: items.length, more };
 }
 
 function median(values: number[]): number | null {
@@ -195,15 +226,6 @@ function median(values: number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-/** "12 dk", "3 sa 5 dk", "2 gün". */
-export function responseDuration(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000));
-  if (minutes < 60) return `${minutes} dk`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return minutes % 60 ? `${hours} sa ${minutes % 60} dk` : `${hours} sa`;
-  return `${Math.round(hours / 24)} gün`;
 }
 
 /** Hedef ilk yanıt süresi (spec 3.8: hızlı yanıt); aşılırsa gösterge amber. */
@@ -214,14 +236,14 @@ export const FIRST_RESPONSE_TARGET_MS = 15 * 60_000;
  * son 30 gün nitelikli lead oranı ve ilk yanıt süresi medyanı (asistan yanıtları dahil).
  */
 export async function todayKpis(actor: Actor, now = new Date()): Promise<Kpi[]> {
+  // Kampanya toplamlarıyla aynı kural (campaign-metrics.ts: en üst düzey, günlük satırlar, UTC günü).
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const weekStart = new Date(now.getTime() - 7 * 86_400_000);
-  weekStart.setUTCHours(0, 0, 0, 0);
+  const weekStart = sinceDays(7, now);
   const monthAgo = new Date(now.getTime() - 30 * 86_400_000);
   const currency = await accountCurrency(actor);
   const [month, week, org, committed, leads30, responded] = await Promise.all([
-    prisma.insightSnapshot.aggregate({ where: { workspaceId: actor.workspaceId, date: { gte: monthStart } }, _sum: { spend: true } }),
-    prisma.insightSnapshot.aggregate({ where: { workspaceId: actor.workspaceId, date: { gte: weekStart } }, _sum: { spend: true, leads: true } }),
+    workspaceMetrics(actor.workspaceId, monthStart),
+    workspaceMetrics(actor.workspaceId, weekStart),
     prisma.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { monthlyAdBudgetCap: true } }),
     activeMonthlyCommitmentCents(prisma, actor.orgId, currency),
     prisma.lead.findMany({
@@ -239,10 +261,11 @@ export async function todayKpis(actor: Actor, now = new Date()): Promise<Kpi[]> 
     }),
   ]);
 
-  const spendMonth = month._sum.spend ?? 0;
+  const spendMonth = month.spend;
   const cap = org.monthlyAdBudgetCap;
-  const spendWeek = week._sum.spend ?? 0;
-  const leadsWeek = week._sum.leads ?? 0;
+  const spendWeek = week.spend;
+  const leadsWeek = week.leads;
+  const cplWeek = cpl(week);
   const qualifiedStatuses = ["QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED"];
   const qualified = leads30.filter((l) => l.qualifiedAt || qualifiedStatuses.includes(l.status)).length;
   const firstResponses = responded
@@ -262,14 +285,14 @@ export async function todayKpis(actor: Actor, now = new Date()): Promise<Kpi[]> 
       value: formatMoney(spendMonth, currency),
       hint:
         cap != null
-          ? `Aylık üst sınır ${formatMoney(cap, currency)} · etkin kampanyaların aylık tahmini ${formatMoney(committed, currency)}`
-          : `Aylık üst sınır tanımlı değil · etkin kampanyaların aylık tahmini ${formatMoney(committed, currency)}`,
+          ? `Kuruluşun aylık üst sınırı ${formatMoney(cap, currency)} · etkin kampanyaların aylık tahmini ${formatMoney(committed, currency)}`
+          : `Kuruluşun aylık üst sınırı tanımlı değil · etkin kampanyaların aylık tahmini ${formatMoney(committed, currency)}`,
       warn: cap != null && committed > cap,
     },
     {
       key: "cpl",
       label: "Lead başı maliyet (CPL), 7 gün",
-      value: leadsWeek > 0 ? formatMoney(Math.round(spendWeek / leadsWeek), currency, { precise: true }) : "—",
+      value: cplWeek != null ? formatMoney(cplWeek, currency, { precise: true }) : "—",
       hint: leadsWeek > 0 ? `${formatNumber(leadsWeek)} lead · ${formatMoney(spendWeek, currency)} harcama` : "Son 7 günde Meta'dan lead verisi yok.",
       warn: false,
     },
@@ -283,10 +306,10 @@ export async function todayKpis(actor: Actor, now = new Date()): Promise<Kpi[]> 
     {
       key: "firstResponse",
       label: "İlk yanıt süresi (medyan)",
-      value: medianResponse != null ? responseDuration(medianResponse) : "—",
+      value: medianResponse != null ? formatDuration(medianResponse) : "—",
       hint:
         medianResponse != null
-          ? `${formatNumber(firstResponses.length)} lead, asistan yanıtları dahil · hedef ${responseDuration(FIRST_RESPONSE_TARGET_MS)}`
+          ? `${formatNumber(firstResponses.length)} lead, asistan yanıtları dahil · hedef ${formatDuration(FIRST_RESPONSE_TARGET_MS)}`
           : "Son 30 günde yanıtlanan lead yok.",
       warn: medianResponse != null && medianResponse > FIRST_RESPONSE_TARGET_MS,
     },
@@ -336,7 +359,8 @@ export async function campaignExtremes(actor: Actor): Promise<{ best: CampaignRo
       return { id: c.id, name: c.name, currency: c.adAccount.currency || "EUR", spend: t.spend, leads: t.leads, roas: roas(t) };
     })
     .sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0));
-  return { best: rows.slice(0, 3), worst: rows.length > 3 ? rows.slice(-3).reverse() : [] };
+  // En düşük listesi en yüksek listesindeki kampanyayı tekrar etmez (az kampanyada liste kısalır).
+  return { best: rows.slice(0, 3), worst: rows.slice(Math.max(3, rows.length - 3)).reverse() };
 }
 
 export interface CampaignRow {

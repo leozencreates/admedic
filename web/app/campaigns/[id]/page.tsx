@@ -40,7 +40,7 @@ import type { CampaignAction, CampaignDetail, TabKey } from "./types";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Genel" },
   { key: "content", label: "İçerik ve görsel" },
-  { key: "publish", label: "Meta'ya yükleme ve inceleme" },
+  { key: "publish", label: "Yükleme ve inceleme" },
   { key: "performance", label: "Performans" },
   { key: "decisions", label: "Ajan kararları" },
 ];
@@ -289,7 +289,7 @@ export default function CampaignPage() {
       else if (row?.status === "NO_ADS")
         setNotes([{ tone: "warning", text: "Bu kampanyanın Meta'ya yüklenmiş reklamı yok; incelenecek reklam bulunamadı." }]);
       else if (row?.newlyDisapproved)
-        setNotes([{ tone: "warning", text: `Meta ${formatNumber(row.newlyDisapproved)} reklamı reddetti; gerekçeler "Meta'ya yükleme ve inceleme" sekmesinde.` }]);
+        setNotes([{ tone: "warning", text: `Meta ${formatNumber(row.newlyDisapproved)} reklamı reddetti; gerekçeler "Yükleme ve inceleme" sekmesinde.` }]);
       else setNotes([{ tone: "success", text: "Meta inceleme durumu güncellendi." }]);
       await load();
     } catch (e) {
@@ -596,7 +596,8 @@ export default function CampaignPage() {
       <Feedback id={FEEDBACK_ID} notes={notes} className="" />
 
       <div>
-        <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        {/* Telefonda sekmeler yatay kayar; sağ kenardaki solma kaydırılabildiğini gösterir. */}
+        <div className="scroll-cue-x -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           <div role="tablist" aria-label="Kampanya bölümleri" className="flex min-w-max gap-1 border-b border-line">
             {TABS.map((t, i) => {
               const selected = tab === t.key;

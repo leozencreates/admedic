@@ -78,7 +78,10 @@ export async function GET() {
       accountCurrency(actor.orgId, actor.workspaceId),
     ]);
     const committed = await activeMonthlyCommitmentCents(prisma, actor.orgId, currency);
-    return { settings: present(org, currency, committed) };
+    const settings = present(org, currency, committed);
+    // Rapor alıcısının e-postası yalnızca ayarı değiştirebilen rollere döner.
+    if (actor.role !== "OWNER" && actor.role !== "ADMIN") return { settings: { ...settings, reportRecipient: null } };
+    return { settings };
   });
 }
 export async function PATCH(request: Request) {

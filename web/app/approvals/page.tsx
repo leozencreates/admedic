@@ -2,9 +2,10 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { prisma } from "@admedic/database";
 
-import { PageHeader } from "../_components/ui";
-import { requirePageActor } from "../_lib/auth";
+import { IntroPanel, PageHeader } from "../_components/ui";
+import { EDIT_ROLES, requirePageActor } from "../_lib/auth";
 import {
+  approvalScanLimit,
   listCorrectionRequests,
   listPendingApprovals,
   scopePendingApprovals,
@@ -24,8 +25,20 @@ export default async function ApprovalsPage() {
   await connection();
   const actor = await requirePageActor("/approvals");
   const canApprove = actor.role === "OWNER" || actor.role === "ADMIN";
+  // Onaya iş gönderemeyen ve onay veremeyen roller (koordinatör, analist, izleyici) için kutu yoktur.
+  if (!EDIT_ROLES.includes(actor.role))
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Onaylar" />
+        <IntroPanel title="Onaylar bu rol için kapalı">
+          Reklam içerikleri, kampanyalar ve bütçe önerileri hesap sahibi ya da yönetici tarafından onaylanır; reklam
+          uzmanı onaya gönderir. Rolünüzün bu işlere katılması gerekiyorsa hesap sahibinden rolünüzü değiştirmesini
+          isteyin.
+        </IntroPanel>
+      </div>
+    );
   const [all, canApproveSpend, org, account] = await Promise.all([
-    listPendingApprovals(actor.workspaceId),
+    listPendingApprovals(actor.workspaceId, { limit: approvalScanLimit(actor.role) }),
     hasSpendAuthority(actor),
     prisma.organization.findUniqueOrThrow({ where: { id: actor.orgId }, select: { monthlyAdBudgetCap: true } }),
     prisma.adAccount.findFirst({

@@ -1,6 +1,6 @@
 import { prisma, anonymizeLead } from "@admedic/database";
 import { CONSENT_EVIDENCE_BASES, DEFAULT_MARKETING_CONSENT_TEXT, type ConsentEvidenceBasis } from "../../../_lib/consent-texts";
-import { requireActor, requireRole, CARE_ROLES } from "../../../_lib/auth";
+import { requireActor, requireRole, CARE_ROLES, LEAD_READ_ROLES } from "../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../_lib/http";
 import { z } from "zod";
 import { encrypt, tryDecryptField } from "../../../_lib/encrypt";
@@ -8,6 +8,7 @@ import { logAudit } from "../../../_lib/audit";
 import { sendLeadStatusConversion } from "../../../_lib/capi-sync";
 import { leadLookupHash } from "../../../_lib/lead-hash";
 import { asRecord, mergeLeadMetadata, presentContact, sanitizeMetadata } from "../../../_lib/lead-view";
+import { inboxStates } from "../../../_lib/inbox";
 export const maxDuration = 30;
 
 const LeadStatusEnum = z.enum(["NEW", "CONTACTED", "QUALIFIED", "CONSULTATION_BOOKED", "TRAVEL_PLANNED", "TREATED", "LOST"]);
@@ -112,6 +113,7 @@ function getTimestampForStatus(status: string): Record<string, Date> {
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
+    requireRole(actor, LEAD_READ_ROLES);
     const { id } = await params;
     // Mesajlar bu uçtan dönmez (hasta verisi); rol denetimli GET /api/conversations/:leadId kullanılır (ADR-0019).
     const lead = await prisma.lead.findFirst({ where: { id, workspaceId: actor.workspaceId } });
@@ -131,11 +133,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       adId: lead.adId,
     });
     const meta = asRecord(lead.metadata);
-    return { lead: {
+    // Gelen kutusu kuralı (aşama şeridinin amber rengi "yanıt bekliyor" ile aynı olsun).
+    const inbox = (await inboxStates(actor, [lead])).get(lead.id) ?? null;
+    return {
+    // Durum, rıza ve Meta'dan yeniden çekme yalnızca bakım rollerine açık (PATCH ile aynı kural); arayüz buna göre gösterir.
+    canEdit: CARE_ROLES.includes(actor.role),
+    lead: {
       ...lead,
       ...presentContact(actor.role, { email: lead.email, phone: lead.phone }),
       metadata: sanitizeMetadata(lead.metadata),
       lookupHash: undefined,
+      needsReply: inbox?.needsReply ?? false,
       // Kaynak kampanya/reklam seti/reklamın paneldeki adı (kimlikler yalnızca "Teknik ayrıntı"da gösterilir).
       source,
       // Alanları Meta'dan çekilemeyen Lead Ads lead'i (ADR-0015): panel "yeniden çek" gösterir.

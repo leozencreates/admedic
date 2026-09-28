@@ -38,6 +38,10 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Bugün kuyruğu ve düzeltm
       await prisma.conversation.create({
         data: { leadId: lead.id, workspaceId: wsId, channel: "WHATSAPP", status: "ESCALATED", escalatedTo: null, escalatedAt: new Date() },
       });
+      // Konuşması olmayan yeni lead (Anında Form): yanıt bekler; devirden ayrı sayılır.
+      await prisma.lead.create({
+        data: { workspaceId: wsId, organizationId: org.id, firstName: "Form", lastName: suffix, channel: "LEAD_AD", status: "NEW" },
+      });
       await prisma.alert.create({
         data: { workspaceId: wsId, type: "META_DISCONNECTED", severity: "CRITICAL", title: `Meta bağlantısı koptu ${foreign}`, message: "m" },
       });
@@ -90,13 +94,20 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Bugün kuyruğu ve düzeltm
     expect(items[0].title).toBe("Meta bağlantısı koptu false");
     expect(kinds).toContain("Hasta devri");
     expect(kinds).toContain("İçerik onayı");
+    // Devredilen lead ayrı satırda; "yanıt bekliyor" özeti yalnızca form lead'ini sayar (ADR-0022).
     expect(items.find((i) => i.key === "leads-waiting")?.title).toBe("1 lead yanıt bekliyor");
+    expect(kinds.indexOf("Hasta devri")).toBe(1);
     expect(items.some((i) => i.title.includes("true"))).toBe(false);
   });
 
   it("hasta koordinatörü yalnızca devir ve lead satırlarını görür", async () => {
     const { items } = await todayQueue(actors.PATIENT_COORDINATOR!);
     expect(new Set(items.map((i) => i.kind))).toEqual(new Set(["Hasta devri", "Lead'ler"]));
+  });
+
+  it("reklam uzmanı devir ve yanıt bekleyen lead satırlarını görmez (hastaya yazamaz, ADR-0022)", async () => {
+    const { items } = await todayQueue(actors.MEDIA_BUYER!);
+    expect(items.some((i) => i.kind === "Hasta devri" || i.key === "leads-waiting")).toBe(false);
   });
 
   it("düzeltme isteğinin gerekçesi yalnızca gönderene döner ve reklam uzmanının kuyruğuna düşer", async () => {

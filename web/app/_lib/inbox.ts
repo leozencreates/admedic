@@ -13,7 +13,9 @@ import type { Actor } from "./auth";
 import { CARE_ROLES } from "./auth";
 import { memberDisplayNames } from "./conversation-claim";
 
-export type MessageParty = "lead" | "assistant" | "team" | "system";
+import { messageParty, type MessageParty } from "./message-party";
+
+export { messageParty, type MessageParty };
 
 export interface InboxState {
   conversationStatus: "ACTIVE" | "ESCALATED" | "CLOSED" | null;
@@ -37,14 +39,6 @@ export interface InboxState {
 const CLOSED_STATUSES = ["TREATED", "LOST"];
 const PREVIEW_CHARS = 140;
 
-export function messageParty(msg: { direction: string; sender?: string | null }): MessageParty {
-  if (msg.direction === "INCOMING") return "lead";
-  const sender = (msg.sender ?? "").trim().toLowerCase();
-  if (!sender || sender === "ai" || sender === "bot") return "assistant";
-  if (sender === "system") return "system";
-  return "team";
-}
-
 const conversationSelect = {
   status: true,
   escalatedTo: true,
@@ -52,7 +46,8 @@ const conversationSelect = {
   createdAt: true,
   messages: {
     // Sistem notları (devralma notu vb.) son mesaj sayılmaz.
-    where: { NOT: { sender: "system" } },
+    // (Prisma'da `NOT sender = system` NULL gönderenli satırları da dışlar; NULL = asistan, ayrıca eklenir.)
+    where: { OR: [{ sender: null }, { sender: { not: "system" } }] },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 1,
     select: { content: true, direction: true, sender: true, createdAt: true },
@@ -126,24 +121,26 @@ export async function inboxStates(actor: Actor, leads: { id: string; status: str
 }
 
 /**
- * Yanıt bekleyen lead sayısı ve en uzun bekleyenin başlangıcı (menü rozeti ve "Bugün" satırı).
- * Kapanmamış lead'lerin en yeni 500'ü üzerinden hesaplanır.
+ * Yanıt bekleyen lead sayısı, en uzun bekleyenin başlangıcı ve kimlikleri (menü rozeti, "Bugün" satırı ve
+ * gelen kutusu listesi aynı kümeyi kullanır). Kapanmamış lead'lerin en yeni `NEEDS_REPLY_SCAN`'i üzerinden hesaplanır.
  */
-export async function needsReplySummary(actor: Actor): Promise<{ count: number; oldest: Date | null }> {
+export const NEEDS_REPLY_SCAN = 500;
+
+export async function needsReplySummary(actor: Actor): Promise<{ count: number; oldest: Date | null; leadIds: string[] }> {
   const leads = await prisma.lead.findMany({
     where: { workspaceId: actor.workspaceId, status: { notIn: CLOSED_STATUSES as Prisma.EnumLeadStatusFilter["notIn"] } },
     orderBy: { createdAt: "desc" },
-    take: 500,
+    take: NEEDS_REPLY_SCAN,
     select: { id: true, status: true, createdAt: true },
   });
   const states = await inboxStates(actor, leads);
-  let count = 0;
   let oldest: Date | null = null;
-  for (const state of states.values()) {
+  const leadIds: string[] = [];
+  for (const [id, state] of states) {
     if (!state.needsReply || !state.waitingSince) continue;
-    count += 1;
+    leadIds.push(id);
     const since = new Date(state.waitingSince);
     if (!oldest || since < oldest) oldest = since;
   }
-  return { count, oldest };
+  return { count: leadIds.length, oldest, leadIds };
 }

@@ -54,6 +54,8 @@ interface LeadExtras {
   consents?: ConsentRow[];
   /** Kaynak kampanya/reklam seti/reklamın paneldeki adı (GET /api/leads/:id). */
   source?: { campaign: SourceRef | null; adSet: SourceRef | null; ad: SourceRef | null } | null;
+  /** Gelen kutusu kuralına göre bir insandan yanıt bekliyor (inbox.ts). */
+  needsReply?: boolean;
 }
 
 /** Sunucudaki geçiş kuralıyla aynı (api/leads/[id]/route.ts VALID_TRANSITIONS). */
@@ -106,6 +108,8 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [lead, setLead] = useState<(ReturnType<typeof toLead> & LeadExtras) | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Durum, rıza ve yeniden çekme işlemleri (sunucu `canEdit`; API her işlemde ayrıca denetler). */
+  const [canEdit, setCanEdit] = useState(false);
   /** Sayfa yüklenemediyse (sayfa düzeyi); işlem hataları sayfayı asla silmez. */
   const [loadError, setLoadError] = useState("");
   const [refetching, setRefetching] = useState(false);
@@ -158,13 +162,15 @@ export default function LeadDetailPage() {
         setLoadError("");
       }
       try {
-        const data = await api<{ lead: ApiLead & LeadExtras }>(`/api/leads/${id}`);
+        const data = await api<{ lead: ApiLead & LeadExtras; canEdit?: boolean }>(`/api/leads/${id}`);
+        setCanEdit(data.canEdit === true);
         setLead({
           ...toLead(data.lead),
           lostReason: data.lead.lostReason ?? null,
           pendingFetch: data.lead.pendingFetch ?? null,
           consents: data.lead.consents ?? [],
           source: data.lead.source ?? null,
+          needsReply: data.lead.needsReply === true,
         });
         setConsentGiven(data.lead.consentGiven ?? false);
       } catch (e) {
@@ -365,6 +371,7 @@ export default function LeadDetailPage() {
   if (loadError || !lead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6">
+        <h1 className="text-lg font-semibold text-ink">Lead açılamadı</h1>
         <div className="flex max-w-md flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">
           <span>{loadError || "Lead yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin."}</span>
           <button type="button" className="secondary-button" onClick={() => void load({ initial: true })}>
@@ -400,7 +407,7 @@ export default function LeadDetailPage() {
           <h1 className="truncate text-lg font-semibold leading-7 text-ink">
             <bdi dir="auto">{lead.name}</bdi>
           </h1>
-          <StageBar stage={leadStage(lead.status)} />
+          <StageBar stage={leadStage(lead.status, { needsReply: lead.needsReply })} />
           <p className="text-xs text-ink-3">
             {meta.join(" · ")}
             <span aria-hidden="true"> · </span>
@@ -472,9 +479,11 @@ export default function LeadDetailPage() {
               <p className="mt-1 text-xs">
                 Meta bağlantısı yenilendiğinde ve yeni lead geldiğinde otomatik yeniden denenir.
               </p>
-              <button type="button" className="primary-button mt-3" disabled={refetching} onClick={() => void refetchFromMeta()}>
-                {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
-              </button>
+              {canEdit ? (
+                <button type="button" className="primary-button mt-3" disabled={refetching} onClick={() => void refetchFromMeta()}>
+                  {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
+                </button>
+              ) : null}
               {refetchError && (
                 <p role="alert" className="mt-2 text-rose-700">
                   {refetchError}
@@ -576,12 +585,16 @@ export default function LeadDetailPage() {
 
           <section className="border-b border-line-soft px-4 py-4">
             <h2 ref={statusHeadingRef} tabIndex={-1} className="text-base font-semibold text-ink">
-              Durumu güncelle
+              {canEdit ? "Durumu güncelle" : "Durum"}
             </h2>
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
               Şu anki durum: <Badge tone={status.tone}>{status.label}</Badge>
             </p>
-            {nextStatuses.length > 0 ? (
+            {!canEdit ? (
+              <p className="mt-3 text-sm text-muted">
+                Lead durumunu hesap sahibi, yönetici, reklam uzmanı ya da hasta koordinatörü günceller.
+              </p>
+            ) : nextStatuses.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {nextStatuses.map((next) => (
                   <button
@@ -634,7 +647,7 @@ export default function LeadDetailPage() {
               ) : (
                 <p className="text-sm text-ink-2">Bu lead için pazarlama iletişimi ve dönüşüm ölçümü rızası kayıtlı değil.</p>
               )}
-              {consentGiven ? (
+              {!canEdit ? null : consentGiven ? (
                 <button
                   type="button"
                   className="secondary-button"

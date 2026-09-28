@@ -1,6 +1,7 @@
 import { prisma } from "@admedic/database";
 import { z } from "zod";
-import { CARE_ROLES, requireActor, requireRole } from "../../../_lib/auth";
+import { requireActor } from "../../../_lib/auth";
+import { alertScope, canManageAlert } from "../../../_lib/alert-scope";
 import { body, HttpError, respond, sameOrigin } from "../../../_lib/http";
 import { logAudit } from "../../../_lib/audit";
 
@@ -11,8 +12,10 @@ const AlertStatusSchema = z.object({ status: z.enum(["ACKED", "RESOLVED"]) }).st
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     const actor = await requireActor();
+    const scope = alertScope(actor);
+    if (!scope) throw new HttpError(403, "Uyarıları görme yetkiniz yok. Gerekirse hesap sahibinden rol isteyin.");
     const { id } = await params;
-    const alert = await prisma.alert.findFirst({ where: { id, workspaceId: actor.workspaceId } });
+    const alert = await prisma.alert.findFirst({ where: { ...scope, id } });
     if (!alert) throw new HttpError(404, "Uyarı bulunamadı; silinmiş olabilir. Uyarılar sayfasını yenileyin.");
     return { alert };
   });
@@ -26,11 +29,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, CARE_ROLES);
+    const scope = alertScope(actor);
+    if (!scope) throw new HttpError(403, "Uyarıları yönetme yetkiniz yok. Gerekirse hesap sahibinden rol isteyin.");
     const { id } = await params;
     const input = await body(request, AlertStatusSchema);
-    const alert = await prisma.alert.findFirst({ where: { id, workspaceId: actor.workspaceId } });
+    const alert = await prisma.alert.findFirst({ where: { ...scope, id } });
     if (!alert) throw new HttpError(404, "Uyarı bulunamadı; silinmiş olabilir. Uyarılar sayfasını yenileyin.");
+    // Devir uyarısını yalnızca hastayla yazışabilen roller kapatır; diğerleri düzenleme rolleri.
+    if (!canManageAlert(actor, alert.type))
+      throw new HttpError(403, "Bu uyarıyı kapatma yetkiniz yok. Hesap sahibi, yönetici ya da ilgili rol kapatabilir.");
     if (alert.status === input.status) return { ok: true, alert };
     if (alert.status === "RESOLVED") throw new HttpError(409, "Çözülen uyarı yeniden açılamaz.");
     const resolvedAt = input.status === "RESOLVED" ? new Date() : null;

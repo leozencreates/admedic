@@ -64,7 +64,11 @@ export function PublishTab({
   canRefreshReview: boolean;
   onRefreshReview: () => void;
 }) {
-  const status = PUBLISH_STATUS[progress.status] ?? PUBLISH_STATUS.NOT_STARTED;
+  // Onay akışından geçmiş (taslak olmayan) ama adım kaydı olmayan kampanya: bu özellikten önce yüklenmiştir;
+  // "Meta'da kuruldu" demek yanlış olur (ADR-0020: dış kampanya = EXTERNAL + taslak).
+  const external = progress.status === "EXTERNAL" && c.workflowStatus === "DRAFT";
+  const legacy = progress.status === "EXTERNAL" && !external;
+  const status = legacy ? PUBLISH_STATUS.COMPLETE : (PUBLISH_STATUS[progress.status] ?? PUBLISH_STATUS.NOT_STARTED);
   const lastError = c.workflowStatus === "APPROVED" ? progress.lastError : null;
   const showProgress = progress.status !== "NOT_STARTED" || busy === "publish";
   return (
@@ -81,8 +85,14 @@ export function PublishTab({
               Kampanya onaylandıktan sonra Meta&apos;ya kapalı olarak yüklenir; harcama, etkinleştirildiğinde başlar.
             </p>
           )}
-          {progress.status === "EXTERNAL" && (
+          {external && (
             <p className="text-ink-3">Bu kampanya doğrudan Meta&apos;da kuruldu; buradaki yükleme adımları uygulanmaz.</p>
+          )}
+          {legacy && (
+            <p className="text-ink-3">
+              Kampanya Meta&apos;ya yüklendi; yükleme adımlarının ayrıntılı kaydı yok. Reklam seti ve reklamların güncel durumu
+              Meta Reklam Yöneticisi&apos;nde görünür.
+            </p>
           )}
           {lastError && (
             <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">

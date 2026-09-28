@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { api, defaultAccountCurrency } from "../_lib/client-api";
 import { formatMoney, formatPercent, formatRoas } from "../_lib/format";
-import { policyMatcherLabel, policyRiskStyle, ruleActiveStyle } from "../_lib/labels";
+import { optimizationRuleText, policyMatcherLabel, policyRiskStyle, policyRuleName, ruleActiveStyle } from "../_lib/labels";
 import { Badge, Card, EmptyState, PageHeader, SectionHeading } from "../_components/ui";
 const OBJECTIVE_LABEL: Record<string, string> = {
   MAX_ROAS: "Maksimum ROAS",
@@ -108,14 +108,14 @@ export default function PoliciesPage() {
               return (
                 <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{r.key} <span className="ml-1 text-xs font-normal text-muted">{policyMatcherLabel(r.matcher)}</span></p>
+                    <p className="text-sm font-medium text-slate-900">{policyRuleName(r.key)} <span className="ml-1 text-xs font-normal text-muted">{policyMatcherLabel(r.matcher)}</span></p>
                     <p className="text-xs text-muted">{r.reason}</p>
                     {r.matcher === "PHRASES_V1" && r.phrases.length > 0 && <p className="text-xs text-muted">İfadeler: {r.phrases.join(", ")}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge tone={active.tone}>{active.label}</Badge>
                     <Badge tone={risk.tone}>{risk.label}</Badge>
-                    <span className="text-xs text-muted">v{r.version}</span>
+                    <span className="text-xs text-muted">{r.version}. sürüm</span>
                   </div>
                 </div>
               );
@@ -138,7 +138,10 @@ export default function PoliciesPage() {
             <p>Optimizasyon hedefi: {OBJECTIVE_LABEL[policy.objective] ?? "Diğer"} · Hedef ROAS: {formatRoas(policy.targetRoas)}</p>
             <p>Günlük bütçe aralığı: {formatMoney(policy.minDailyBudgetCents, currency)} – {policy.maxDailyBudgetCents !== null ? formatMoney(policy.maxDailyBudgetCents, currency) : "üst sınır yok"}</p>
             <p>Kampanya günlük üst sınırı: {money(policy.campaignDailyMaxCents)}</p>
-            <p>Hesap günlük / aylık üst sınırı: {money(policy.accountDailyMaxCents)} / {money(policy.accountMonthlyMaxCents)}</p>
+            <p>
+              Ajanın hesap günlük / aylık harcama sınırı: {money(policy.accountDailyMaxCents)} / {money(policy.accountMonthlyMaxCents)}
+              <span className="block text-xs text-muted">Kuruluşun aylık üst sınırından ayrıdır; o sınır Yeni kampanya ekranında belirlenir.</span>
+            </p>
             <p>Tek seferde bütçe değişimi: en fazla +{formatPercent(policy.maxIncreasePct)} / −{formatPercent(policy.maxDecreasePct)}; 24 saatte en fazla {formatPercent(policy.maxChangePer24hPct)}</p>
             <p>Değişiklikler arasında en az {policy.minHoursBetweenChanges} saat · En yüksek CPA: {money(policy.maxCpaCents)}</p>
           </div>
@@ -150,7 +153,15 @@ export default function PoliciesPage() {
               const active = ruleActiveStyle(r.active);
               return (
                 <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5">
-                  <div className="min-w-0"><p className="text-sm text-slate-900">{r.name}</p>{r.description && <p className="text-xs text-muted">{r.description}</p>}</div>
+                  {(() => {
+                    const text = optimizationRuleText(r.name, r.description);
+                    return (
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-900">{text.name}</p>
+                        {text.description && <p className="text-xs text-muted">{text.description}</p>}
+                      </div>
+                    );
+                  })()}
                   <div className="flex items-center gap-2">
                     <Badge tone={active.tone}>{active.label}</Badge>
                     {!r.workspaceId && <span className="text-xs text-muted">Tüm çalışma alanları</span>}

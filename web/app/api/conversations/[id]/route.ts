@@ -11,6 +11,7 @@ const MessageChannelEnum = z.enum(["WHATSAPP", "INSTAGRAM", "MESSENGER", "SMS"])
 
 const CreateConversationSchema = z.object({
   channel: MessageChannelEnum,
+  /** Eski istemciler için kabul edilir ama yok sayılır: başlatan her zaman oturumdaki kullanıcıdır (denetim izi). */
   initiatedBy: z.string().nullable().optional(),
 }).strict();
 
@@ -73,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           leadId: id,
           workspaceId: actor.workspaceId,
           channel: input.channel,
-          initiatedBy: input.initiatedBy ?? actor.userId,
+          initiatedBy: actor.userId,
         },
       });
       await logAudit({

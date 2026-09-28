@@ -1,5 +1,4 @@
-/** Uyarı türü ve durum etiketleri — `AlertType` / `AlertStatus` enum'larıyla birebir (içerik rehberi, ADR-0016). */
-import { alertStatusStyle } from "./labels";
+/** Uyarı türü etiketleri — `AlertType` enum'ıyla birebir (içerik rehberi, ADR-0016); durum etiketi `labels.ts` alertStatusStyle. */
 
 export const ALERT_TYPE_LABEL: Record<string, string> = {
   ROAS_DROP: "Reklam getirisi (ROAS) düştü",
@@ -31,6 +30,3 @@ export function alertTypeLabel(type: string): string {
   return ALERT_TYPE_LABEL[type] ?? "Diğer uyarı";
 }
 
-export function alertStatusLabel(status: string): string {
-  return alertStatusStyle(status).label;
-}

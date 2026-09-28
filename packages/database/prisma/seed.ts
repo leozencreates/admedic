@@ -531,8 +531,8 @@ async function main() {
   await prisma.alert.createMany({
     data: [
       { workspaceId: workspace.id, type: AlertType.WINNER_DETECTED, severity: AlertSeverity.INFO, status: "RESOLVED", title: "Kazanan tespit edildi", message: "Germany — Yeni Görsel testinde B varyantı %95 güvenle kazandı.", entityType: "experiment", entityId: "exp_3", read: true, resolvedAt: new Date(today.getTime() - 2 * 86400_000) },
-      { workspaceId: workspace.id, type: AlertType.ROAS_DROP, severity: AlertSeverity.CRITICAL, status: "OPEN", title: "ROAS düşüşü", message: "Campaign #4 (Gulf) 24 saatlik ROAS -52%", entityType: "CAMPAIGN", entityId: "cmp_4", read: false },
-      { workspaceId: workspace.id, type: AlertType.HIGH_CPA, severity: AlertSeverity.WARNING, status: "OPEN", title: "Yüksek CPA", message: "ad_1_1_2 satın alma başına €780.", entityType: "AD", entityId: "ad_1_1_2", read: false },
+      { workspaceId: workspace.id, type: AlertType.ROAS_DROP, severity: AlertSeverity.CRITICAL, status: "OPEN", title: "ROAS düşüşü: Campaign #4 (Gulf)", message: "Son 24 saatte reklam getirisi (ROAS) önceki güne göre %52 düştü.", entityType: "CAMPAIGN", entityId: "cmp_4", read: false },
+      { workspaceId: workspace.id, type: AlertType.HIGH_CPA, severity: AlertSeverity.WARNING, status: "OPEN", title: "Yüksek satın alma maliyeti", message: "Bir reklamda satın alma başına maliyet €780'e çıktı; hedefin üzerinde.", entityType: "AD", entityId: "ad_1_1_2", read: false },
     ],
   });
 

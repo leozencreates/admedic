@@ -112,3 +112,15 @@ Insight anlık görüntüleri reklam, reklam seti ya da kampanya düzeyinde olab
   - Demo verisinde insight anlık görüntüleri yalnızca reklam düzeyinde olduğundan `/campaigns` sayfasının kampanya
     başına toplamı boş görünür. Bu eski bir sorundur; Faz 5'te (kampanya sayfası) ele alınacak.
   - Hasta koordinatörünün ana sayfası hâlâ `/leads`. Onun "Bugün"ü Faz 4'teki lead gelen kutusuyla birleşecek.
+
+## Güncelleme (2026-09-29, ADR-0022)
+- "Hasta devri" ve "N lead yanıt bekliyor" satırları yalnızca hastaya yazabilen rollere (ESCALATION_ROLES) gösterilir;
+  reklam uzmanı bu satırları görmez (ADR-0019 yetki değişikliği). Kapanmış lead'in devri iş sayılmaz; devir ayrı
+  satırda gösterildiği için "yanıt bekliyor" özetinde yeniden sayılmaz. Devirler sorunların hemen ardından sıralanır.
+- Yanıt bekleyenler satırı `/leads?tab=waiting` adresine gider (ADR-0019); "Meta'ya yükle" satırı kampanya sayfasına
+  gider (ADR-0020).
+- Kuyruk toplamı, bir kaynak kendi sınırına ulaştığında "en az N" olarak yazılır.
+- Göstergeler kampanya toplamıyla aynı kuralı kullanır (en üst düzey, günlük satırlar, 7 gün = bugün dahil 7 UTC günü).
+- Onaylar rozeti rolün yapabileceği işi sayar: harcama yetkisi olmayan yöneticide etkinleştirmeler sayılmaz.
+  Reklam uzmanının "kendi gönderdiklerim" süzgeci listenin sınırından önce uygulanır.
+- Onay gönderemeyen roller Onaylar sayfasında açıklama görür.

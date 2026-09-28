@@ -88,7 +88,10 @@ export function countriesText(codes: readonly string[]): string {
 export function progressText(p: PublishProgress): string {
   const parts = [
     `reklam seti ${formatNumber(p.adSets.published)}/${formatNumber(p.adSets.total)}`,
-    `reklam ${formatNumber(p.ads.published)}/${formatNumber(p.ads.expected)}`,
+    // Beklenen sayı içerik planından gelir; plan yoksa (ör. eski yükleme) yalnızca yüklenen sayı yazılır.
+    p.ads.expected > 0
+      ? `reklam ${formatNumber(p.ads.published)}/${formatNumber(p.ads.expected)}`
+      : `reklam ${formatNumber(p.ads.published)}`,
   ];
   if (p.leadForms) parts.push(`Anında Form ${formatNumber(p.leadForms)}`);
   return parts.join(" · ");

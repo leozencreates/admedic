@@ -1,6 +1,6 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-28 (içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
+Son güncelleme: 2026-09-29 (altı fazın genel incelemesi ve düzeltmeleri, ADR-0022; 2026-09-28: içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
@@ -51,6 +51,12 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 8. **2026-09-28 Faz 2 (ADR-0017):** yeni paketler (`@fontsource/ibm-plex-sans`, `@fontsource/ibm-plex-sans-arabic`,
    `lucide-react`) için depo kökünde `pnpm install` çalıştırın; migration yok.
 
+9. **2026-09-28 Faz 6 (ADR-0021):** yeni geliştirme bağımlılığı `axe-core` (erişilebilirlik kapısı) için depo kökünde
+   `pnpm install`. Kapı: `STUDIO_E2E=1 pnpm --filter web test:e2e` (veritabanı gerekir).
+
+10. **2026-09-29 genel inceleme (ADR-0022):** migration yok. Demo uyarı metinleri tohum verisinde Türkçeleştirildi;
+    yerel demo veritabanında eski metinlerin ("ROAS -52%", "ad_1_1_2") yenilenmesi için `pnpm db:seed` gerekir.
+
 ## 1. Mimari (spec §4) — P1
 
 - **Kuyruk yok (Redis + BullMQ):** webhook işleme, karşılama/LLM çağrısı ve WhatsApp gönderimi istek içinde
@@ -63,8 +69,15 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
   Sentry DSN env ile.
 - **CI yok (Faz 0):** ADR-0003 rev.2 ile GitHub bırakıldı; yerelde `pnpm verify` tek kapı. Öneri: en
   azından pre-push hook veya yerel bir `verify` zorunluluğu; GitHub'a dönülürse Windows runner'da Tauri build.
-- **Playwright:** yalnızca stüdyo akışı (`web/e2e/studio.pw.ts`). Lead CRM, kampanya yayınlama, Meta
-  bağlantı ekranları için E2E yok.
+- **Playwright:** stüdyo akışı (`web/e2e/studio.pw.ts`) ve 24 sayfalık erişilebilirlik kapısı (`web/e2e/a11y.pw.ts`,
+  ADR-0021). Lead yanıtlama, kampanya yayınlama ve Meta bağlantısı için uçtan uca akış testi yok; rol başına
+  gezinme de otomatik değil (ADR-0022'de elle yapıldı).
+- **Kabuk yoklaması ağır:** `/api/shell` sekme başına dakikada bir çalışır ve her seferinde kapanmamış lead'lerin en
+  yeni 500'ünü konuşmalarıyla okur (`inbox.ts` `needsReplySummary`). Öneri: konuşmaya "yanıt bekliyor" alanı
+  (denormalize) ya da sayaç önbelleği; çok lead'li kuruluşta ölçülmeli.
+- **Gün sınırı UTC:** `sinceDays`, "Bu ayın harcaması" ve performans sekmesi UTC gününe göre hesaplar; İstanbul'da
+  00:00–03:00 arası "bugün" önceki gün sayılır. Öneri: tek bir `istanbulDayStart` yardımcısı (insight satırları Meta
+  hesabının saat dilimiyle yazıldığı için hesap saat dilimiyle birlikte ele alınmalı).
 - **ESLint:** `react-hooks` eklentisi kurulu değil (pnpm add bu turda yapılmadı); `no-console` kapalı.
 - **Paket bağımlılıkları:** `packages/stripe` `stripe@^16` (web `^22`) ve `@admedic/config`'e bağlı
   değil (tsconfig `paths` ile derleniyor); `packages/database` kullanılmayan `stripe` bağımlılığı;
@@ -146,6 +159,9 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
   metni ayarı yok. Zorunlu kutunun Meta yanıtında dönüp dönmediği canlı doğrulanmalı (`docs/meta-constraints.md`).
 - WhatsApp şablon kaydı (registry) ve pencere dışı gönderimde opt-in kontrolü yok; şablon adı elle girilir.
 - `Lead.channel` serbest metin (enum değil).
+- **Gelen kutusu listesi:** en yeni 100 lead + daha eski ama yanıt bekleyen lead'ler (rozetle aynı küme, ADR-0022);
+  daha eski lead'lere sayfalama ve sunucu tarafı arama yok. "Yanıt bekliyor" kümesi kapanmamış lead'lerin en yeni
+  500'ü üzerinden hesaplanır.
 - Messenger `HUMAN_AGENT` etiketi ve Instagram mesajlaşma izinleri App Review gerektirir; canlı doğrulanmadı.
 - Lead Ads `GET /{leadgen_id}` çekimi `leads_retrieval` izni ister; çekilemeyen lead `pendingFetch` ile saklanır ve
   OAuth dönüşünde, aynı kuruluşa sorunsuz yeni lead geldiğinde ve panelden yeniden denenir (ADR-0015). Zamanlanmış
@@ -182,6 +198,13 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
   riski sürer → HMAC(pepper) + telefon E.164 normalizasyonu (libphonenumber).
 - Üretimde `META_MOCK_MODE` açıkça `false` yapılmalı (aksi halde başlatma reddedilir; demo sunucusu için
   `ALLOW_MOCK_IN_PRODUCTION=true`).
+- **Okuma API'lerinde rol ayrımı kısmi (ADR-0022):** hasta mesajları yalnızca bakım rollerine, lead kayıtları izleyici
+  dışındaki rollere, uyarılar menüyle aynı kapsamda açık. Analist lead adlarını ve ilgilendiği hizmeti görür (menüde
+  Lead'ler var; iletişim bilgileri maskeli). Ad maskeleme ya da analiste yalnızca toplu görünüm ürün kararıdır.
+  Kampanya, politika ve ayar okuma uçları (ör. `GET /api/campaigns`, `GET /api/policies`) her role açık; sayfalar
+  menüde olmayan role açıklama gösterir ama API okuması engellenmez.
+- 3 ondalıklı (KWD, BHD…) ve ondalıksız (JPY…) para birimleri arayüzde (`format.ts`) hâlâ /100 ile gösterilir;
+  worker `minorUnitFactor` ile doğru yazar (ADR-0011 sınırı). Körfez pazarında KWD hesabı açılmadan önce düzeltilmeli.
 - Fastify API (`apps/api`) yalnızca `API_TOKEN` ile korunuyor; kiracı seçimi "ilk workspace"
   (masaüstü tek kiracı varsayımı, ADR-0003). Çok kiracılı kullanım için oturum/tenant seçimi gerekir.
 

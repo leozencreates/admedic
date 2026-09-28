@@ -105,8 +105,7 @@
     outline-offset: 2px;
   }
   .app-sidebar :focus-visible,
-  .app-sheet :focus-visible,
-  .studio-hero :focus-visible {
+  .app-sheet :focus-visible {
     outline-color: var(--focus-ring-on-dark);
   }
 
@@ -633,51 +632,6 @@
     color: var(--color-ink-2);
   }
 
-  /* ── Sayfa başlığı (hero) ─────────────────────────────────────────────── */
-  .studio-hero {
-    position: relative;
-    overflow: hidden;
-    padding: 36px;
-    border-radius: 24px;
-    color: white;
-    /* Parlama yazının altında kontrastı düşürmesin (EM-6 #11): %55 → %35. */
-    background:
-      radial-gradient(ellipse at 95% 0%, #6354b5 0%, transparent 35%),
-      linear-gradient(120deg, #171b35, #30255a);
-  }
-  .eyebrow {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: #c4b5fd;
-  }
-  .studio-hero h1 {
-    font-size: clamp(26px, 3vw, 40px);
-    line-height: 1.2;
-    font-weight: 650;
-    letter-spacing: -0.04em;
-    margin: 16px 0;
-  }
-  .studio-hero p {
-    max-width: 650px;
-    color: #d0cee5;
-    font-size: 14px;
-    line-height: 1.8;
-  }
-  .hero-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 24px;
-  }
-  .hero-tags span {
-    font-size: 12px;
-    padding: 6px 12px;
-    border: 1px solid #ffffff25;
-    border-radius: 30px;
-    background: #ffffff08;
-  }
-
   /* ── Kart, form, düğme ────────────────────────────────────────────────── */
   .studio-card {
     border: 1px solid var(--color-line);
@@ -795,17 +749,6 @@
     background: var(--color-line-soft);
     border-color: var(--color-line);
     color: #98a2b3;
-  }
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    border-radius: 999px;
-    padding: 0 8px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-brand-700);
-    background: var(--color-brand-50);
   }
   .text-link {
     color: var(--color-brand-700);
@@ -1100,9 +1043,6 @@
     .studio-card {
       padding: 16px;
     }
-    .studio-hero {
-      padding: 24px;
-    }
     .page-header {
       margin-bottom: 16px;
     }
@@ -1124,5 +1064,12 @@
     border-color: var(--color-input);
     background: var(--color-surface);
     color: var(--color-ink);
+  }
+}
+
+/* Yatay kayan şerit (telefon): sağ kenarda solma, içeriğin devam ettiğini gösterir. */
+@media (max-width: 639px) {
+  .scroll-cue-x {
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
   }
 }

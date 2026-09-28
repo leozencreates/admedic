@@ -3,7 +3,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { Badge, Card, IntroPanel, PageHeader, SectionHeading, StatCard } from "../_components/ui";
-import { CARE_ROLES, requirePageActor } from "../_lib/auth";
+import { requirePageActor } from "../_lib/auth";
+import { alertScope, canManageAlert } from "../_lib/alert-scope";
 import { prisma } from "../_lib/db";
 import { formatDate, formatNumber } from "../_lib/format";
 import { alertStatusStyle, severityStyle } from "../_lib/labels";
@@ -20,12 +21,13 @@ function Skeleton() {
 async function AlertSummary() {
   await connection();
   const actor = await requirePageActor();
-  const workspaceId = actor.workspaceId;
+  const scope = alertScope(actor);
+  if (!scope) return null;
 
   const [open, acked, critical] = await Promise.all([
-    prisma.alert.count({ where: { workspaceId, status: "OPEN" } }),
-    prisma.alert.count({ where: { workspaceId, status: "ACKED" } }),
-    prisma.alert.count({ where: { workspaceId, status: { not: "RESOLVED" }, severity: "CRITICAL" } }),
+    prisma.alert.count({ where: { ...scope, status: "OPEN" } }),
+    prisma.alert.count({ where: { ...scope, status: "ACKED" } }),
+    prisma.alert.count({ where: { ...scope, status: { not: "RESOLVED" }, severity: "CRITICAL" } }),
   ]);
 
   return (
@@ -40,16 +42,31 @@ async function AlertSummary() {
 async function Alerts() {
   await connection();
   const actor = await requirePageActor();
-  const canManage = CARE_ROLES.includes(actor.role);
+  // Zil ve rozetle aynı kapsam (alert-scope.ts): koordinatör yalnızca devir uyarıları, izleyici hiç.
+  const scope = alertScope(actor);
+  if (!scope)
+    return (
+      <IntroPanel title="Uyarılar bu rol için kapalı">
+        İzleyici rolü performans ve bağlantı uyarılarını görmez. Uyarıları görmeniz gerekiyorsa hesap sahibinden rolünüzü
+        değiştirmesini isteyin.
+      </IntroPanel>
+    );
 
   const alerts = await prisma.alert.findMany({
-    where: { workspaceId: actor.workspaceId },
+    where: scope,
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     take: 60,
   });
   // Ham referans (AD:cmuk…) gösterilmez; kayıt bulunursa bağlantı verilir.
   const links = await alertRecordLinks(actor.workspaceId, alerts);
 
+  if (alerts.length === 0 && actor.role === "PATIENT_COORDINATOR")
+    return (
+      <IntroPanel title="Açık devir uyarısı yok">
+        Asistan bir konuşmayı size devrettiğinde burada ve zilde uyarı görürsünüz. Konuşmayı Lead&apos;ler sayfasından
+        devralıp yanıtlayabilirsiniz.
+      </IntroPanel>
+    );
   if (alerts.length === 0)
     return (
       <IntroPanel title="Henüz uyarı yok">
@@ -87,7 +104,7 @@ async function Alerts() {
                   İlgili kaydı aç<span className="sr-only">: {a.title}</span>
                 </Link>
               ) : null}
-              {canManage ? <AlertActions id={a.id} status={a.status} title={a.title} /> : null}
+              {canManageAlert(actor, a.type) ? <AlertActions id={a.id} status={a.status} title={a.title} /> : null}
             </li>
           );
         })}

@@ -1,6 +1,7 @@
 import { prisma } from "@admedic/database";
 import { requireActor } from "../../_lib/auth";
 import { respond } from "../../_lib/http";
+import { campaignDayRows, sinceDays } from "../../_lib/campaign-metrics";
 export const maxDuration = 15;
 
 /** Nitelikli lead: QUALIFIED ve sonrası (spec 3.10 "nitelikli lead oranı"). */
@@ -23,20 +24,16 @@ export async function GET() {
   return respond(async () => {
     const actor = await requireActor();
     const now = new Date();
-    const since = new Date(now);
-    since.setUTCHours(0, 0, 0, 0);
-    since.setUTCDate(since.getUTCDate() - PERIOD_DAYS);
+    const since = sinceDays(PERIOD_DAYS, now);
     const workspaceId = actor.workspaceId;
     const leadWhere = { workspaceId, createdAt: { gte: since } };
 
     const [workspace, defaultAccount, snapshots, alerts, recommendations, campaigns, leadTotal, leadQualified, byCountryAll, byCountryQualified, byLanguageAll, byLanguageQualified] = await Promise.all([
       prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { currency: true } }),
       prisma.adAccount.findFirst({ where: { workspaceId }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }], select: { currency: true } }),
-      prisma.insightSnapshot.findMany({
-        where: { workspaceId, date: { gte: since }, granularity: "DAILY" },
-        select: { date: true, campaignId: true, spend: true, impressions: true, clicks: true, purchases: true, conversionValue: true, linkClicks: true, leads: true, reach: true },
-        orderBy: { date: "asc" },
-      }),
+      // Kampanya toplamlarıyla aynı kural (ADR-0020): reklam/reklam seti/kampanya düzeyi satırlar kampanyaya
+      // toplanır, aynı gün için yalnızca en üst düzey sayılır; yalnızca günlük satırlar.
+      campaignDayRows(workspaceId, since),
       prisma.alert.findMany({
         where: { workspaceId, status: "OPEN", createdAt: { gte: since } },
         select: { id: true, type: true, severity: true, title: true, createdAt: true },
@@ -65,7 +62,7 @@ export async function GET() {
     const totalClicks = snapshots.reduce((s, i) => s + i.clicks, 0);
     const totalPurchases = snapshots.reduce((s, i) => s + i.purchases, 0);
     const totalConvValue = snapshots.reduce((s, i) => s + i.conversionValue, 0);
-    const totalReach = snapshots.reduce((s, i) => s + (i.reach ?? 0), 0);
+    const totalReach = snapshots.reduce((s, i) => s + i.reach, 0);
     const totalMetaLeads = snapshots.reduce((s, i) => s + i.leads, 0);
     const ctr = ratio(totalClicks, totalImpressions);
     const cpmCents = totalImpressions > 0 ? Math.round((totalSpend / totalImpressions) * 1000) : null;
@@ -77,7 +74,7 @@ export async function GET() {
     // Günlük seri: aynı güne ait kampanya satırları toplanır.
     const dailyMap = new Map<string, { date: string; spend: number; impressions: number; clicks: number; leads: number; purchases: number }>();
     for (const s of snapshots) {
-      const key = s.date.toISOString().slice(0, 10);
+      const key = s.date;
       const d = dailyMap.get(key) ?? { date: key, spend: 0, impressions: 0, clicks: 0, leads: 0, purchases: 0 };
       d.spend += s.spend; d.impressions += s.impressions; d.clicks += s.clicks; d.leads += s.leads; d.purchases += s.purchases;
       dailyMap.set(key, d);
@@ -92,10 +89,9 @@ export async function GET() {
     // Kampanya kırılımı: harcama/bütçe oranı cent/cent, veri günü sayısına göre.
     const perCampaign = new Map<string, { spend: number; impressions: number; clicks: number; leads: number; purchases: number; days: Set<string> }>();
     for (const s of snapshots) {
-      if (!s.campaignId) continue;
       const c = perCampaign.get(s.campaignId) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0, purchases: 0, days: new Set<string>() };
       c.spend += s.spend; c.impressions += s.impressions; c.clicks += s.clicks; c.leads += s.leads; c.purchases += s.purchases;
-      c.days.add(s.date.toISOString().slice(0, 10));
+      c.days.add(s.date);
       perCampaign.set(s.campaignId, c);
     }
     const campaignBreakdown = campaigns.map((c) => {

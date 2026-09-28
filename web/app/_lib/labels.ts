@@ -30,7 +30,7 @@ function label(map: Record<string, string>, key: string | null | undefined, fall
 // ── Lead ────────────────────────────────────────────────────────────────────────
 
 const LEAD_STATUS_TONE: Record<string, Tone> = {
-  NEW: "amber",
+  NEW: "blue", // "Yanıt bekliyor" amber vurgusu gelen kutusu kuralından gelir (inbox.ts), durumdan değil.
   CONTACTED: "blue",
   QUALIFIED: "blue",
   CONSULTATION_BOOKED: "blue",
@@ -112,24 +112,6 @@ export function countryName(code: string | null | undefined): string {
 }
 
 // ── Konuşma ─────────────────────────────────────────────────────────────────────
-
-/**
- * Konuşma durumu. ESCALATED iki anlama gelir: asistan devretti ama kimse devralmadı
- * (`escalatedTo` boş → eylem bekleniyor) ya da bir ekip üyesi devraldı.
- */
-export function conversationStyle(
-  status: string | null | undefined,
-  escalatedTo?: string | null,
-  claimedByName?: string | null,
-): StatusStyle {
-  if (status === "ACTIVE") return { label: "Asistan yanıtlıyor", tone: "blue" };
-  if (status === "CLOSED") return { label: "Kapandı", tone: "gray" };
-  if (status === "ESCALATED") {
-    if (!escalatedTo) return { label: "Asistan devretti", tone: "amber" };
-    return { label: claimedByName ? `${claimedByName} devraldı` : "Ekip devraldı", tone: "gray" };
-  }
-  return UNKNOWN;
-}
 
 // ── Kampanya ────────────────────────────────────────────────────────────────────
 
@@ -410,6 +392,24 @@ const POLICY_MATCHER_LABEL: Record<string, string> = {
 export const POLICY_MATCHERS = Object.keys(POLICY_MATCHER_LABEL);
 export const policyMatcherLabel = (key: string | null | undefined) =>
   label(POLICY_MATCHER_LABEL, key, "Diğer kural türü");
+
+/** Yerleşik içerik kurallarının adı (kural anahtarı ekranda görünmez); kullanıcı tanımlı kural kendi anahtarıyla. */
+const POLICY_RULE_NAME: Record<string, string> = {
+  guarantee: "Garanti vaadi",
+  "before-after": "Önce/sonra karşılaştırması",
+  "personal-attribute": "Kişisel özellik varsayımı",
+};
+export const policyRuleName = (key: string) => POLICY_RULE_NAME[key] ?? key;
+
+/** Optimizasyon kuralı kayıtları (ajan motoru): sürüm kodu yerine ad ve açıklama. */
+const OPTIMIZATION_RULE_TEXT: Record<string, { name: string; description: string }> = {
+  policy_v1: {
+    name: "Bütçe koruma kuralları",
+    description: "Harcama sınırları, bütçe artırma/azaltma eşikleri ve zarar durdurma (stop-loss) kuralları.",
+  },
+};
+export const optimizationRuleText = (name: string, description: string | null) =>
+  OPTIMIZATION_RULE_TEXT[name] ?? { name, description };
 
 /** İçerik kuralının açık/kapalı durumu. */
 export const ruleActiveStyle = (active: boolean): StatusStyle =>

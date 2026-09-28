@@ -106,3 +106,9 @@ satırları toplamasıydı. Meta'da oluşturulmuş kampanyalar da onay akışın
     ayrıca gösterilmiyor. Risk düzeyi Genel sekmesinde görünür.
   - Demo verisinde onay bekleyen (IN_REVIEW) kampanya olmadığından o durumun ekranı görsel olarak denetlenmedi.
     Akış planlayıcıdakiyle aynı uçları kullanıyor ve uç testleri geçiyor.
+
+## Güncelleme (2026-09-29, ADR-0022)
+- İçgörüler ve "Bugün" göstergeleri de bu toplama kuralını kullanır (İçgörüler'deki "Bütçe kullanımı" önceden reklam
+  düzeyi satırları kampanyaya bağlamadığı için €0 gösteriyordu). Toplamlara yalnızca günlük satırlar girer.
+- Onay akışından geçmiş ama yükleme adım kaydı olmayan kampanyada Yükleme sekmesi "Meta'da kuruldu" demez;
+  "Meta'ya yüklendi, adım kaydı yok" der. Plan olmayan kampanyada reklam sayacı "2/0" yerine yalnızca yüklenen sayıyı yazar.

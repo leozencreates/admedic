@@ -55,7 +55,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead CRM and messaging", ()
   const as = (role: Role) => cookieJar.set(SESSION_COOKIE, tokens[role]!);
 
   beforeAll(async () => {
-    const roles: Role[] = ["OWNER", "MEDIA_BUYER", "PATIENT_COORDINATOR", "VIEWER"];
+    const roles: Role[] = ["OWNER", "MEDIA_BUYER", "PATIENT_COORDINATOR", "VIEWER", "ANALYST"];
     const org = await prisma.organization.create({
       data: {
         name: "Messaging fixture",
@@ -404,7 +404,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead CRM and messaging", ()
     );
   });
 
-  it("masks contact data for VIEWER, strips lookupHash and PII-like metadata keys", async () => {
+  it("masks contact data for ANALYST (VIEWER cannot read leads, ADR-0022), strips lookupHash and PII-like metadata keys", async () => {
     as("OWNER");
     const created = await createLead({
       firstName: "Mask", lastName: "Case", phone: "+905321000004", email: "guest@example.invalid",
@@ -417,6 +417,9 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("lead CRM and messaging", ()
     expect(ownerView.lead.phone).toBe("+905321000004");
     expect(ownerView.lead.lookupHash).toBeUndefined();
     as("VIEWER");
+    expect((await leadGet(req(`/api/leads/${created.id}`, "GET"), ctx(created.id))).status).toBe(403);
+    expect((await leadsGet()).status).toBe(403);
+    as("ANALYST");
     const detail = await leadGet(req(`/api/leads/${created.id}`, "GET"), ctx(created.id));
     expect(detail.status).toBe(200);
     const viewerLead = (await detail.json()).lead;

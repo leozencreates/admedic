@@ -108,14 +108,6 @@ export async function countPendingApprovals(workspaceId: string): Promise<Pendin
   };
 }
 
-/** Genel Bakış kırılımı: "İçerik 1 · Etkinleştirme 1 · Öneri 1" (sıfır olan türler yazılmaz); iş yoksa null. */
-export function pendingApprovalSummary(counts: PendingApprovalCounts): string | null {
-  const parts = PENDING_APPROVAL_KINDS.filter((kind) => counts.byKind[kind] > 0).map(
-    (kind) => `${PENDING_APPROVAL_LABEL[kind].short} ${counts.byKind[kind]}`,
-  );
-  return parts.length ? parts.join(" · ") : null;
-}
-
 function riskText(risk: unknown): string | null {
   if (risk !== "LOW" && risk !== "MEDIUM" && risk !== "HIGH") return null;
   return `İçerik kontrolü: ${policyRiskStyle(risk).label.toLocaleLowerCase("tr-TR")}`;
@@ -200,8 +192,19 @@ async function userNames(ids: Array<string | null | undefined>): Promise<Map<str
 const byWaiting = (a: PendingApprovalItem, b: PendingApprovalItem) => a.waitingSince.getTime() - b.waitingSince.getTime();
 
 /**
+ * Kişiye göre süzülecek listelerde (reklam uzmanı: "kendi gönderdiklerim") süzgeç sınırdan ÖNCE uygulanabilsin diye
+ * taranan kayıt sayısı; başkalarının 50+ işi kişinin işlerini listeden düşürmez.
+ */
+export const SCOPED_SCAN_LIMIT = 500;
+
+/** Rolün Onaylar görünümü kişiye göre süzülüyorsa geniş tarama sınırı. */
+export function approvalScanLimit(role: string): number | undefined {
+  return role === "OWNER" || role === "ADMIN" ? undefined : SCOPED_SCAN_LIMIT;
+}
+
+/**
  * Onay bekleyen işlerin listesi (Onaylar sayfası). Sayılar her zaman kesindir; liste her türde
- * en çok `limit` kayıt içerir (varsayılan 50).
+ * en çok `limit` kayıt içerir (varsayılan 50; kişiye göre süzülecekse `approvalScanLimit`).
  */
 export async function listPendingApprovals(
   workspaceId: string,
@@ -395,17 +398,19 @@ export async function listCorrectionRequests(
   options: { userId?: string; limit?: number } = {},
 ): Promise<CorrectionItem[]> {
   const take = options.limit ?? 20;
+  // Kişiye göre süzülecekse süzgeç sınırdan önce uygulanır: geniş tara, sonra kes.
+  const scan = options.userId ? SCOPED_SCAN_LIMIT : take;
   const [drafts, campaigns] = await Promise.all([
     prisma.studioDraft.findMany({
       where: { workspaceId, status: "REJECTED" },
       orderBy: { updatedAt: "desc" },
-      take,
+      take: scan,
       select: { id: true, name: true, updatedAt: true },
     }),
     prisma.campaign.findMany({
       where: { workspaceId, workflowStatus: "REJECTED" },
       orderBy: { updatedAt: "desc" },
-      take,
+      take: scan,
       select: { id: true, name: true, updatedAt: true, rejectionReason: true, rejectionBy: true },
     }),
   ]);

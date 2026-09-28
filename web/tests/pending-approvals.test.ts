@@ -20,7 +20,6 @@ import {
   SPEND_AUTHORITY_LABEL,
   countPendingApprovals,
   listPendingApprovals,
-  pendingApprovalSummary,
 } from "../app/_lib/pending-approvals";
 import { alertRecordLinks, targetKey, targetNames } from "../app/_lib/record-refs";
 
@@ -42,14 +41,7 @@ beforeEach(() => {
   for (const model of Object.values(db)) for (const fn of Object.values(model)) fn.mockReset();
 });
 
-describe("pendingApprovalSummary", () => {
-  it("yalnızca bekleyen türleri sırayla yazar; iş yoksa null", () => {
-    expect(
-      pendingApprovalSummary({ total: 4, byKind: { CONTENT: 1, CAMPAIGN: 0, ACTIVATION: 2, RECOMMENDATION: 1 } }),
-    ).toBe("İçerik 1 · Etkinleştirme 2 · Öneri 1");
-    expect(pendingApprovalSummary({ total: 0, byKind: { CONTENT: 0, CAMPAIGN: 0, ACTIVATION: 0, RECOMMENDATION: 0 } })).toBeNull();
-  });
-
+describe("onay etiketleri", () => {
   it("yetki metinleri API kurallarıyla aynı", () => {
     expect(APPROVER_LABEL).toBe("Hesap sahibi veya Yönetici");
     expect(SPEND_AUTHORITY_LABEL).toBe("Harcama yetkisi olanlar");

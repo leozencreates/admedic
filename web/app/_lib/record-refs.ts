@@ -84,15 +84,19 @@ export async function alertRecordLinks(workspaceId: string, alerts: AlertRef[]):
 
   const [campaigns, adSets, ads, experiments, conversations] = await Promise.all([
     campaignIds.length
-      ? prisma.campaign.findMany({ where: { workspaceId, id: { in: campaignIds } }, select: { id: true } })
+      ? prisma.campaign.findMany({
+          // Uyarı kaydı panel kimliğini ya da Meta kimliğini taşıyabilir (ör. Meta'dan gelen olay); ikisi de aranır.
+          where: { workspaceId, OR: [{ id: { in: campaignIds } }, { metaCampaignId: { in: campaignIds } }] },
+          select: { id: true, metaCampaignId: true },
+        })
       : [],
     adSetIds.length
       ? prisma.adSet.findMany({ where: { workspaceId, id: { in: adSetIds } }, select: { id: true, campaignId: true } })
       : [],
     adIds.length
       ? prisma.ad.findMany({
-          where: { workspaceId, id: { in: adIds } },
-          select: { id: true, adSet: { select: { campaignId: true } } },
+          where: { workspaceId, OR: [{ id: { in: adIds } }, { metaAdId: { in: adIds } }] },
+          select: { id: true, metaAdId: true, adSet: { select: { campaignId: true } } },
         })
       : [],
     experimentIds.length
@@ -107,9 +111,15 @@ export async function alertRecordLinks(workspaceId: string, alerts: AlertRef[]):
   ]);
 
   const hrefs = new Map<string, string>();
-  for (const c of campaigns) hrefs.set(`CAMPAIGN:${c.id}`, campaignHref(c.id));
+  for (const c of campaigns) {
+    hrefs.set(`CAMPAIGN:${c.id}`, campaignHref(c.id));
+    if (c.metaCampaignId) hrefs.set(`CAMPAIGN:${c.metaCampaignId}`, campaignHref(c.id));
+  }
   for (const s of adSets) hrefs.set(`ADSET:${s.id}`, campaignHref(s.campaignId));
-  for (const a of ads) hrefs.set(`AD:${a.id}`, campaignHref(a.adSet.campaignId));
+  for (const a of ads) {
+    hrefs.set(`AD:${a.id}`, campaignHref(a.adSet.campaignId));
+    if (a.metaAdId) hrefs.set(`AD:${a.metaAdId}`, campaignHref(a.adSet.campaignId));
+  }
   for (const e of experiments) hrefs.set(`EXPERIMENT:${e.id}`, testHref(e.id));
   for (const c of conversations) hrefs.set(`CONVERSATION:${c.id}`, leadHref(c.leadId));
 

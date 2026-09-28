@@ -1,19 +1,19 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { prisma } from "@admedic/database";
-import { CARE_ROLES, currentActor, requirePageActor } from "../../_lib/auth";
+import { ESCALATION_ROLES, currentActor, requirePageActor } from "../../_lib/auth";
 import { t } from "../../_lib/i18n";
 import { uiLanguage } from "../../_lib/page-meta";
 
 /**
- * Sekme adı hastanın adını taşır ("James Carter · Lead'ler"); adı yalnızca kişisel veriyi
- * görebilen roller (CARE_ROLES) görür, diğerleri için genel başlık.
+ * Sekme adı hastanın adını taşır ("James Carter · Lead'ler"); ad tarayıcı geçmişine düştüğü için yalnızca
+ * hastayla yazışan roller (ESCALATION_ROLES) görür, diğerleri için genel başlık.
  */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const lang = await uiLanguage();
   const actor = await currentActor();
-  if (actor && CARE_ROLES.includes(actor.role)) {
+  if (actor && ESCALATION_ROLES.includes(actor.role)) {
     const lead = await prisma.lead.findFirst({
       where: { id, workspaceId: actor.workspaceId },
       select: { firstName: true, lastName: true },

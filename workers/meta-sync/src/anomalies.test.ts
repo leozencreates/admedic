@@ -64,8 +64,8 @@ describe("detectAnomalies", () => {
     expect(alerts[0].severity).toBe("WARNING");
     expect(alerts[0].entityType).toBe("CAMPAIGN");
     expect(alerts[0].entityId).toBe("c1");
-    expect(alerts[0].message).toContain("2.00×");
-    expect(alerts[0].message).toContain("4.00×");
+    expect(alerts[0].message).toContain("2,00×");
+    expect(alerts[0].message).toContain("4,00×");
 
     const mild = series("c2", (_o, w) => (w === "current" ? { conversionValue: 32_000 } : {}));
     expect(detectAnomalies(mild)).toEqual([]);
@@ -75,8 +75,8 @@ describe("detectAnomalies", () => {
     const rows = series("c1", (o) => (o === 0 ? { spend: 25_000 } : {}));
     const alerts = detectAnomalies(rows);
     expect(alerts.map((a) => a.type)).toEqual(["SPEND_SPIKE"]);
-    expect(alerts[0].message).toContain("250.00 EUR");
-    expect(alerts[0].message).toContain("100.00 EUR/gün");
+    expect(alerts[0].message).toContain("€250,00");
+    expect(alerts[0].message).toContain("€100,00/gün");
     expect(alerts[0].message).toContain(ANCHOR);
     // tam 2× sınırda uyarı yok (strict >)
     expect(detectAnomalies(series("c2", (o) => (o === 0 ? { spend: 20_000 } : {})))).toEqual([]);
@@ -93,8 +93,8 @@ describe("detectAnomalies", () => {
     const alerts = detectAnomalies(rows);
     expect(alerts.map((a) => a.type)).toEqual(["HIGH_CPA"]);
     expect(alerts[0].severity).toBe("CRITICAL");
-    expect(alerts[0].message).toContain("50.00 EUR");
-    expect(alerts[0].message).toContain("25.00 EUR");
+    expect(alerts[0].message).toContain("€50,00");
+    expect(alerts[0].message).toContain("€25,00");
     expect(alerts[0].message).toContain("%100");
 
     // güncel dönemde toplam 2 lead (< 3) → uyarı yok
@@ -107,7 +107,7 @@ describe("detectAnomalies", () => {
     const alerts = detectAnomalies(rows);
     expect(alerts.map((a) => a.type)).toEqual(["CREATIVE_FATIGUE"]);
     expect(alerts[0].severity).toBe("INFO");
-    expect(alerts[0].message).toContain("%0.40");
+    expect(alerts[0].message).toContain("%0,40");
 
     const small = series("c2", () => ({ impressions: 100, clicks: 0 }));
     expect(detectAnomalies(small)).toEqual([]);
@@ -124,7 +124,7 @@ describe("detectAnomalies", () => {
       ["ROAS_DROP", "a"],
       ["SPEND_SPIKE", "b"],
     ]);
-    expect(alerts[1].message).toContain("90.000 KWD");
+    expect(alerts[1].message).toMatch(/KWD\s90,000/);
   });
 });
 

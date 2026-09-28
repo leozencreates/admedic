@@ -27,14 +27,56 @@ export default async function TodayPage() {
   const manager = actor.role === "OWNER" || actor.role === "ADMIN";
   const readOnly = actor.role === "ANALYST" || actor.role === "VIEWER";
   const [queue, kpis, setup, extremes] = await Promise.all([
-    readOnly ? Promise.resolve({ items: [] as QueueItem[], total: 0 }) : todayQueue(actor),
+    readOnly ? Promise.resolve({ items: [] as QueueItem[], total: 0, more: false }) : todayQueue(actor),
     actor.role === "PATIENT_COORDINATOR" ? Promise.resolve([]) : todayKpis(actor),
     manager ? setupSteps(actor) : Promise.resolve([]),
     readOnly ? campaignExtremes(actor) : Promise.resolve(null),
   ]);
   const setupDone = setup.filter((s) => s.done).length;
   const showSetup = setup.length > 0 && setupDone < setup.length;
+  // İlk ekranda önce iş görünür (telefonda kurulum kartı ekranı kaplamasın); bekleyen iş yoksa kurulum üstte.
+  const setupFirst = queue.items.length === 0;
+  const countText = `${queue.more ? "en az " : ""}${formatNumber(queue.total)}`;
   const now = Date.now();
+
+  const setupCard = (
+    <section aria-labelledby="kurulum-baslik" className="studio-card">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="kurulum-baslik">Kurulum</h2>
+        <p className="text-sm text-ink-3">
+          {setupDone}/{setup.length} adım tamamlandı
+        </p>
+      </div>
+      <div aria-hidden="true" className="mt-3 flex h-2 overflow-hidden rounded-full bg-line-soft">
+        <span className="bg-brand-600" style={{ width: `${(setupDone / setup.length) * 100}%` }} />
+      </div>
+      <ol className="mt-3 divide-y divide-line-soft">
+        {setup.map((step) => (
+          <li key={step.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 gap-3">
+              {step.done ? (
+                <CircleCheck size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#079455]" aria-hidden="true" />
+              ) : (
+                <Circle size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ink-3" aria-hidden="true" />
+              )}
+              <div className="min-w-0">
+                <p className={step.done ? "text-ink-2 line-through decoration-ink-3" : "font-medium text-ink"}>
+                  {step.label}
+                  <span className="sr-only">{step.done ? " (tamamlandı)" : " (yapılacak)"}</span>
+                </p>
+                {!step.done ? <p className="text-sm text-ink-2">{step.hint}</p> : null}
+              </div>
+            </div>
+            {!step.done ? (
+              <Link href={step.href} className="secondary-button self-start sm:self-auto">
+                Başla<span className="sr-only">: {step.label}</span>
+              </Link>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 
   return (
     <div className="space-y-6">
@@ -44,49 +86,12 @@ export default async function TodayPage() {
           readOnly
             ? "Son 7 günün temel göstergeleri ve kampanyaların durumu."
             : queue.total > 0
-              ? `Sizden beklenen ${formatNumber(queue.total)} iş var; önce sorunlar, sonra en uzun bekleyenler.`
+              ? `Sizden beklenen ${countText} iş var; önce sorunlar, sonra en uzun bekleyenler.`
               : "Sizden beklenen iş yok. Temel göstergeler aşağıda."
         }
       />
 
-      {showSetup ? (
-        <section aria-labelledby="kurulum-baslik" className="studio-card">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="kurulum-baslik">Kurulum</h2>
-            <p className="text-sm text-ink-3">
-              {setupDone}/{setup.length} adım tamamlandı
-            </p>
-          </div>
-          <div aria-hidden="true" className="mt-3 flex h-2 overflow-hidden rounded-full bg-line-soft">
-            <span className="bg-brand-600" style={{ width: `${(setupDone / setup.length) * 100}%` }} />
-          </div>
-          <ol className="mt-3 divide-y divide-line-soft">
-            {setup.map((step) => (
-              <li key={step.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  {step.done ? (
-                    <CircleCheck size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#079455]" aria-hidden="true" />
-                  ) : (
-                    <Circle size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ink-3" aria-hidden="true" />
-                  )}
-                  <div className="min-w-0">
-                    <p className={step.done ? "text-ink-2 line-through decoration-ink-3" : "font-medium text-ink"}>
-                      {step.label}
-                      <span className="sr-only">{step.done ? " (tamamlandı)" : " (yapılacak)"}</span>
-                    </p>
-                    {!step.done ? <p className="text-sm text-ink-2">{step.hint}</p> : null}
-                  </div>
-                </div>
-                {!step.done ? (
-                  <Link href={step.href} className="secondary-button self-start sm:self-auto">
-                    Başla<span className="sr-only">: {step.label}</span>
-                  </Link>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      {showSetup && setupFirst ? setupCard : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         {readOnly && extremes ? (
@@ -95,9 +100,9 @@ export default async function TodayPage() {
           <section aria-labelledby="kuyruk-baslik" className="studio-card min-w-0">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="kuyruk-baslik">Sizden beklenenler</h2>
-              {queue.total > queue.items.length ? (
+              {queue.total > queue.items.length || queue.more ? (
                 <p className="text-sm text-ink-3">
-                  En önemli {formatNumber(queue.items.length)} iş gösteriliyor ({formatNumber(queue.total)} toplam)
+                  En önemli {formatNumber(queue.items.length)} iş gösteriliyor ({countText} toplam)
                 </p>
               ) : null}
             </div>
@@ -165,6 +170,8 @@ export default async function TodayPage() {
           </section>
         ) : null}
       </div>
+
+      {showSetup && !setupFirst ? setupCard : null}
     </div>
   );
 }
@@ -179,21 +186,23 @@ function Extremes({ best, worst }: { best: CampaignRow[]; worst: CampaignRow[] }
     );
   const table = (rows: CampaignRow[], caption: string) => (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px]">
+      <table className="w-full">
         <caption className="mb-2 text-left text-sm font-medium text-ink">{caption}</caption>
         <thead className="bg-subtle">
           <tr>
             <Th>Kampanya</Th>
             <Th align="right">Harcama</Th>
             <Th align="right">Lead</Th>
-            <Th align="right">Reklam getirisi (ROAS)</Th>
+            <Th align="right">
+              <abbr title="Reklam getirisi" className="no-underline">ROAS</abbr>
+            </Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line-soft">
           {rows.map((r) => (
             <tr key={r.id}>
               <Td>
-                <Link href={campaignHref(r.id)} className="font-medium text-ink hover:underline">
+                <Link href={campaignHref(r.id)} className="break-words font-medium text-ink hover:underline">
                   {r.name}
                 </Link>
               </Td>

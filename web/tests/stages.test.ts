@@ -15,7 +15,10 @@ describe("aşama şeridi (K8-C)", () => {
   });
 
   it("lead: 6 aşama; yanıt bekleyen amber, tedavi tamam, kayıp gri", () => {
-    expect(leadStage("NEW")).toMatchObject({ index: 0, total: 6, state: "human" });
+    expect(leadStage("NEW")).toMatchObject({ index: 0, total: 6, state: "progress", label: "Yeni" });
+    expect(leadStage("NEW", { needsReply: true })).toMatchObject({ index: 0, state: "human" });
+    expect(leadStage("CONTACTED", { needsReply: true })).toMatchObject({ state: "human" });
+    expect(leadStage("TREATED", { needsReply: true })).toMatchObject({ state: "done" });
     expect(leadStage("QUALIFIED")).toMatchObject({ index: 2, state: "progress" });
     expect(leadStage("TREATED")).toMatchObject({ index: 5, state: "done" });
     expect(leadStage("LOST")).toMatchObject({ state: "idle", label: "Kaybedildi" });

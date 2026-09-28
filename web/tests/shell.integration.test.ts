@@ -108,14 +108,14 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("kabuk özeti /api/shell", (
     expect(body.user.name).toContain("@example.invalid");
   });
 
-  it("izleyici rozet ve bildirim görmez; analist bildirimleri görür ama rozet almaz", async () => {
+  it("izleyici rozet ve bildirim görmez; analistin uyarı rozeti bildirim listesiyle aynı (ADR-0022)", async () => {
     as("VIEWER");
     const viewer = await summary();
     expect(viewer.counts).toEqual({ approvals: 0, leads: 0, alerts: 0 });
     expect(viewer.notifications).toEqual([]);
     as("ANALYST");
     const analyst = await summary();
-    expect(analyst.counts).toEqual({ approvals: 0, leads: 0, alerts: 0 });
+    expect(analyst.counts).toEqual({ approvals: 0, leads: 0, alerts: 2 });
     expect(analyst.notifications).toHaveLength(2);
   });
 });

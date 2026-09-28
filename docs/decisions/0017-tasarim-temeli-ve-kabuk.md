@@ -140,3 +140,12 @@ Kabuğun ihtiyaç duyduğu her şeyi tek çağrıda döndürür: kullanıcı ad�
   - Menü daraltma ve rota birleşmeleri (`/settings/*`, `/ads`) şimdilik yapılmadı.
 - **Bilinen küçük nokta:** izleyicide "Kampanyalar" grubunun tek öğesi de "Kampanyalar" olduğundan menüde ad iki
   kez görünür. Faz 5'te kampanya sayfası birleşince çözülecek.
+
+## Güncelleme (2026-09-29, ADR-0022)
+- Lead'ler rozeti artık "NEW lead sayısı" değil, gelen kutusu kuralına göre yanıt bekleyen lead sayısıdır (ADR-0019)
+  ve yalnızca hastaya yazabilen rollere (hesap sahibi, yönetici, hasta koordinatörü) gösterilir.
+- Uyarılar rozeti ile bildirim listesi aynı kapsamı kullanır (`_lib/alert-scope.ts`); analist de rozeti görür.
+- İzleyicide "Kampanyalar" adının iki kez görünmesi çözüldü: tek öğesi grupla aynı adı taşıyan grup başlık göstermez.
+- Menü rol tablosu artık sayfa düzeyinde de uygulanır: rolün menüde görmediği bölüm doğrudan adresle açılırsa
+  sayfa yerine açıklama gösterilir (`guardedSection`). Bu yalnızca arayüz tutarlılığıdır; yetki API'de denetlenir.
+- Kullanılmayan `.studio-hero`, `.eyebrow`, `.hero-tags`, `.status-pill` stilleri silindi.
