@@ -29,8 +29,19 @@ export async function api<T>(
     throw new Error(UNREACHABLE_MESSAGE);
   }
   if (!response.ok)
-    throw new Error(typeof result?.error === "string" && result.error ? result.error : FALLBACK_ERROR);
+    throw new ApiError(typeof result?.error === "string" && result.error ? result.error : FALLBACK_ERROR, response.status);
   return result as T;
+}
+
+/** Sunucunun döndürdüğü hata; `status` HTTP durum kodudur (ör. 403 yetki yok, 409 çakışma). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 /**

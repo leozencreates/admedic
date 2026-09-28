@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { api } from "../../_lib/client-api";
 import { LeadChat } from "../../_components/lead-chat";
-import { Badge, PageHeader } from "../../_components/ui";
+import { Badge } from "../../_components/ui";
 import { StageBar } from "../../_components/stage-bar";
 import { leadStage } from "../../_lib/stages";
 import { ConfirmDialog, Dialog } from "../../_components/dialog";
@@ -96,6 +97,9 @@ function phoneLinks(phone: string, country: string): { tel: string; whatsapp: st
     : { tel: `tel:${raw}`, whatsapp: null };
 }
 
+/** Dar kaptaki sekme: sohbet ya da lead bilgileri (geniş kapta ikisi birden görünür). */
+type DetailTab = "chat" | "info";
+
 type LostErrors = { reason?: string; note?: string; submit?: string };
 
 export default function LeadDetailPage() {
@@ -138,6 +142,13 @@ export default function LeadDetailPage() {
   const lostLegendId = useId();
   const reasonErrorId = useId();
   const noteErrorId = useId();
+  const [tab, setTab] = useState<DetailTab>("chat");
+  const chatTabRef = useRef<HTMLButtonElement>(null);
+  const infoTabRef = useRef<HTMLButtonElement>(null);
+  const chatTabId = useId();
+  const infoTabId = useId();
+  const chatPanelId = useId();
+  const infoPanelId = useId();
 
   /** `initial`: ilk yükleme (hata sayfa düzeyinde); diğerleri sessiz yeniden yükleme. */
   const load = useCallback(
@@ -332,25 +343,36 @@ export default function LeadDetailPage() {
     }
   }
 
+  function onTabKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const next: DetailTab =
+      e.key === "Home" ? "chat" : e.key === "End" ? "info" : tab === "chat" ? "info" : "chat";
+    setTab(next);
+    (next === "chat" ? chatTabRef : infoTabRef).current?.focus();
+  }
+
   if (loading) {
     return (
-      <div className="studio-card animate-pulse" role="status">
-        Lead ayrıntısı yükleniyor…
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6">
+        <p role="status" className="animate-pulse text-sm text-muted">
+          Lead ayrıntısı yükleniyor…
+        </p>
       </div>
     );
   }
 
   if (loadError || !lead) {
     return (
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6">
+        <div className="flex max-w-md flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700" role="alert">
           <span>{loadError || "Lead yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin."}</span>
           <button type="button" className="secondary-button" onClick={() => void load({ initial: true })}>
             Tekrar dene
           </button>
         </div>
-        <Link href="/leads" className="text-sm text-violet-600">
-          ← Lead listesine geri dön
+        <Link href="/leads" className="text-link text-sm">
+          Lead listesine dön
         </Link>
       </div>
     );
@@ -362,264 +384,323 @@ export default function LeadDetailPage() {
   const source = lead.source;
   const hasSourceIds = Boolean(lead.campaignId || lead.adSetId || lead.adId);
   const lostBusy = statusBusy === "LOST";
+  const meta = [channelLabel(lead.channel), countryName(lead.country), languageName(lead.language)].filter(Boolean);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={<bdi dir="auto">{lead.name}</bdi>}
-        crumbs={[{ label: "Lead'ler", href: "/leads" }]}
-        description={
-          <span className="inline-flex flex-wrap items-center gap-3">
-            <StageBar stage={leadStage(lead.status)} />
-            <span className="text-xs text-ink-3">
-              Oluşturulma: <time dateTime={lead.created}>{formatDate(lead.created)}</time>
-            </span>
-          </span>
-        }
-      />
-
-      {lead.pendingFetch && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <p className="font-semibold">Form yanıtları Meta&apos;dan çekilemedi</p>
-          <p className="mt-1">
-            Lead kimliğiyle kaydedildi; ad, iletişim ve form yanıtları eksik.
-            {lead.pendingFetch.error ? ` Son hata: ${lead.pendingFetch.error}` : ""}
-            {` (deneme: ${lead.pendingFetch.attempts})`}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 items-start gap-2 border-b border-line bg-surface px-3 py-3 sm:px-4">
+        <Link
+          href="/leads"
+          aria-label="Lead listesine dön"
+          className="-ml-1 inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-2 hover:bg-subtle lg:hidden"
+        >
+          <ChevronLeft aria-hidden="true" size={22} />
+        </Link>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <h1 className="truncate text-lg font-semibold leading-7 text-ink">
+            <bdi dir="auto">{lead.name}</bdi>
+          </h1>
+          <StageBar stage={leadStage(lead.status)} />
+          <p className="text-xs text-ink-3">
+            {meta.join(" · ")}
+            <span aria-hidden="true"> · </span>
+            Oluşturulma: <time dateTime={lead.created}>{formatDate(lead.created)}</time>
           </p>
-          <p className="mt-1 text-xs">
-            Meta bağlantısı yenilendiğinde ve yeni lead geldiğinde otomatik yeniden denenir.
-          </p>
-          <button type="button" className="primary-button mt-3" disabled={refetching} onClick={() => void refetchFromMeta()}>
-            {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
-          </button>
-          {refetchError && (
-            <p role="alert" className="mt-2 text-rose-700">
-              {refetchError}
-            </p>
-          )}
         </div>
-      )}
-      {refetchNotice && (
-        <p role="status" className="text-sm text-emerald-700">
-          {refetchNotice}
-        </p>
-      )}
+      </header>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <section className="studio-card">
-          <div className="section-kicker">Bilgiler</div>
-          <h2>Kişi bilgileri</h2>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Ad</dt>
-              <dd className="text-right font-medium text-slate-900" dir="auto">{lead.name}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Telefon</dt>
-              <dd className="text-right">
-                {links ? (
-                  <a href={links.tel} className="font-medium text-slate-900 underline-offset-2 hover:underline">
-                    {lead.phone}
-                  </a>
-                ) : (
-                  <span className="font-medium text-slate-900">{lead.phone || "—"}</span>
-                )}
-                {links?.whatsapp && (
-                  <a
-                    href={links.whatsapp}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-3 whitespace-nowrap font-medium text-violet-700 hover:underline"
-                  >
-                    WhatsApp&apos;ta aç<span className="sr-only"> (yeni sekmede açılır)</span>
-                  </a>
-                )}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">E-posta</dt>
-              <dd className="break-all text-right font-medium text-slate-900">{lead.email || "—"}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Kanal</dt>
-              <dd className="text-right font-medium text-slate-900">{channelLabel(lead.channel)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Ülke</dt>
-              <dd className="text-right font-medium text-slate-900">{countryName(lead.country)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Dil</dt>
-              <dd className="text-right font-medium text-slate-900">{languageName(lead.language)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">İlgilenilen hizmet</dt>
-              <dd className="text-right font-medium text-slate-900">{lead.interestedService || "—"}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="shrink-0 text-muted">Kaynak kampanya</dt>
-              <dd className="min-w-0 text-right">
-                {source?.campaign ? (
-                  <Link
-                    href={`/campaign-planner?focus=${encodeURIComponent(source.campaign.id)}`}
-                    className="font-medium text-violet-700 hover:underline"
-                  >
-                    {source.campaign.name}
-                  </Link>
-                ) : hasSourceIds ? (
-                  <span className="text-muted">Panelde eşleşen kampanya yok</span>
-                ) : (
-                  <span className="font-medium text-slate-900">—</span>
-                )}
-                {source?.adSet && <p className="text-xs text-muted">Reklam seti: {source.adSet.name}</p>}
-                {source?.ad && <p className="text-xs text-muted">Reklam: {source.ad.name}</p>}
-                {hasSourceIds && (
-                  <details className="mt-1 text-left">
-                    <summary className="cursor-pointer text-right text-xs text-violet-700">Teknik ayrıntı</summary>
-                    <div className="mt-1 space-y-0.5 break-all font-mono text-xs text-slate-700">
-                      <p>Kampanya kimliği: {lead.campaignId || "—"}</p>
-                      <p>Reklam seti kimliği: {lead.adSetId || "—"}</p>
-                      <p>Reklam kimliği: {lead.adId || "—"}</p>
-                    </div>
-                  </details>
-                )}
-              </dd>
-            </div>
-            {lead.status === "LOST" && lead.lostReason && (
-              <div className="flex justify-between gap-4 rounded-lg bg-slate-50 p-2">
-                <dt className="text-muted">Kayıp nedeni</dt>
-                <dd className="text-right font-medium text-slate-900">{lead.lostReason}</dd>
-              </div>
-            )}
-          </dl>
-        </section>
-
-        <section className="studio-card">
-          <div className="section-kicker">Durum</div>
-          <h2 ref={statusHeadingRef} tabIndex={-1}>
-            Durumu güncelle
-          </h2>
-          <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
-            Şu anki durum: <Badge tone={status.tone}>{status.label}</Badge>
-          </p>
-          {nextStatuses.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-3">
-              {nextStatuses.map((next) => (
-                <button
-                  key={next}
-                  type="button"
-                  className={next === "LOST" ? "secondary-button text-rose-700" : "primary-button"}
-                  disabled={statusBusy !== null}
-                  onClick={() => void transitionStatus(next)}
-                >
-                  {statusBusy === next && next !== "LOST" ? "Güncelleniyor…" : leadTransitionLabel(next)}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted">
-              {lead.status === "LOST"
-                ? "Kaybedildi olarak işaretlenen lead'in durumu değiştirilemez."
-                : "Lead son aşamada; değiştirilecek başka durum yok."}
-            </p>
-          )}
-          {statusError && (
-            <p role="alert" className="mt-3 text-sm text-rose-700">
-              {statusError}
-            </p>
-          )}
-          {/* Canlı bölge hep yerinde kalır ki güncelleme ekran okuyucuya duyurulsun. */}
-          <p role="status" className={statusNotice ? "mt-3 text-sm text-emerald-700" : undefined}>
-            {statusNotice}
-          </p>
-        </section>
+      {/* Dar kapta sekmeler; geniş kapta (≥900 px) sohbet ve lead kartı yan yana. */}
+      <div
+        role="tablist"
+        aria-label="Lead ayrıntısı bölümleri"
+        className="flex shrink-0 gap-1 border-b border-line bg-surface px-3 py-2 @[900px]:hidden"
+      >
+        <button
+          ref={chatTabRef}
+          type="button"
+          role="tab"
+          id={chatTabId}
+          aria-selected={tab === "chat"}
+          aria-controls={chatPanelId}
+          tabIndex={tab === "chat" ? 0 : -1}
+          onClick={() => setTab("chat")}
+          onKeyDown={onTabKeyDown}
+          className={`min-h-9 flex-1 rounded-lg px-3 text-sm font-medium ${tab === "chat" ? "bg-subtle text-ink" : "text-ink-3 hover:text-ink"}`}
+        >
+          Sohbet
+        </button>
+        <button
+          ref={infoTabRef}
+          type="button"
+          role="tab"
+          id={infoTabId}
+          aria-selected={tab === "info"}
+          aria-controls={infoPanelId}
+          tabIndex={tab === "info" ? 0 : -1}
+          onClick={() => setTab("info")}
+          onKeyDown={onTabKeyDown}
+          className={`min-h-9 flex-1 rounded-lg px-3 text-sm font-medium ${tab === "info" ? "bg-subtle text-ink" : "text-ink-3 hover:text-ink"}`}
+        >
+          Lead bilgileri
+        </button>
       </div>
 
-      <LeadChat key={lead.id} leadId={lead.id} leadChannel={lead.channel} leadName={lead.name} />
-
-      <section className="studio-card" aria-labelledby="riza-baslik">
-        <h2 id="riza-baslik">Açık rıza kayıtları</h2>
-        <p className="mt-2 text-sm text-muted">
-          Pazarlama iletişimi ve Meta&apos;ya dönüşüm bildirimi yalnızca hastanın açık rızasıyla yapılır. Rızayı hasta
-          verir; burada yalnızca verdiği rızayı ve nasıl alındığını kaydedersiniz. Anında Form&apos;daki kutu, talebe
-          yanıt için verilen ayrı bir rızadır.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          {consentGiven ? (
-            <p className="flex items-center gap-2 text-sm font-medium text-emerald-800">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
-              Pazarlama iletişimi ve dönüşüm ölçümü için açık rıza kayıtlı.
-            </p>
-          ) : (
-            <p className="text-sm text-slate-700">Bu lead için pazarlama iletişimi ve dönüşüm ölçümü rızası kayıtlı değil.</p>
-          )}
-          {consentGiven ? (
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={consentBusy}
-              onClick={() => {
-                setWithdrawError("");
-                setWithdrawOpen(true);
-              }}
-            >
-              Rıza geri çekildi olarak kaydet
-            </button>
-          ) : (
-            <button type="button" className="secondary-button" disabled={consentBusy} onClick={() => void openConsentDialog()}>
-              Açık rızayı kaydet
-            </button>
-          )}
+      <div className="flex min-h-0 flex-1">
+        <div
+          role="tabpanel"
+          id={chatPanelId}
+          aria-labelledby={chatTabId}
+          className={`min-h-0 min-w-0 flex-1 flex-col ${tab === "chat" ? "flex" : "hidden"} @[900px]:flex`}
+        >
+          <LeadChat key={lead.id} leadId={lead.id} leadChannel={lead.channel} leadName={lead.name} />
         </div>
-        {error && (
-          <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="mt-3 text-sm text-emerald-800">
-            {notice}
-          </p>
-        )}
-        {(lead.consents ?? []).length > 0 && (
-          <div className="mt-5 space-y-2">
-            <h3 className="text-sm font-semibold text-slate-900">Kayıt geçmişi</h3>
-            <ul className="space-y-2">
-              {(lead.consents ?? []).map((c) => {
-                const status = consentStatusStyle(c.status);
-                return (
-                  <li key={c.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={status.tone}>{status.label}</Badge>
-                      <span className="font-medium text-slate-900">{consentTypeLabel(c.type)}</span>
-                      <span className="text-xs text-muted">
-                        {consentSourceLabel(c.source)}
-                        {c.formLanguage ? ` · form dili ${languageName(c.formLanguage)}` : ""}
-                        {" · "}
-                        <time dateTime={c.acceptedAt ?? c.createdAt}>{formatDate(c.acceptedAt ?? c.createdAt)}</time>
-                      </span>
-                    </div>
-                    {c.basis && <p className="mt-1 text-xs text-muted">Nasıl alındı: {consentBasisLabel(c.basis)}</p>}
-                    {c.evidenceNote && <p className="mt-1 text-xs text-muted">Not: {c.evidenceNote}</p>}
-                    {c.withdrawnAt && (
-                      <p className="mt-1 text-xs text-slate-700">
-                        Geri çekildi: <time dateTime={c.withdrawnAt}>{formatDate(c.withdrawnAt)}</time>
-                      </p>
-                    )}
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-xs font-medium text-brand-strong">Kaydedilen rıza metni</summary>
-                      <p className="mt-1 whitespace-pre-line text-xs text-slate-700">{c.consentText}</p>
+
+        <aside
+          role="tabpanel"
+          id={infoPanelId}
+          aria-labelledby={infoTabId}
+          className={`min-h-0 flex-1 overflow-y-auto bg-surface ${tab === "info" ? "block" : "hidden"} @[900px]:block @[900px]:w-[320px] @[900px]:flex-none @[900px]:border-l @[900px]:border-line`}
+        >
+          {lead.pendingFetch && (
+            <section className="border-b border-line-soft bg-amber-50 px-4 py-4 text-sm text-amber-800">
+              <h2 className="text-base font-semibold">Form yanıtları Meta&apos;dan çekilemedi</h2>
+              <p className="mt-1">
+                Lead kimliğiyle kaydedildi; ad, iletişim ve form yanıtları eksik.
+                {lead.pendingFetch.error ? ` Son hata: ${lead.pendingFetch.error}` : ""}
+                {` (deneme: ${lead.pendingFetch.attempts})`}
+              </p>
+              <p className="mt-1 text-xs">
+                Meta bağlantısı yenilendiğinde ve yeni lead geldiğinde otomatik yeniden denenir.
+              </p>
+              <button type="button" className="primary-button mt-3" disabled={refetching} onClick={() => void refetchFromMeta()}>
+                {refetching ? "Çekiliyor…" : "Meta'dan yeniden çek"}
+              </button>
+              {refetchError && (
+                <p role="alert" className="mt-2 text-rose-700">
+                  {refetchError}
+                </p>
+              )}
+            </section>
+          )}
+          {refetchNotice && (
+            <p role="status" className="border-b border-line-soft px-4 py-2 text-sm text-emerald-700">
+              {refetchNotice}
+            </p>
+          )}
+
+          <section className="border-b border-line-soft px-4 py-4">
+            <h2 className="text-base font-semibold text-ink">Kişi bilgileri</h2>
+            <dl className="mt-3 space-y-2.5 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Ad</dt>
+                <dd className="text-right font-medium text-ink" dir="auto">{lead.name}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Telefon</dt>
+                <dd className="text-right">
+                  {links ? (
+                    <a href={links.tel} className="font-medium text-ink underline-offset-2 hover:underline">
+                      {lead.phone}
+                    </a>
+                  ) : (
+                    <span className="font-medium text-ink">{lead.phone || "—"}</span>
+                  )}
+                  {links?.whatsapp && (
+                    <a
+                      href={links.whatsapp}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block whitespace-nowrap font-medium text-violet-700 hover:underline"
+                    >
+                      WhatsApp&apos;ta aç<span className="sr-only"> (yeni sekmede açılır)</span>
+                    </a>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">E-posta</dt>
+                <dd className="break-all text-right font-medium text-ink">{lead.email || "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Kanal</dt>
+                <dd className="text-right font-medium text-ink">{channelLabel(lead.channel)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Ülke</dt>
+                <dd className="text-right font-medium text-ink">{countryName(lead.country)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Dil</dt>
+                <dd className="text-right font-medium text-ink">{languageName(lead.language)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">İlgilenilen hizmet</dt>
+                <dd className="text-right font-medium text-ink">{lead.interestedService || "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="shrink-0 text-muted">Kaynak kampanya</dt>
+                <dd className="min-w-0 text-right">
+                  {source?.campaign ? (
+                    <Link
+                      href={`/campaign-planner?focus=${encodeURIComponent(source.campaign.id)}`}
+                      className="font-medium text-violet-700 hover:underline"
+                    >
+                      {source.campaign.name}
+                    </Link>
+                  ) : hasSourceIds ? (
+                    <span className="text-muted">Panelde eşleşen kampanya yok</span>
+                  ) : (
+                    <span className="font-medium text-ink">—</span>
+                  )}
+                  {source?.adSet && <p className="text-xs text-muted">Reklam seti: {source.adSet.name}</p>}
+                  {source?.ad && <p className="text-xs text-muted">Reklam: {source.ad.name}</p>}
+                  {hasSourceIds && (
+                    <details className="mt-1 text-left">
+                      <summary className="cursor-pointer text-right text-xs text-violet-700">Teknik ayrıntı</summary>
+                      <div className="mt-1 space-y-0.5 break-all font-mono text-xs text-ink-2">
+                        <p>Kampanya kimliği: {lead.campaignId || "—"}</p>
+                        <p>Reklam seti kimliği: {lead.adSetId || "—"}</p>
+                        <p>Reklam kimliği: {lead.adId || "—"}</p>
+                      </div>
                     </details>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-      </section>
+                  )}
+                </dd>
+              </div>
+              {lead.status === "LOST" && lead.lostReason && (
+                <div className="flex justify-between gap-4 rounded-lg bg-subtle p-2">
+                  <dt className="text-muted">Kayıp nedeni</dt>
+                  <dd className="text-right font-medium text-ink">{lead.lostReason}</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+
+          <section className="border-b border-line-soft px-4 py-4">
+            <h2 ref={statusHeadingRef} tabIndex={-1} className="text-base font-semibold text-ink">
+              Durumu güncelle
+            </h2>
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
+              Şu anki durum: <Badge tone={status.tone}>{status.label}</Badge>
+            </p>
+            {nextStatuses.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {nextStatuses.map((next) => (
+                  <button
+                    key={next}
+                    type="button"
+                    className={next === "LOST" ? "secondary-button text-rose-700" : "primary-button"}
+                    disabled={statusBusy !== null}
+                    onClick={() => void transitionStatus(next)}
+                  >
+                    {statusBusy === next && next !== "LOST" ? "Güncelleniyor…" : leadTransitionLabel(next)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted">
+                {lead.status === "LOST"
+                  ? "Kaybedildi olarak işaretlenen lead'in durumu değiştirilemez."
+                  : "Lead son aşamada; değiştirilecek başka durum yok."}
+              </p>
+            )}
+            {statusError && (
+              <p role="alert" className="mt-3 text-sm text-rose-700">
+                {statusError}
+              </p>
+            )}
+            {/* Canlı bölge hep yerinde kalır ki güncelleme ekran okuyucuya duyurulsun. */}
+            <p role="status" className={statusNotice ? "mt-3 text-sm text-emerald-700" : undefined}>
+              {statusNotice}
+            </p>
+          </section>
+
+          <section className="border-b border-line-soft px-4 py-4" aria-labelledby="riza-baslik">
+            <h2 id="riza-baslik" className="text-base font-semibold text-ink">
+              Açık rıza kayıtları
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              Pazarlama iletişimi ve Meta&apos;ya dönüşüm bildirimi yalnızca hastanın açık rızasıyla yapılır. Rızayı hasta
+              verir; burada yalnızca verdiği rızayı ve nasıl alındığını kaydedersiniz. Anında Form&apos;daki kutu, talebe
+              yanıt için verilen ayrı bir rızadır.
+            </p>
+            <div className="mt-3 space-y-3">
+              {consentGiven ? (
+                <p className="flex items-center gap-2 text-sm font-medium text-emerald-800">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="m9 12 2 2 4-4" />
+                  </svg>
+                  Pazarlama iletişimi ve dönüşüm ölçümü için açık rıza kayıtlı.
+                </p>
+              ) : (
+                <p className="text-sm text-ink-2">Bu lead için pazarlama iletişimi ve dönüşüm ölçümü rızası kayıtlı değil.</p>
+              )}
+              {consentGiven ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={consentBusy}
+                  onClick={() => {
+                    setWithdrawError("");
+                    setWithdrawOpen(true);
+                  }}
+                >
+                  Rıza geri çekildi olarak kaydet
+                </button>
+              ) : (
+                <button type="button" className="secondary-button" disabled={consentBusy} onClick={() => void openConsentDialog()}>
+                  Açık rızayı kaydet
+                </button>
+              )}
+            </div>
+            {error && (
+              <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                {error}
+              </p>
+            )}
+            {notice && (
+              <p role="status" className="mt-3 text-sm text-emerald-800">
+                {notice}
+              </p>
+            )}
+            {(lead.consents ?? []).length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h3 className="text-sm font-semibold text-ink">Kayıt geçmişi</h3>
+                <ul className="space-y-2">
+                  {(lead.consents ?? []).map((c) => {
+                    const status = consentStatusStyle(c.status);
+                    return (
+                      <li key={c.id} className="rounded-lg border border-line p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                          <span className="font-medium text-ink">{consentTypeLabel(c.type)}</span>
+                          <span className="text-xs text-muted">
+                            {consentSourceLabel(c.source)}
+                            {c.formLanguage ? ` · form dili ${languageName(c.formLanguage)}` : ""}
+                            {" · "}
+                            <time dateTime={c.acceptedAt ?? c.createdAt}>{formatDate(c.acceptedAt ?? c.createdAt)}</time>
+                          </span>
+                        </div>
+                        {c.basis && <p className="mt-1 text-xs text-muted">Nasıl alındı: {consentBasisLabel(c.basis)}</p>}
+                        {c.evidenceNote && <p className="mt-1 text-xs text-muted">Not: {c.evidenceNote}</p>}
+                        {c.withdrawnAt && (
+                          <p className="mt-1 text-xs text-ink-2">
+                            Geri çekildi: <time dateTime={c.withdrawnAt}>{formatDate(c.withdrawnAt)}</time>
+                          </p>
+                        )}
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-xs font-medium text-brand-strong">Kaydedilen rıza metni</summary>
+                          <p className="mt-1 whitespace-pre-line text-xs text-ink-2">{c.consentText}</p>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </section>
+        </aside>
+      </div>
 
       <Dialog
         open={consentOpen}

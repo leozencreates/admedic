@@ -72,7 +72,7 @@ export async function applyDailyBudgetChange(
     ? await tx.adSet.findMany({
         where: { campaignId: campaign.id },
         select: { id: true, metaAdSetId: true, dailyBudget: true },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }], // aynı milisaniyede oluşan ad set'lerde sıra sabit kalsın
       })
     : [];
   let metaLevel: BudgetChangeOutcome["metaLevel"] = null;

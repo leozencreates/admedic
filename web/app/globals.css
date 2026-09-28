@@ -537,6 +537,37 @@
     display: none;
   }
 
+  /* ── Lead gelen kutusu (K4-A, ADR-0019): liste + seçili lead; sayfa kaymaz, bölmeler kayar ── */
+  .inbox {
+    display: flex;
+    height: calc(100dvh - var(--topbar-h) - 48px);
+    min-height: 480px;
+    overflow: hidden;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  .app-main:has(.inbox) {
+    padding-bottom: 24px;
+  }
+  .inbox__list {
+    width: 340px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--color-line);
+  }
+  .inbox__detail {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    container-type: inline-size;
+  }
+
   /* ── Sayfa başlığı (K6-B) ─────────────────────────────────────────────── */
   .page-header {
     display: flex;
@@ -924,6 +955,28 @@
     }
     .app-main {
       padding: 16px 16px calc(var(--tabbar-h) + 32px);
+    }
+    /* Gelen kutusu: telefonda tam ekran; seçim yoksa liste, varsa yalnızca sohbet (alt çubuk gizli). */
+    .app-main:has(.inbox) {
+      padding: 0;
+      max-width: none;
+    }
+    .inbox {
+      height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom));
+      min-height: 0;
+      border: 0;
+      border-radius: 0;
+    }
+    .inbox[data-selected="true"] {
+      height: calc(100dvh - var(--topbar-h));
+    }
+    .inbox__list {
+      width: 100%;
+      border-right: 0;
+    }
+    .inbox[data-selected="true"] .inbox__list,
+    .inbox[data-selected="false"] .inbox__detail {
+      display: none;
     }
     .app-tabbar {
       position: fixed;

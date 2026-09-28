@@ -6,6 +6,7 @@ import { encrypt } from "../../_lib/encrypt";
 import { leadLookupHash } from "../../_lib/lead-hash";
 import { logAudit } from "../../_lib/audit";
 import { presentContact, sanitizeMetadata } from "../../_lib/lead-view";
+import { inboxStates } from "../../_lib/inbox";
 export const maxDuration = 10;
 const LeadSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -40,12 +41,15 @@ export async function GET() {
         createdAt: true, updatedAt: true, metadata: true, consentGiven: true,
       },
     });
+    // Gelen kutusu (ADR-0019): konuşma durumu, son mesaj (önizleme yalnızca bakım rollerine) ve "yanıt bekliyor".
+    const inbox = await inboxStates(actor, rows);
     return {
       // lookupHash select'te yok; e-posta/telefon role göre açık ya da maskeli döner.
       leads: rows.map((r) => ({
         ...r,
         ...presentContact(actor.role, { email: r.email, phone: r.phone }),
         metadata: sanitizeMetadata(r.metadata),
+        inbox: inbox.get(r.id) ?? null,
       })),
     };
   });

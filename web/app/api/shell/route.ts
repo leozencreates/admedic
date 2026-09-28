@@ -5,6 +5,7 @@ import { respond } from "../../_lib/http";
 import { countPendingApprovals, listPendingApprovals, scopePendingApprovals } from "../../_lib/pending-approvals";
 import { hasSpendAuthority } from "../../_lib/spend-authority";
 import { HANDOFF_ALERT_TYPE } from "../../_lib/lead-assistant";
+import { needsReplySummary } from "../../_lib/inbox";
 import { alertRecordLinks } from "../../_lib/record-refs";
 import { roleLabel } from "../../_lib/labels";
 
@@ -12,7 +13,7 @@ import { roleLabel } from "../../_lib/labels";
  * Kabuk özeti (ADR-0017): menü rozetleri, bildirim zili ve hesap menüsü için tek, hafif uç.
  * Salt okunur; her sayı çalışma alanıyla sınırlı ve role göre süzülür:
  * - Onaylar: Owner/Admin tüm bekleyen işler; Reklam uzmanı kendi gönderdikleri (+ yetkisi varsa etkinleştirmeler).
- * - Lead'ler: "Yanıt bekliyor" (NEW) lead sayısı; yalnızca hastayla yazışabilen roller.
+ * - Lead'ler: hastası bir insandan yanıt bekleyen lead sayısı (`inbox.ts` kuralı); yalnızca bakım rolleri.
  * - Uyarılar/zil: hasta koordinatörü yalnızca konuşma devri uyarılarını görür; izleyici hiç görmez.
  */
 const NOTIFICATION_LIMIT = 8;
@@ -47,7 +48,7 @@ export async function GET() {
     const [user, approvals, leads, alertCount, alerts] = await Promise.all([
       prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true, email: true } }),
       approvalCount(actor),
-      canCare ? prisma.lead.count({ where: { workspaceId: actor.workspaceId, status: "NEW" } }) : 0,
+      canCare ? needsReplySummary(actor).then((r) => r.count) : 0,
       scope && canCare ? prisma.alert.count({ where: scope }) : 0,
       scope
         ? prisma.alert.findMany({

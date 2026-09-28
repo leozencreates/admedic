@@ -9,6 +9,7 @@ import { prisma, type Prisma } from "@admedic/database";
 import type { Actor } from "./auth";
 import { formatMoney, formatNumber } from "./format";
 import { HANDOFF_ALERT_TYPE } from "./lead-assistant";
+import { needsReplySummary } from "./inbox";
 import {
   PENDING_APPROVAL_LABEL,
   listCorrectionRequests,
@@ -170,10 +171,7 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
 
   // 4) Yanıt bekleyen lead'ler: tek özet satırı (liste Lead'ler sayfasında).
   if (isCare(role)) {
-    const [waiting, oldest] = await Promise.all([
-      prisma.lead.count({ where: { workspaceId: actor.workspaceId, status: "NEW" } }),
-      prisma.lead.findFirst({ where: { workspaceId: actor.workspaceId, status: "NEW" }, orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
-    ]);
+    const { count: waiting, oldest } = await needsReplySummary(actor);
     if (waiting > 0)
       items.push({
         key: "leads-waiting",
@@ -181,8 +179,8 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
         title: `${formatNumber(waiting)} lead yanıt bekliyor`,
         context: "En uzun bekleyenden başlayın.",
         tone: "human",
-        since: oldest?.createdAt ?? null,
-        action: { label: "Lead'leri aç", href: "/leads?status=NEW" },
+        since: oldest,
+        action: { label: "Lead'leri aç", href: "/leads?tab=waiting" },
       });
   }
 

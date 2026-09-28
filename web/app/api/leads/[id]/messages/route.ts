@@ -19,6 +19,7 @@ import { resolveWhatsAppTransport } from "../../../../_lib/whatsapp-tenant";
 import { sendMessengerMessage } from "../../../../_lib/messenger";
 import { logAudit } from "../../../../_lib/audit";
 import { asRecord } from "../../../../_lib/lead-view";
+import { lastRealInboundAt } from "../../../../_lib/messaging-window";
 import { claimHandoff, resolveHandoffAlerts, userDisplayName } from "../../../../_lib/conversation-claim";
 export const maxDuration = 15;
 
@@ -82,28 +83,6 @@ async function resolveConversation(
   });
 }
 
-/**
- * 24 saat penceresi yalnızca gerçekten dış kanaldan gelen mesajlarla açılır:
- * INCOMING + (externalId ya da metadata.mid/wamid dolu ya da sender="external").
- * Panelden simüle edilen (sender = kullanıcı kimliği) gelen mesajlar sayılmaz.
- */
-async function lastRealInboundAt(conversationId: string): Promise<Date | null> {
-  const row = await prisma.message.findFirst({
-    where: {
-      conversationId,
-      direction: "INCOMING",
-      OR: [
-        { externalId: { not: null } },
-        { sender: "external" },
-        { metadata: { path: ["mid"], string_starts_with: "" } },
-        { metadata: { path: ["wamid"], string_starts_with: "" } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
-  });
-  return row?.createdAt ?? null;
-}
 
 export async function GET(
   request: Request,
@@ -111,6 +90,8 @@ export async function GET(
 ) {
   return respond(async () => {
     const actor = await requireActor();
+    // Mesaj içeriği hastanın kişisel (çoğu zaman sağlık) verisidir: yalnızca bakım rolleri okur.
+    requireRole(actor, CARE_ROLES);
     const { id } = await params;
     const conversation = await resolveConversation(id, actor);
     if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
@@ -139,7 +120,9 @@ export async function POST(
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, CARE_ROLES);
+    // Hastaya yazmak konuşmayı üstlenmek demektir (asistan susar): yalnızca Hesap sahibi, Yönetici ve
+    // Hasta koordinatörü (ADR-0019). Reklam uzmanı konuşmaları okuyabilir, yazamaz.
+    requireRole(actor, ESCALATION_ROLES);
     const { id } = await params;
     const input = await body(request, SendMessageSchema);
     const conversation = await resolveConversation(id, actor, {
@@ -149,8 +132,6 @@ export async function POST(
     if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
     if (conversation.status === "CLOSED")
       throw new HttpError(409, "Kapalı konuşmaya mesaj gönderilemez.");
-    // Devralınmış konuşmada yalnızca OWNER/ADMIN/PATIENT_COORDINATOR yazabilir.
-    if (conversation.status === "ESCALATED") requireRole(actor, ESCALATION_ROLES);
     // Asistanın devrettiği, henüz sahipsiz konuşmaya yazan ekip üyesi konuşmayı devralmış olur.
     const claim = conversation.status === "ESCALATED" && !conversation.escalatedTo;
 

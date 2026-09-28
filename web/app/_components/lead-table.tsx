@@ -1,10 +1,7 @@
-"use client";
-import Link from "next/link";
-import { Th } from "./ui";
-import { StageBar } from "./stage-bar";
-import { leadStage } from "../_lib/stages";
-import { formatDate, formatRelative } from "../_lib/format";
-import { channelLabel, countryName, languageName } from "../_lib/labels";
+/**
+ * Lead modeli ve liste süzgeci (istemci). Gelen kutusu listesi: `app/leads/lead-inbox.tsx` (ADR-0019).
+ */
+import type { InboxState } from "../_lib/inbox";
 
 export interface Lead {
   id: string;
@@ -21,6 +18,8 @@ export interface Lead {
   adId: string;
   consentGiven: boolean;
   created: string;
+  /** Gelen kutusu durumu (GET /api/leads); ayrıntı uçlarında yoktur. */
+  inbox: InboxState | null;
 }
 
 /** API'den gelen lead (GET /api/leads, GET /api/leads/:id); iletişim alanları role göre maskeli olabilir. */
@@ -42,6 +41,7 @@ export interface ApiLead {
   consentGiven?: boolean;
   createdAt?: string;
   created?: string;
+  inbox?: InboxState | null;
 }
 
 export function toLead(apiLead: ApiLead): Lead {
@@ -60,6 +60,7 @@ export function toLead(apiLead: ApiLead): Lead {
     adId: apiLead.adId ?? "",
     consentGiven: apiLead.consentGiven ?? false,
     created: apiLead.created ?? apiLead.createdAt ?? "",
+    inbox: apiLead.inbox ?? null,
   };
 }
 
@@ -75,113 +76,4 @@ export function filterLeads(leads: Lead[], search: string, statusFilter: string)
     const matchStatus = !statusFilter || l.status === statusFilter;
     return matchSearch && matchStatus;
   });
-}
-
-export function LeadTable({
-  leads,
-  onRowClick,
-  search,
-  statusFilter,
-  onClearFilters,
-}: {
-  leads: Lead[];
-  onRowClick?: (id: string) => void;
-  search: string;
-  statusFilter: string;
-  onClearFilters?: () => void;
-}) {
-  if (leads.length === 0) {
-    return (
-      <div className="studio-card py-12 text-center">
-        <h2>Henüz lead yok</h2>
-        <p className="mt-2 text-sm text-muted">
-          Kampanyalarınızdan ve WhatsApp&apos;tan gelen talepler burada listelenir.
-        </p>
-        <Link href="/campaign-planner" className="secondary-button mt-4">
-          Kampanyalara git
-        </Link>
-      </div>
-    );
-  }
-
-  const filtered = filterLeads(leads, search, statusFilter);
-  if (filtered.length === 0) {
-    return (
-      <div className="studio-card py-12 text-center">
-        <h2>Aramanıza uyan lead yok.</h2>
-        {onClearFilters && (
-          <button type="button" className="secondary-button mt-4" onClick={onClearFilters}>
-            Filtreleri temizle
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="overflow-x-auto rounded-xl border border-slate-200 bg-white"
-      tabIndex={0}
-      role="region"
-      aria-label="Lead tablosu"
-    >
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-slate-200">
-            <Th>Ad</Th>
-            <Th>Telefon</Th>
-            <Th>E-posta</Th>
-            <Th>Durum</Th>
-            <Th>Kanal</Th>
-            <Th>Ülke</Th>
-            <Th>Dil</Th>
-            <Th>Hizmet</Th>
-            <Th>Oluşturulma</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((lead) => {
-            const stage = leadStage(lead.status);
-            return (
-              <tr
-                key={lead.id}
-                className="cursor-pointer border-b border-slate-100 transition hover:bg-slate-50"
-                onClick={(e) => {
-                  // Satırın tamamı fare için tıklanabilir; ad bağlantısı (klavye, yeni sekme) kendi işini yapar.
-                  if ((e.target as Element).closest("a, button, input, select, textarea")) return;
-                  if (window.getSelection()?.toString()) return; // metin seçimi gezinme sayılmaz
-                  onRowClick?.(lead.id);
-                }}
-              >
-                <td className="whitespace-nowrap px-3 py-3 text-sm font-medium">
-                  <Link href={`/leads/${lead.id}`} className="text-slate-900 hover:underline" dir="auto">
-                    {lead.name}
-                  </Link>
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{lead.phone || "—"}</td>
-                <td className="px-3 py-3 text-sm text-slate-700">{lead.email || "—"}</td>
-                {/* `relative`: şeridin sr-only cümlesi kaydırma alanından taşıp mobilde sayfayı genişletmesin. */}
-                <td className="relative whitespace-nowrap px-3 py-3">
-                  <StageBar stage={stage} />
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{channelLabel(lead.channel)}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{countryName(lead.country)}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-700">{languageName(lead.language)}</td>
-                <td className="px-3 py-3 text-sm text-slate-700">{lead.interestedService || "—"}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-sm text-muted">
-                  {lead.created ? (
-                    <time dateTime={lead.created} title={formatDate(lead.created)}>
-                      {formatRelative(lead.created)}
-                    </time>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
 }

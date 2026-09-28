@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { api } from "../_lib/client-api";
-import { formatDate, formatDay, formatRelative } from "../_lib/format";
+import { ApiError, api } from "../_lib/client-api";
+import { formatDate, formatDay, formatDuration, formatRelative } from "../_lib/format";
 import { channelLabel } from "../_lib/labels";
 
 type Party = "lead" | "assistant" | "team" | "system";
@@ -25,9 +25,27 @@ interface ApiConversation {
   escalatedAt?: string | null;
   escalatedToName?: string | null;
   escalatedToIsMe?: boolean;
+  /** 24 saatlik mesajlaşma penceresi (sunucu hesaplar; kapalı konuşmada boş olabilir). */
+  replyWindow?: ReplyWindow;
   messages: ApiMessage[];
 }
+interface ReplyWindow {
+  lastInboundAt: string | null;
+  endsAt: string | null;
+  open: boolean;
+}
 type Conversation = Omit<ApiConversation, "messages">;
+/** Konuşma okuma yetkisi olmayan rolde sunucunun 403 metni (`requireRole`). */
+const TICK_MS = 60_000;
+const WINDOW_WARN_MS = 2 * 3_600_000;
+
+/** Kalan süre: "5 sa 12 dk", "38 dk", "1 dk'dan az". */
+function remainingText(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return formatDuration(ms);
+  const rest = minutes % 60;
+  return rest ? `${formatDuration(ms)} ${rest} dk` : formatDuration(ms);
+}
 
 const MESSAGE_CHANNELS = ["WHATSAPP", "INSTAGRAM", "MESSENGER", "SMS"];
 const PARTY_LABEL: Record<Party, string> = {
@@ -123,6 +141,12 @@ export function LeadChat({
   /** İlk yükleme bitti mi (arka plan yenilemesi yükleniyor göstermez). */
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  /** Konuşmayı okuma yetkisi yok (403): yeniden deneme anlamsız. */
+  const [forbidden, setForbidden] = useState(false);
+  /** Hastaya yazabilir / devralabilir mi (sunucu `canReply`); bilinmiyorsa null. */
+  const [canReply, setCanReply] = useState<boolean | null>(null);
+  /** Pencere geri sayımı için istemci saati (dakikada bir güncellenir; SSR'de kullanılmaz). */
+  const [now, setNow] = useState(0);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -140,20 +164,31 @@ export function LeadChat({
   const appliedSeq = useRef(0);
   const headingId = useId();
   const hintId = useId();
+  const windowId = useId();
 
   const channel =
     conversation?.channel ??
     (leadChannel && MESSAGE_CHANNELS.includes(leadChannel) ? leadChannel : "WHATSAPP");
   const isWhatsApp = channel === "WHATSAPP";
+  const isMetaChat = channel === "MESSENGER" || channel === "INSTAGRAM";
   const closed = conversation?.status === "CLOSED";
   const handoff = handoffView(conversation);
-  const useTemplate = templateMode && isWhatsApp;
+  const replyWindow: ReplyWindow = conversation?.replyWindow ?? { lastInboundAt: null, endsAt: null, open: false };
+  const windowEndsAt = replyWindow.endsAt ? new Date(replyWindow.endsAt).getTime() : NaN;
+  const remainingMs = Number.isFinite(windowEndsAt) && now > 0 ? windowEndsAt - now : NaN;
+  // Sunucu açık dese de istemci saatinde süre dolduysa pencere kapalı sayılır.
+  const windowOpen = replyWindow.open && !(remainingMs <= 0);
+  /** WhatsApp'ta pencere dışında (ya da hasta hiç yazmadıysa) yalnızca onaylı şablon gönderilebilir. */
+  const templateRequired = loaded && isWhatsApp && !closed && !windowOpen;
+  const useTemplate = isWhatsApp && (templateMode || templateRequired);
   const canSend = useTemplate ? Boolean(templateName.trim()) : Boolean(input.trim());
+  const showComposer = loaded && !closed && !forbidden && canReply !== false;
+  const showHandoffActions = canReply === true;
 
   const loadMessages = useCallback(async () => {
     const seq = ++requestSeq.current;
     try {
-      const data = await api<{ conversations: ApiConversation[] }>(`/api/conversations/${leadId}`);
+      const data = await api<{ canReply?: boolean; conversations: ApiConversation[] }>(`/api/conversations/${leadId}`);
       if (seq < appliedSeq.current) return; // daha yeni bir yanıt zaten gösteriliyor
       appliedSeq.current = seq;
       // Açık (ACTIVE/ESCALATED) konuşma öncelikli; yoksa en son konuşma.
@@ -166,9 +201,16 @@ export function LeadChat({
         setConversation(undefined);
         setMessages([]);
       }
+      setCanReply(data.canReply ?? true);
+      setForbidden(false);
       setLoadFailed(false);
-    } catch {
+      setNow(Date.now());
+    } catch (err) {
       if (seq < appliedSeq.current) return;
+      if (err instanceof ApiError && err.status === 403) {
+        setForbidden(true);
+        setCanReply(false);
+      }
       setLoadFailed(true);
     }
     setLoaded(true);
@@ -189,6 +231,12 @@ export function LeadChat({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [loadMessages]);
+
+  // Yanıt penceresinin kalan süresi dakikada bir güncellenir.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   // Yalnızca mesaj kutusu kayar (pencere asla): yeni mesaj geldiğinde ve kullanıcı zaten sondaysa.
   useLayoutEffect(() => {
@@ -258,48 +306,71 @@ export function LeadChat({
     }
   }
 
-  return (
-    <section className="studio-card" aria-labelledby={headingId}>
-      <div className="section-kicker">Mesajlar</div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id={headingId}>Konuşma</h2>
-        <p className="text-sm text-muted">Kanal: {channelLabel(channel)}</p>
-      </div>
+  /** Yazma alanının üstündeki tek satırlık 24 saatlik pencere göstergesi. */
+  function windowNotice(): { text: string; tone: string } | null {
+    if (!loaded || closed || !(isWhatsApp || isMetaChat)) return null;
+    if (windowOpen) {
+      if (!Number.isFinite(remainingMs)) return { text: "Yanıt penceresi açık.", tone: "text-ink-3" };
+      return {
+        text: `Yanıt penceresi açık · ${remainingText(remainingMs)} sonra kapanır`,
+        tone: remainingMs < WINDOW_WARN_MS ? "text-amber-800" : "text-ink-3",
+      };
+    }
+    if (isMetaChat) return { text: "24 saatlik pencere kapandı; mesaj insan temsilci etiketiyle gönderilir.", tone: "text-ink-3" };
+    if (!replyWindow.lastInboundAt)
+      return { text: "Hasta henüz yazmadı; ilk mesaj yalnızca onaylı şablonla gönderilebilir.", tone: "text-amber-800" };
+    return {
+      text: `Yanıt penceresi kapandı (son hasta mesajı: ${formatDate(replyWindow.lastInboundAt)}). Yalnızca onaylı şablonla yazabilirsiniz.`,
+      tone: "text-amber-800",
+    };
+  }
+  const notice = windowNotice();
 
-      {handoff.kind === "unclaimed" && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <p>{handoff.text}</p>
+  const stripTone =
+    handoff.kind === "unclaimed" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-line bg-surface text-ink-2";
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col" aria-labelledby={headingId}>
+      <h2 id={headingId} className="sr-only">
+        Konuşma
+      </h2>
+      {/* Durum şeridi: kanal + devir durumu ve Devral düğmesi. */}
+      <div className={`flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2 text-sm ${stripTone}`}>
+        <p className="min-w-0">
+          <span className="font-medium text-ink">{channelLabel(channel)}</span>
+          {handoff.kind !== "none" && (
+            <>
+              <span aria-hidden="true" className="text-ink-3">
+                {" · "}
+              </span>
+              <span>{handoff.text}</span>
+            </>
+          )}
+        </p>
+        {showHandoffActions && handoff.kind === "unclaimed" && (
           <button type="button" className="primary-button" disabled={handoffBusy} onClick={() => void takeOver()}>
             {handoffBusy ? "Devralınıyor…" : "Devral"}
           </button>
-        </div>
-      )}
-      {handoff.kind === "active" && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          <p>{handoff.text}</p>
+        )}
+        {showHandoffActions && handoff.kind === "active" && (
           <button type="button" className="secondary-button" disabled={handoffBusy} onClick={() => void takeOver()}>
             {handoffBusy ? "Devralınıyor…" : "Konuşmayı devral"}
           </button>
-        </div>
-      )}
-      {(handoff.kind === "claimed" || handoff.kind === "closed") && (
-        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{handoff.text}</p>
-      )}
+        )}
+      </div>
       {handoffError && (
-        <p role="alert" className="mt-2 text-sm text-rose-700">
+        <p role="alert" className="shrink-0 border-b border-line px-4 py-2 text-sm text-rose-700">
           {handoffError}
         </p>
       )}
 
-      {isWhatsApp && !closed && (
-        <p className="mt-3 text-sm text-muted">
-          WhatsApp&apos;ta son mesajın üzerinden 24 saat geçtiyse yalnızca onaylı şablon gönderebilirsiniz.
-        </p>
-      )}
-
       {!loaded ? (
-        <p role="status" className="mt-4 text-sm text-muted">
+        <p role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-muted">
           Mesajlar yükleniyor…
+        </p>
+      ) : forbidden ? (
+        <p role="alert" className="flex flex-1 items-center justify-center p-6 text-center text-sm text-ink-2">
+          Mesajları görme yetkiniz yok.
         </p>
       ) : (
         <div
@@ -308,7 +379,7 @@ export function LeadChat({
           aria-label="Mesajlar"
           tabIndex={0}
           onScroll={onLogScroll}
-          className="mt-4 max-h-[min(60vh,32rem)] min-h-48 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:p-4"
+          className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4"
         >
           {messages.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">Henüz mesaj yok.</p>
@@ -341,8 +412,8 @@ export function LeadChat({
           )}
         </div>
       )}
-      {loadFailed && (
-        <div role="alert" className="mt-2 flex flex-wrap items-center gap-3 text-sm text-rose-700">
+      {loadFailed && !forbidden && (
+        <div role="alert" className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-4 py-2 text-sm text-rose-700">
           <span>
             {messages.length
               ? "Mesajlar güncellenemedi. Bağlantınızı kontrol edin."
@@ -354,16 +425,34 @@ export function LeadChat({
         </div>
       )}
 
-      {!closed && (
-        <form onSubmit={sendMessage} className="mt-4 space-y-3">
+      {loaded && !forbidden && canReply === false && !closed && (
+        <p className="shrink-0 border-t border-line bg-surface px-4 py-3 text-sm text-ink-3">
+          Hastaya yalnızca hesap sahibi, yönetici ve hasta koordinatörü yazabilir.
+        </p>
+      )}
+
+      {showComposer && (
+        <form onSubmit={sendMessage} className="shrink-0 space-y-2 border-t border-line bg-surface px-3 py-3 sm:px-4">
+          {notice && (
+            <p id={windowId} className={`text-xs ${notice.tone}`}>
+              {notice.text}
+            </p>
+          )}
           {isWhatsApp && (
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={templateMode} onChange={(e) => setTemplateMode(e.target.checked)} />
+            <label className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+              <input
+                type="checkbox"
+                checked={useTemplate}
+                disabled={templateRequired}
+                aria-describedby={templateRequired && notice ? windowId : undefined}
+                onChange={(e) => setTemplateMode(e.target.checked)}
+              />
               Onaylı şablonla gönder
+              {templateRequired && <span className="text-xs text-ink-3">(pencere kapalıyken zorunlu)</span>}
             </label>
           )}
           {useTemplate && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               <label className="field">
                 Meta&apos;da onaylı şablon adı
                 <input
@@ -387,27 +476,30 @@ export function LeadChat({
               </label>
             </div>
           )}
-          <label className="field">
-            {useTemplate ? "Panelde görünecek not (isteğe bağlı, hastaya gönderilmez)" : "Yanıt"}
-            <textarea
-              ref={composerRef}
-              className="input"
-              rows={3}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onComposerKeyDown}
-              aria-describedby={hintId}
-              dir="auto"
-            />
-          </label>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p id={hintId} className="text-xs text-muted">
-              Klavyede Enter gönderir, Shift+Enter yeni satır açar.
-            </p>
-            <button type="submit" className="primary-button" disabled={sending || !canSend}>
+          <div className="flex items-end gap-2">
+            <label className="field min-w-0 flex-1">
+              <span className={useTemplate ? undefined : "sr-only"}>
+                {useTemplate ? "Panelde görünecek not (isteğe bağlı, hastaya gönderilmez)" : "Yanıt"}
+              </span>
+              <textarea
+                ref={composerRef}
+                className="input field-sizing-content max-h-[8.5rem] min-h-14 resize-none"
+                rows={2}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onComposerKeyDown}
+                aria-describedby={hintId}
+                placeholder={useTemplate ? undefined : "Yanıt yazın…"}
+                dir="auto"
+              />
+            </label>
+            <button type="submit" className="primary-button shrink-0" disabled={sending || !canSend}>
               {sending ? "Gönderiliyor…" : useTemplate ? "Şablonu gönder" : "Gönder"}
             </button>
           </div>
+          <p id={hintId} className="hidden text-xs text-muted [@media(pointer:fine)]:block">
+            Klavyede Enter gönderir, Shift+Enter yeni satır açar.
+          </p>
           {sendError && (
             <p role="alert" className="text-sm text-rose-700">
               {sendError}

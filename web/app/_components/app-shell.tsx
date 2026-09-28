@@ -72,6 +72,8 @@ export function AppShell({
     alerts: t("shell.alertsBadge", lang),
   };
   const isLogin = pathname === "/login";
+  // Açık bir lead konuşmasında alt sekme çubuğu yoktur (yazma alanı altta sabit, ADR-0019).
+  const inConversation = /^\/leads\/[^/]+$/.test(pathname);
 
   const loadSummary = useCallback(async () => {
     try {
@@ -440,7 +442,7 @@ export function AppShell({
         </div>
       </div>
 
-      <nav className="app-tabbar" aria-label={t("layout.tabNav", lang)} data-hidden={typing ? "true" : "false"}>
+      <nav className="app-tabbar" aria-label={t("layout.tabNav", lang)} data-hidden={typing || inConversation ? "true" : "false"}>
         {tabs.map((tab) => {
           const count = tab.badge ? (counts[tab.badge] ?? 0) : 0;
           const current = context.href === tab.href && !sheetOpen;

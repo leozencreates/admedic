@@ -1,5 +1,5 @@
 import { prisma } from "@admedic/database";
-import { requireActor, requireRole, CARE_ROLES, ESCALATION_ROLES, type Actor } from "../../../../_lib/auth";
+import { requireActor, requireRole, ESCALATION_ROLES, type Actor } from "../../../../_lib/auth";
 import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { logAudit } from "../../../../_lib/audit";
 import {
@@ -30,17 +30,18 @@ async function conflict(
 
 /**
  * Konuşmayı devral (spec 3.8):
- * - ACTIVE → ESCALATED: asistan yanıtlarken ekip konuşmayı üstlenir (CARE_ROLES).
+ * - ACTIVE → ESCALATED: asistan yanıtlarken ekip konuşmayı üstlenir (ESCALATION_ROLES; ADR-0019).
  * - ESCALATED ve sahipsiz (asistan devretti): konuşma devralan kişiye yazılır, sistem notu ve denetim
- *   kaydı eklenir, açık devir uyarıları çözülür. Devralınmış konuşmada yalnızca ESCALATION_ROLES
- *   yazabildiği için devralma da bu rollere açıktır (reklam uzmanı devralamaz).
+ *   kaydı eklenir, açık devir uyarıları çözülür.
+ * Devralma her durumda yalnızca ESCALATION_ROLES'a (Hesap sahibi, Yönetici, Hasta koordinatörü) açıktır;
+ * reklam uzmanı devralamaz.
  * - Zaten devralınmış ya da kapalı konuşma: 409.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
-    requireRole(actor, CARE_ROLES);
+    requireRole(actor, ESCALATION_ROLES);
     const { id } = await params;
     const input = await body(request, EscalateSchema);
     const conversation = await prisma.conversation.findFirst({
@@ -49,7 +50,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!conversation) throw new HttpError(404, "Konuşma bulunamadı.");
     const claim = conversation.status === "ESCALATED";
     if (conversation.status === "CLOSED" || (claim && conversation.escalatedTo)) throw await conflict(actor, conversation);
-    if (claim) requireRole(actor, ESCALATION_ROLES);
     const displayName = await userDisplayName(actor.userId);
     const note = input.note?.trim() || undefined;
     const done = await prisma.$transaction(async (tx) => {
