@@ -60,7 +60,7 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 
 11. **2026-09-29 Faz 7-A (ADR-0023):** yeni migration `20260929090000_webhook_delivery_queue` (toplam 25) ve yeni
     bağımlılıklar (`@prisma/adapter-pg`, `pg`, `pino`, işçide `tsx`) — depo kökünde `pnpm install` ve
-    `scripts\dev-up.cmd`. Prisma artık Rust'sız istemci kullanır (sorgu motoru indirilmez). Canlıya geçiş için sırayla:
+    `scripts\dev-up.cmd` (PostgreSQL yoksa önce `scripts\setup-postgres.cmd`: kurar, veritabanını ve `.env`'yi hazırlar). Prisma artık Rust'sız istemci kullanır (sorgu motoru indirilmez). Canlıya geçiş için sırayla:
     - **Ürün sahibi:** Türkiye'de barındırma sağlayıcısı ve sunucu, alan adı, Meta işletme doğrulaması, uygulamanın
       bağlı olacağı Business Manager, pilot klinik reklam hesabı (`docs/app-review.md`).
     - **Kurulum:** `docs/runbook.md` (Docker Compose; imaj derlemesi bu ortamda denenemedi, ilk kurulumda doğrulanacak).
