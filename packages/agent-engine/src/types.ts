@@ -52,7 +52,9 @@ export interface AdSetAgentInput {
   targetType: AgentTargetType;
   currentBudgetCents: number;
   status: EntityStatus;
-  buckets: ObservationBucket[]; // ageHours asc, major birimde
+  /** Gözlem kovaları. Sıra garantisi YOKTUR: `ageHours` büyük olan daha eskidir; trend ve
+   *  olgunluk kontrolleri sıraya değil `ageHours` değerine göre yapılır. */
+  buckets: ObservationBucket[]; // major birimde
   policy: PolicyGuardrails;
   settings: EngineSettings;
   posterior: PosteriorConfig;

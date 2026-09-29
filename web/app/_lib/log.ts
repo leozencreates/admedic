@@ -39,12 +39,20 @@ export const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
 });
 
-/** Hata nesnesinden kişisel veri içermeyen özet: sınıf, Prisma/HTTP kodu ve ilk satırın başı. */
-export function errorSummary(error: unknown): { name: string; code?: string; message: string } {
+const SAFE_ERROR_NAMES = new Set([
+  "Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "URIError", "AggregateError",
+  "PrismaClientKnownRequestError", "PrismaClientUnknownRequestError", "PrismaClientValidationError",
+  "PrismaClientInitializationError", "HttpError",
+]);
+
+/** Hata metni ve stack kullanıcı girdisi içerebilir; yalnızca bilinen sınıf ve Prisma/HTTP kodu kaydedilir. */
+export function errorSummary(error: unknown): { name: string; code?: string } {
   const code = (error as { code?: unknown } | null)?.code;
+  const safeCode = typeof code === "string" && /^P\d{4}$/.test(code)
+    ? code
+    : typeof code === "number" && Number.isInteger(code) && code >= 100 && code <= 599 ? String(code) : undefined;
   return {
-    name: error instanceof Error ? error.name : typeof error,
-    ...(code !== undefined ? { code: String(code) } : {}),
-    message: error instanceof Error ? error.message.split("\n")[0].slice(0, 200) : String(error).slice(0, 200),
+    name: error instanceof Error && SAFE_ERROR_NAMES.has(error.name) ? error.name : "Error",
+    ...(safeCode !== undefined ? { code: safeCode } : {}),
   };
 }

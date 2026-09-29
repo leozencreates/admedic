@@ -34,16 +34,24 @@ export interface VariantMetrics {
 
 /**
  * Prisma `Json` sütunu string (eski kayıt) ya da nesne olarak gelebilir:
- * string ise JSON.parse, nesne ise aynen döner.
+ * string ise JSON.parse, nesne ise aynen döner. Bozuk/yarım kalmış legacy string
+ * tüm üretimi 500'e düşürmek yerine varsayılan değere döner.
  */
-export function parseJsonColumn<T>(value: unknown): T {
-  if (typeof value === "string") return JSON.parse(value) as T;
-  return value as T;
+export function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (typeof value !== "string") return (value ?? fallback) as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 function toMetrics(raw: unknown): VariantMetrics {
   const m = (raw ?? {}) as Partial<Record<keyof VariantMetrics, unknown>>;
-  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0);
+  const num = (v: unknown) => {
+    const n = (typeof v === "number" && Number.isFinite(v) ? v : Number(v)) || 0;
+    return n > 0 ? n : 0;
+  };
   return { spend: num(m.spend), clicks: num(m.clicks), leads: num(m.leads) };
 }
 
@@ -83,8 +91,14 @@ export function decideWinner(a: VariantMetrics, b: VariantMetrics): WinnerDecisi
   const lose = candidate === "A" ? b : a;
   if (win.leads < WINNER_THRESHOLDS.minLeads) return { winner: null, edge: 0, reason: "INSUFFICIENT_LEADS" };
   const loseCpl = cplOf(lose);
-  const edge = loseCpl === Infinity ? 1 : (loseCpl - cplOf(win)) / loseCpl;
-  if (edge < WINNER_THRESHOLDS.minCplEdge) return { winner: null, edge, reason: "EDGE_TOO_SMALL" };
+  // loseCpl === Infinity: kaybeden hiç lead üretmedi -> ölçülebilir fark tam avantaj (1).
+  // loseCpl === 0: kaybeden lead üretti ama harcaması sıfır; kazanan da (CPL'i düşük olan
+  // seçildiği için) sıfır harcamalıdır, yani `(0 - 0) / 0` -> NaN. Böyle bir deneyde
+  // karşılaştırılacak harcamalı CPL yoktur; ölçülebilir avantaj 0 kabul edilir.
+  const edge = loseCpl === Infinity ? 1 : loseCpl > 0 ? (loseCpl - cplOf(win)) / loseCpl : 0;
+  if (!Number.isFinite(edge) || edge < WINNER_THRESHOLDS.minCplEdge) {
+    return { winner: null, edge: Number.isFinite(edge) ? edge : 0, reason: "EDGE_TOO_SMALL" };
+  }
   return { winner: candidate, edge, reason: "DECISIVE" };
 }
 
@@ -95,8 +109,8 @@ export async function generateRecommendations(input: RecommendationInput): Promi
   });
   if (!experiment || experiment.status !== "COMPLETED") return [];
 
-  const snapshot = parseJsonColumn<{ variants?: Array<{ headline?: string }> }>(experiment.snapshot) ?? {};
-  const rawMetrics = parseJsonColumn<unknown[]>(experiment.metrics) ?? [];
+  const snapshot = parseJsonColumn<{ variants?: Array<{ headline?: string }> }>(experiment.snapshot, { variants: [] });
+  const rawMetrics = parseJsonColumn<unknown[]>(experiment.metrics, []);
   const a = toMetrics(rawMetrics[0]);
   const b = toMetrics(rawMetrics[1]);
   const currency = experiment.draft?.workspace?.currency ?? "EUR";
@@ -159,7 +173,8 @@ export async function generateRecommendations(input: RecommendationInput): Promi
   const loseCpl = cplOf(lose);
   const edgePct = Math.round(decision.edge * 100);
   // Kaybeden bütçesi kazanan CPL'iyle harcansaydı: ek lead ve aynı lead için tasarruf (major).
-  const estimatedAdditionalLeads = Math.max(0, Math.round(lose.spend / winCpl - lose.leads));
+  // Kazananın CPL'i 0 ise (harcamasız lead) bölme Infinity verir; ölçülebilir ek lead yoktur.
+  const estimatedAdditionalLeads = winCpl > 0 ? Math.max(0, Math.round(lose.spend / winCpl - lose.leads)) : 0;
   const estimatedSavings = loseCpl === Infinity ? Math.round(lose.spend) : Math.max(0, Math.round(lose.spend - lose.leads * winCpl));
   const loserCplText = loseCpl === Infinity ? "lead yok" : `CPL ${money(loseCpl, currency)}`;
 

@@ -392,16 +392,18 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Meta OAuth ve bağlantı y�
     expect(row).not.toHaveProperty("tokenCiphertext");
 
     // Başka bir organizasyonun aktif bağlantısında kayıtlı kimlik buraya eşlenemez (webhook ele geçirme) → 409.
-    const foreignConn = await prisma.metaConnection.findFirst({ where: { orgId: { not: orgIds[0] }, status: "CONNECTED" } });
-    if (foreignConn) {
-      await prisma.metaConnection.update({ where: { id: foreignConn.id }, data: { pageId: `victim-page-${conn.id}` } });
-      const hijack = await connectionPatch(
-        req(`/api/meta/connections/${conn.id}`, "PATCH", { pageId: `victim-page-${conn.id}` }),
-        { params: Promise.resolve({ id: conn.id }) },
-      );
-      expect(hijack.status).toBe(409);
-      expect((await prisma.metaConnection.findUniqueOrThrow({ where: { id: conn.id } })).pageId).not.toBe(`victim-page-${conn.id}`);
-    }
+    // Yabancı bağlantı bu testin KENDİ ikinci organizasyonunda kurulur; aksi halde paralel çalışan
+    // başka test dosyalarının verisiyle yarışılır (kayıt arada silinirse update patlar).
+    const victimPageId = `victim-page-${conn.id}`;
+    await prisma.metaConnection.create({
+      data: { orgId: orgIds[1]!, type: "PAGE", status: "CONNECTED", name: "Yabancı sayfa", pageId: victimPageId },
+    });
+    const hijack = await connectionPatch(
+      req(`/api/meta/connections/${conn.id}`, "PATCH", { pageId: victimPageId }),
+      { params: Promise.resolve({ id: conn.id }) },
+    );
+    expect(hijack.status).toBe(409);
+    expect((await prisma.metaConnection.findUniqueOrThrow({ where: { id: conn.id } })).pageId).not.toBe(victimPageId);
 
     // MEDIA_BUYER → 403; başka tenant → 404.
     cookieJar.set(SESSION_COOKIE, tokenBuyer);

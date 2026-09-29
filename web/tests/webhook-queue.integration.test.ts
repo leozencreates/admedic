@@ -38,13 +38,13 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("webhook teslim kuyruğu", (
 
   it("işleme hatası teslimi kaybettirmez: şifreli saklanır, süpürücü yeniden dener", async () => {
     const raw = JSON.stringify({ marker, retry: true, text: "Tedavi geçmişim" });
-    expect(await acceptMetaWebhook(raw, failing("veritabanı geçici olarak yanıt vermiyor"))).toEqual({ received: true, queued: true });
+    expect(await acceptMetaWebhook(raw, failing(`İşlenemeyen özel gövde: ${raw}`))).toEqual({ received: true, queued: true });
     const row = await latest();
     ids.push(row.id);
     expect(row).toMatchObject({ status: "PENDING", attempts: 1 });
     expect(row.payload).not.toBeNull();
     expect(row.payload).not.toContain("Tedavi");
-    expect(row.lastError).toContain("geçici");
+    expect(row.lastError).toBe(JSON.stringify({ name: "Error" }));
     // İlk deneme istekte yapıldığı için satır birkaç dakika kilitli; zamanı gelmeden alınmaz.
     expect((await retryDueDeliveries({ now: new Date(), ingest: ok })).processed).toBe(0);
     const seen: string[] = [];

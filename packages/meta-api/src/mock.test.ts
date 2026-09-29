@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createMetaClient } from "./index";
 import { MetaGraphError } from "./http";
@@ -51,7 +51,7 @@ describe("MockMetaClient", () => {
     expect(last.ctr).toBeGreaterThan(0);
   });
 
-  it("aggregate (default): tek satır, aralık toplamı", async () => {
+  it("aggregate (default): adset seviyesi TEK satır, aralık toplamı (ad başına satır değil)", async () => {
     const rows = await client.getInsights(
       { type: "adset", id: "as_mock_1_0" },
       TOKEN,
@@ -60,12 +60,76 @@ describe("MockMetaClient", () => {
         timeIncrement: "all_days",
       },
     );
-    expect(rows).toHaveLength(5); // adset başına 5 ad
-    for (const row of rows) {
-      expect(row.adId).toBeDefined();
-      expect(row.spendMajor).toBeGreaterThan(0);
-      expect(row.dateStart).toBe("2026-09-01");
-      expect(row.dateStop).toBe("2026-09-10");
+    expect(rows).toHaveLength(1); // adset toplamı tek satır
+    const row = rows[0]!;
+    expect(row.adId).toBeUndefined();
+    expect(row.adsetId).toBe("as_mock_1_0");
+    expect(row.campaignId).toBe("cmp_mock_2");
+    expect(row.spendMajor).toBeGreaterThan(0);
+    expect(row.dateStart).toBe("2026-09-01");
+    expect(row.dateStop).toBe("2026-09-10");
+
+    // Adset toplamı = içindeki 5 ad'ın toplamı (gerçek Meta ile aynı): fan-out sapması yok.
+    const ads = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        client.getInsights(
+          { type: "ad", id: `ad_mock_1_0_${i}` },
+          TOKEN,
+          { timeRange: { since: "2026-09-01", until: "2026-09-10" } },
+        ),
+      ),
+    );
+    const expectedSpend = ads.reduce((a, r) => a + r[0]!.spendMajor, 0);
+    expect(row.spendMajor).toBeCloseTo(expectedSpend, 2);
+  });
+
+  it("kampanya seviyesi tek satır; account seviyesi query.level kırılımına göre satır döner", async () => {
+    const campaign = await client.getInsights(
+      { type: "campaign", id: "cmp_mock_2" },
+      TOKEN,
+      { timeRange: { since: "2026-09-01", until: "2026-09-10" } },
+    );
+    expect(campaign).toHaveLength(1);
+    expect(campaign[0]!.campaignId).toBe("cmp_mock_2");
+    expect(campaign[0]!.adsetId).toBeUndefined();
+    expect(campaign[0]!.adId).toBeUndefined();
+
+    const byCampaign = await client.getInsights(
+      { type: "account", id: "act_mock_001" },
+      TOKEN,
+      { timeRange: { since: "2026-09-01", until: "2026-09-10" }, level: "campaign" },
+    );
+    expect(byCampaign).toHaveLength(5);
+
+    const byAd = await client.getInsights(
+      { type: "account", id: "act_mock_001" },
+      TOKEN,
+      { timeRange: { since: "2026-09-01", until: "2026-09-10" }, level: "ad" },
+    );
+    expect(byAd).toHaveLength(50);
+  });
+
+  it("takvim tabanlı date presets gerçek pencereyi döner (yesterday/this_month/last_month)", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-30T12:00:00Z"));
+      const ref = { type: "ad" as const, id: "ad_mock_0_0_0" };
+
+      const yesterday = await client.getInsights(ref, TOKEN, { datePreset: "yesterday", timeIncrement: 1 });
+      expect(yesterday).toHaveLength(1);
+      expect(yesterday[0]!.dateStart).toBe("2026-09-29");
+      expect(yesterday[0]!.dateStop).toBe("2026-09-29");
+
+      const thisMonth = await client.getInsights(ref, TOKEN, { datePreset: "this_month", timeIncrement: 1 });
+      // Günler en yeniden en eskiye sıralanır.
+      expect(thisMonth[0]!.dateStart).toBe("2026-09-30");
+      expect(thisMonth.at(-1)!.dateStart).toBe("2026-09-01");
+
+      const lastMonth = await client.getInsights(ref, TOKEN, { datePreset: "last_month", timeIncrement: 1 });
+      expect(lastMonth[0]!.dateStart).toBe("2026-08-31");
+      expect(lastMonth.at(-1)!.dateStart).toBe("2026-08-01");
+    } finally {
+      vi.useRealTimers();
     }
   });
 

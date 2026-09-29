@@ -25,11 +25,20 @@ import type {
 export type { FatigueLevel };
 
 /**
- * Trend: son yarı pencerenin ROAS'ı önceki yarıya oranla.
+ * Kovaları "en eskiden en yeniye" sıralar. `ageHours` şimdiden geriye sayıldığı için büyük
+ * değer daha eskidir. Sıralama burada yapılır: çağıranın sıra garantisi vermemesi durumunda
+ * trend tersine dönmesin ve olgunluk kapısı en yeni kovayı okumasın.
+ */
+function oldestFirst<T extends { ageHours: number }>(buckets: T[]): T[] {
+  return [...buckets].sort((a, b) => b.ageHours - a.ageHours);
+}
+
+/**
+ * Trend: eski yarı pencerenin ROAS'ı yeni yarıya oranla.
  * Yetersiz veri/spend → INSUFFICIENT_DATA.
  */
 export function classifyTrend(
-  buckets: { spendMajor: number; revenueMajor: number }[],
+  buckets: { ageHours: number; spendMajor: number; revenueMajor: number }[],
   settings: {
     strongRising: number;
     rising: number;
@@ -38,9 +47,10 @@ export function classifyTrend(
   },
 ): TrendDirection {
   if (buckets.length < 3) return "INSUFFICIENT_DATA";
-  const mid = Math.floor(buckets.length / 2);
-  const older = buckets.slice(0, mid);
-  const recent = buckets.slice(mid);
+  const ordered = oldestFirst(buckets);
+  const mid = Math.floor(ordered.length / 2);
+  const older = ordered.slice(0, mid);
+  const recent = ordered.slice(mid);
   const roas = (b: { spendMajor: number; revenueMajor: number }[]) => {
     const s = b.reduce((a, x) => a + x.spendMajor, 0);
     const r = b.reduce((a, x) => a + x.revenueMajor, 0);
@@ -96,8 +106,11 @@ export function evaluateAdSet(input: AdSetAgentInput): AgentDecisionOut {
   const trend = classifyTrend(input.buckets, settings);
   const zeroPurchases = posterior.rawPurchases === 0;
 
+  // En eski kova: ageHours en büyük olan. Sıraya güvenilmez (bkz. oldestFirst).
   const oldestAgeHours =
-    input.buckets.length > 0 ? input.buckets[0]!.ageHours : 0;
+    input.buckets.length > 0
+      ? Math.max(...input.buckets.map((b) => b.ageHours))
+      : 0;
   const minRuntimeReached = oldestAgeHours >= policy.minTestDurationHours;
   const minMatureReached = oldestAgeHours >= settings.minMatureHours;
 
@@ -184,6 +197,9 @@ export function evaluateAdSet(input: AdSetAgentInput): AgentDecisionOut {
     consecutivePositiveEvaluations: 0,
   });
 
+  // Cap teşhisi: artış uygulanamıyorsa KEEP gerekçesinde korunur.
+  let capReason: string | null = null;
+
   if (
     scale.action === "SCALE" &&
     minSpendReached &&
@@ -197,8 +213,13 @@ export function evaluateAdSet(input: AdSetAgentInput): AgentDecisionOut {
       policy,
       used24hChangeCents: used24h,
     });
+    capReason = clamped.reason;
 
-    if (clamped.budgetCents > currentBudgetCents || clamped.capped) {
+    // Yalnızca gerçek bir artış önerilir. `clamped.capped`, bütçeyi yükseltmeyen bir
+    // guardrail'den de gelir (ör. 24 saatlik pay tükendi → bütçe cari değerde kalır); bu
+    // durumda `INCREASE_BUDGET` sıfır değişimli bir onay işi ve WINNER_DETECTED uyarısı
+    // üretirdi. Cap teşhisi KEEP dalında `reason` içinde korunur.
+    if (clamped.budgetCents > currentBudgetCents) {
       return {
         ...base,
         decisionKey: decisionKeyFor(
@@ -232,7 +253,7 @@ export function evaluateAdSet(input: AdSetAgentInput): AgentDecisionOut {
       base.ruleVersion,
     ),
     action: "KEEP",
-    reason: `KEEP_RUNNING: ${scale.reasonCode} / minSpend:${minSpendReached} / minPurchases:${minPurchasesReached}`,
+    reason: `KEEP_RUNNING: ${scale.reasonCode} / minSpend:${minSpendReached} / minPurchases:${minPurchasesReached}${capReason ? ` · cap:${capReason}` : ""}`,
     algorithm: "rules_v1",
     changePct: 0,
     proposedBudgetCents: currentBudgetCents,
@@ -295,8 +316,11 @@ function applyStop(
         action: "DECREASE_BUDGET",
         reason: `DOWNSCALE (${stop.reasonCode})${clamped.reason ? ` · cap:${clamped.reason}` : ""}`,
         algorithm: "rules_v1",
+        // Cari bütçe 0 ise oran tanımsızdır (0/0 -> NaN, Float sütununda null olarak saklanır).
         changePct:
-          (clamped.budgetCents - currentBudgetCents) / currentBudgetCents,
+          currentBudgetCents > 0
+            ? (clamped.budgetCents - currentBudgetCents) / currentBudgetCents
+            : 0,
         proposedBudgetCents: clamped.budgetCents,
         approval: "PENDING",
       };

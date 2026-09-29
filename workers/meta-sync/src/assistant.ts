@@ -112,9 +112,10 @@ export function toHistory(
 /**
  * Adaylar: ACTIVE, karşılanmış (`firstResponseAt`) ve son mesajı karşılamadan sonra gelen
  * INCOMING olan konuşmalar (en eski bekleyen önce). Son mesaj koşulu SQL'de (LATERAL) uygulanır
- * ki yanıtlanmış konuşmalar tur limitini doldurmasın. 24 saatlik mesajlaşma penceresi dışında
- * kalan gelen mesajlara serbest metin gönderilemez (WhatsApp şablon / Messenger HUMAN_AGENT
- * kuralı); onlar koordinatöre bırakılır.
+ * ki yanıtlanmış konuşmalar tur limitini doldurmasın. Deneme sınırına ulaşan mesajlar da SQL'de
+ * elenir; aksi halde en eski "takılı" konuşmalar `LIMIT`i doldurup daha yeni adayları açlığa
+ * sürükler (kuyruk tıkanır). 24 saatlik mesajlaşma penceresi dışında kalan gelen mesajlara serbest
+ * metin gönderilemez (WhatsApp şablon / Messenger HUMAN_AGENT kuralı); onlar koordinatöre bırakılır.
  */
 async function findCandidates(options: AssistantRunOptions) {
   const limit = options.limit ?? 50;
@@ -122,7 +123,7 @@ async function findCandidates(options: AssistantRunOptions) {
     SELECT c.id
     FROM "Conversation" c
     JOIN LATERAL (
-      SELECT m.direction, m."createdAt"
+      SELECT m.direction, m."createdAt", m.metadata
       FROM "Message" m
       WHERE m."conversationId" = c.id
       ORDER BY m."createdAt" DESC
@@ -133,6 +134,11 @@ async function findCandidates(options: AssistantRunOptions) {
       AND last.direction = 'INCOMING'
       AND last."createdAt" > c."firstResponseAt"
       AND last."createdAt" > now() - interval '24 hours'
+      AND COALESCE(
+        CASE WHEN (last.metadata->>'assistantAttempts') ~ '^[0-9]+$'
+             THEN (last.metadata->>'assistantAttempts')::int END,
+        0
+      ) < ${ASSISTANT_MAX_ATTEMPTS}
       ${options.workspaceId ? Prisma.sql`AND c."workspaceId" = ${options.workspaceId}` : Prisma.empty}
     ORDER BY last."createdAt" ASC
     LIMIT ${limit}

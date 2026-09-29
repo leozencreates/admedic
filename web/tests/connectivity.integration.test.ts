@@ -135,7 +135,9 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
         where: { id: { in: orgIds } },
       });
       await prisma.requestQuota.deleteMany({
-        where: { key: { startsWith: "oauth:" } },
+        where: {
+          OR: orgIds.map((id) => ({ key: { startsWith: `oauth:${id}:` } })),
+        },
       });
       if (userId) await prisma.user.delete({ where: { id: userId } });
       vi.unstubAllEnvs();

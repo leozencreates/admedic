@@ -686,7 +686,8 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("meta webhook integration", 
   });
 
   it("bilinmeyen sayfa/numara hiçbir yazma yapmaz; bilinmeyen biçim 200 ignored döner", async () => {
-    const before = await prisma.lead.count();
+    const ownLeads = { organizationId: { in: orgIds } };
+    const before = await prisma.lead.count({ where: ownLeads });
     const unknownPage = {
       object: "page",
       entry: [
@@ -721,7 +722,9 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("meta webhook integration", 
       ],
     };
     expect(await (await POST(signedRequest(unknownNumber, secret))).json()).toMatchObject({ processed: 0, ignoredPages: 1 });
-    expect(await prisma.lead.count()).toBe(before);
+    expect(await prisma.lead.count({ where: ownLeads })).toBe(before);
+    expect(await prisma.lead.count({ where: { leadgenId: `lg-${suffix}-unknown` } })).toBe(0);
+    expect(await prisma.message.count({ where: { externalId: `wamid.${suffix}.unknown` } })).toBe(0);
     expect(await prisma.message.count({ where: { externalId: `m_${suffix}_unknown` } })).toBe(0);
 
     for (const body of [{ object: "user", entry: [{ id: "1", changes: [] }] }, { hello: "world" }, [1, 2, 3]]) {

@@ -52,7 +52,7 @@ function stubClient(behaviour: Record<string, () => Promise<MetaInsightRow[]>>):
   } as unknown as MetaClientLike;
 }
 
-describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync worker (DB)", () => {
+describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("meta-sync worker (DB)", () => {
   const suffix = randomBytes(6).toString("hex");
   let orgId = "";
   let workspaceId = "";

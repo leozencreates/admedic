@@ -102,6 +102,88 @@ describe("evaluateAdSet", () => {
     expect(a.decisionKey).toContain("as_mock_1_0");
     expect(a.decisionKey).toContain("adset");
   });
+
+  it("24s payı tükendiğinde sıfır değişimli INCREASE_BUDGET üretmez", () => {
+    // maxChangePer24hPct=50, cari 20.000 → pay 10.000; bu pencerede çok bütçe değişimi
+    // kullanıldığı için headroom 0'a düşer ve clamp bütçeyi cari değerde bırakır.
+    // `clamped.capped` yine true olduğu için eski kod approval PENDING'li sıfır değişim
+    // üretiyordu; artık KEEP dönmeli ve cap gerekçede görünmeli.
+    const d = evaluateAdSet(
+      baseInput({
+        budgetChangesLast24h: [
+          {
+            budgetBeforeCents: 20000,
+            budgetAfterCents: 30000,
+            createdAt: new Date("2026-09-16T08:00:00Z"),
+            action: "INCREASE_BUDGET",
+          },
+        ],
+      }),
+    );
+    expect(d.action).not.toBe("INCREASE_BUDGET");
+    expect(d.approval).toBe("NOT_REQUIRED");
+    expect(d.proposedBudgetCents).toBe(d.currentBudgetCents);
+    expect(d.changePct).toBe(0);
+    expect(d.reason).toContain("cap:");
+  });
+
+  it("cari bütçe 0 iken DOWNSCALE changePct NaN üretmez", () => {
+    const d = evaluateAdSet(
+      baseInput({
+        currentBudgetCents: 0,
+        buckets: [
+          { ageHours: 216, spendMajor: 400, revenueMajor: 0, purchases: 0 },
+          { ageHours: 192, spendMajor: 400, revenueMajor: 0, purchases: 0 },
+          { ageHours: 168, spendMajor: 500, revenueMajor: 0, purchases: 0 },
+          { ageHours: 144, spendMajor: 500, revenueMajor: 0, purchases: 0 },
+          { ageHours: 120, spendMajor: 500, revenueMajor: 0, purchases: 0 },
+        ],
+      }),
+    );
+    expect(Number.isFinite(d.changePct), `changePct=${d.changePct}`).toBe(true);
+  });
+
+  it("kova sırası ters verilse trend ve karar aynı çıkar", () => {
+    // Eski yarı ROAS 2, yeni yarı ROAS 10 → oran 5 → gerçekte RISING.
+    // ageHours büyük olan eskidir; dizge sırası ters verildiğinde de aynı sonuç çıkmalı.
+    const oldestFirst = [
+      ...Array.from({ length: 5 }, (_, i) => ({
+        ageHours: 240 - i * 24,
+        spendMajor: 500,
+        revenueMajor: 1000,
+        purchases: 1,
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        ageHours: 120 - i * 24,
+        spendMajor: 500,
+        revenueMajor: 5000,
+        purchases: 5,
+      })),
+    ];
+    const newestFirst = [...oldestFirst].reverse();
+
+    const a = evaluateAdSet(baseInput({ buckets: oldestFirst }));
+    const b = evaluateAdSet(baseInput({ buckets: newestFirst }));
+    expect(a.metrics.trend).toBe("RISING");
+    expect(b.metrics.trend).toBe(a.metrics.trend);
+    expect(b.action).toBe(a.action);
+    expect(b.proposedBudgetCents).toBe(a.proposedBudgetCents);
+  });
+
+  it("olgunluk kapısı en yeni kovayı değil en eski kovayı okur", () => {
+    const policy = fromOptimizationPolicyRow({ workspaceId: "ws_1", minTestDurationHours: 168 });
+    // Yalnızca 24 ve 48 saatlik (yani çok genç) kovalar: minTestDurationHours 168'e ulaşılmaz.
+    const young = [
+      { ageHours: 48, spendMajor: 600, revenueMajor: 0, purchases: 0 },
+      { ageHours: 24, spendMajor: 600, revenueMajor: 0, purchases: 0 },
+    ];
+    const a = evaluateAdSet(baseInput({ policy, buckets: young }));
+    const b = evaluateAdSet(baseInput({ policy, buckets: [...young].reverse() }));
+    // Sıra ters verilse de aynı karar: genç kovalar olgunlaşmadığı için stop uygulanmaz.
+    expect(a.action).toBe("KEEP");
+    expect(b.action).toBe(a.action);
+    expect(a.approval).toBe("NOT_REQUIRED");
+  });
 });
 
 describe("evaluateAccount", () => {

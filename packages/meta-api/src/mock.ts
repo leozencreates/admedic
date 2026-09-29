@@ -174,9 +174,33 @@ function daysFromPreset(
     last_month: 1,
     maximum: 180,
   };
-  const count = n[preset] ?? 30;
-  const since = dateKey(new Date(now.getTime() - (count - 1) * 86400_000));
-  return { since, until };
+  // Takvim tabanlı preset'ler (*_d preset'lerinden farklı): takvim penceresi
+  // gerçek Meta ile aynı olmalı, aksi halde demo/panel yanlış aralık gösterir.
+  switch (preset) {
+    case "today":
+      return { since: until, until };
+    case "yesterday": {
+      const y = dateKey(new Date(now.getTime() - 86400_000));
+      return { since: y, until: y };
+    }
+    case "this_month":
+      return { since: `${until.slice(0, 7)}-01`, until };
+    case "last_month": {
+      const firstOfThisMonth = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+      );
+      const lastMonthEnd = new Date(firstOfThisMonth.getTime() - 86400_000);
+      const lastMonthStart = new Date(
+        Date.UTC(lastMonthEnd.getUTCFullYear(), lastMonthEnd.getUTCMonth(), 1),
+      );
+      return { since: dateKey(lastMonthStart), until: dateKey(lastMonthEnd) };
+    }
+    default: {
+      const count = n[preset] ?? 30;
+      const since = dateKey(new Date(now.getTime() - (count - 1) * 86400_000));
+      return { since, until };
+    }
+  }
 }
 
 /** Deterministik günlük ad metrik üretimi (kalite + gün tohumu). */
@@ -265,6 +289,64 @@ function buildAdSeeds(): MockAdSeed[] {
 function campaignName(campaignId: string): string {
   const idx = Number(campaignId.split("_").pop());
   return (CAMPAIGNS_META[idx - 1] ?? CAMPAIGNS_META[0]!).name;
+}
+
+/** Insight satırının ait olduğu varlık (seviyeye göre id'ler). */
+interface InsightGroup {
+  campaignId?: string;
+  adsetId?: string;
+  adId?: string;
+  seeds: MockAdSeed[];
+}
+
+/** Seviyeye göre grup kimlikleri. `id` grubun anahtarıdır (ad/adset/kampanya). */
+function idsForLevel(
+  level: MetaInsightLevel,
+  id: string,
+  seeds: MockAdSeed[],
+): Omit<InsightGroup, "seeds"> {
+  const first = seeds[0]!;
+  switch (level) {
+    case "ad":
+      return { campaignId: first.campaignId, adsetId: first.adsetId, adId: id };
+    case "adset":
+      return { campaignId: first.campaignId, adsetId: id };
+    case "campaign":
+      return { campaignId: id };
+    default:
+      return {};
+  }
+}
+
+/** Sayısal metric'leri toplar ve oran alanlarını (ctr/cpc/cpm/frequency) yeniden hesaplar. */
+function sumInsightMetrics(rows: MetaInsightRow[]): Pick<
+  MetaInsightRow,
+  | "impressions" | "reach" | "frequency" | "clicks" | "linkClicks" | "ctr" | "cpc" | "cpm"
+  | "spendMajor" | "purchases" | "purchaseValueMajor" | "leads" | "addsToCart" | "initiatesCheckout"
+> {
+  const impressions = rows.reduce((a, r) => a + r.impressions, 0);
+  const reach = rows.reduce((a, r) => a + (r.reach ?? 0), 0);
+  const clicks = rows.reduce((a, r) => a + r.clicks, 0);
+  const spend = rows.reduce((a, r) => a + r.spendMajor, 0);
+  return {
+    impressions,
+    reach,
+    frequency:
+      impressions > 0 ? Number((impressions / Math.max(reach, 1)).toFixed(2)) : undefined,
+    clicks,
+    linkClicks: rows.reduce((a, r) => a + r.linkClicks, 0),
+    ctr: impressions > 0 ? clicks / impressions : undefined,
+    cpc: clicks > 0 ? spend / clicks : 0,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+    spendMajor: Number(spend.toFixed(2)),
+    purchases: rows.reduce((a, r) => a + r.purchases, 0),
+    purchaseValueMajor: Number(
+      rows.reduce((a, r) => a + r.purchaseValueMajor, 0).toFixed(2),
+    ),
+    leads: rows.reduce((a, r) => a + r.leads, 0),
+    addsToCart: rows.reduce((a, r) => a + r.addsToCart, 0),
+    initiatesCheckout: rows.reduce((a, r) => a + r.initiatesCheckout, 0),
+  };
 }
 
 export class MockMetaClient {
@@ -375,18 +457,86 @@ export class MockMetaClient {
     }
 
     const rows: MetaInsightRow[] = [];
-    const targets = this.selectTargets(ref);
-    for (const t of targets) {
+    // Gerçek istemcide `ref.type` belirli bir varlıksa (`.../{id}/insights`) Meta o varlık
+    // seviyesinde TEK satır döner; `account` için `query.level` kırılımı uygulanır. Mock bunu
+    // taklit etmeli: aksi halde kampanya isteği ad başına satır döner ve tüketici aynı günü
+    // tekrar tekrar üzerine yazar.
+    for (const group of this.insightGroups(ref, query)) {
       if (perDay) {
         for (const day of days) {
-          rows.push(this.rowFor(t, day, range));
+          rows.push(this.groupRow(group, day, range));
         }
       } else {
-        const agg = days.map((d) => this.rowFor(t, d, range));
-        rows.push(this.aggregate(t, agg, range));
+        const daily = days.map((day) => this.groupRow(group, day, range));
+        rows.push(this.groupRangeRow(group, daily, range));
       }
     }
     return rows;
+  }
+
+  /** Seviyeye göre insight grupları: belirli varlık → tek grup; account → `query.level` kırılımı. */
+  private insightGroups(
+    ref: { type: MetaInsightLevel; id: string },
+    query?: MetaInsightOptions,
+  ): InsightGroup[] {
+    if (ref.type !== "account") {
+      return [
+        { ...idsForLevel(ref.type, ref.id, this.selectTargets(ref)), seeds: this.selectTargets(ref) },
+      ];
+    }
+    const level: MetaInsightLevel = query?.level ?? "ad";
+    const keyOf =
+      level === "campaign"
+        ? (s: MockAdSeed) => s.campaignId
+        : level === "adset"
+          ? (s: MockAdSeed) => s.adsetId
+          : (s: MockAdSeed) => s.adId;
+    const buckets = new Map<string, MockAdSeed[]>();
+    for (const seed of buildAdSeeds()) {
+      const key = keyOf(seed);
+      const arr = buckets.get(key);
+      if (arr) arr.push(seed);
+      else buckets.set(key, [seed]);
+    }
+    return [...buckets.entries()].map(([key, seeds]) => ({
+      ...idsForLevel(level, key, seeds),
+      seeds,
+    }));
+  }
+
+  /** Grup kimliklerini satıra yazan alanlar (isimler dahil). */
+  private groupIdentity(group: InsightGroup): Partial<MetaInsightRow> {
+    const first = group.seeds[0]!;
+    return {
+      ...(group.campaignId
+        ? { campaignId: group.campaignId, campaignName: campaignName(group.campaignId) }
+        : {}),
+      ...(group.adsetId ? { adsetId: group.adsetId } : {}),
+      ...(group.adId ? { adId: group.adId, adName: first.name } : {}),
+    };
+  }
+
+  private groupRow(group: InsightGroup, day: Date, _range: InsightDateRange): MetaInsightRow {
+    const rows = group.seeds.map((s) => this.rowFor(s, day, _range));
+    return {
+      dateStart: dateKey(day),
+      dateStop: dateKey(day),
+      ...this.groupIdentity(group),
+      ...sumInsightMetrics(rows),
+    };
+  }
+
+  private groupRangeRow(
+    group: InsightGroup,
+    daily: MetaInsightRow[],
+    range: InsightDateRange,
+  ): MetaInsightRow {
+    return {
+      dateStart: range.since,
+      dateStop: range.until,
+      ...this.groupIdentity(group),
+      ...sumInsightMetrics(daily),
+    };
   }
 
   async updateBudget(
@@ -552,53 +702,6 @@ export class MockMetaClient {
       leads: m.leads,
       addsToCart: m.addsToCart,
       initiatesCheckout: m.initiatesCheckout,
-    };
-  }
-
-  private aggregate(
-    seed: MockAdSeed,
-    rows: MetaInsightRow[],
-    range: InsightDateRange,
-  ): MetaInsightRow {
-    const first = rows[0]!;
-    const spend = rows.reduce((a, r) => a + r.spendMajor, 0);
-    const impressions = rows.reduce((a, r) => a + r.impressions, 0);
-    const clicks = rows.reduce((a, r) => a + r.clicks, 0);
-    return {
-      dateStart: range.since,
-      dateStop: range.until,
-      campaignId: first.campaignId,
-      campaignName: first.campaignName,
-      adsetId: first.adsetId,
-      adId: first.adId,
-      adName: first.adName,
-      impressions,
-      reach: rows.reduce((a, r) => a + (r.reach ?? 0), 0),
-      frequency:
-        impressions > 0
-          ? Number(
-              (
-                impressions /
-                Math.max(
-                  rows.reduce((a, r) => a + (r.reach ?? 0), 0),
-                  1,
-                )
-              ).toFixed(2),
-            )
-          : undefined,
-      clicks,
-      linkClicks: rows.reduce((a, r) => a + r.linkClicks, 0),
-      ctr: impressions > 0 ? clicks / impressions : undefined,
-      cpc: clicks > 0 ? spend / clicks : 0,
-      cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
-      spendMajor: Number(spend.toFixed(2)),
-      purchases: rows.reduce((a, r) => a + r.purchases, 0),
-      purchaseValueMajor: Number(
-        rows.reduce((a, r) => a + r.purchaseValueMajor, 0).toFixed(2),
-      ),
-      leads: rows.reduce((a, r) => a + r.leads, 0),
-      addsToCart: rows.reduce((a, r) => a + r.addsToCart, 0),
-      initiatesCheckout: rows.reduce((a, r) => a + r.initiatesCheckout, 0),
     };
   }
 }

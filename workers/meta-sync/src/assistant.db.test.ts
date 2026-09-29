@@ -32,7 +32,7 @@ describe("assistant saf yardımcıları", () => {
   });
 });
 
-describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("assistant worker (DB)", () => {
+describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("assistant worker (DB)", () => {
   const suffix = randomBytes(6).toString("hex");
   let orgId = "";
   let workspaceId = "";
@@ -60,6 +60,7 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("assistant
     prisma.message.findMany({ where: { conversationId, direction: "OUTGOING" }, orderBy: { createdAt: "asc" } });
 
   beforeAll(async () => {
+    vi.stubEnv("ENCRYPTION_KEY", randomBytes(32).toString("hex"));
     loadEnv({ fresh: true, overrides: { META_MOCK_MODE: "true" } });
     const org = await prisma.organization.create({
       data: {
@@ -92,6 +93,7 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("assistant
   });
   afterAll(async () => {
     await prisma.organization.deleteMany({ where: { id: orgId } });
+    vi.unstubAllEnvs();
     loadEnv({ fresh: true });
     await prisma.$disconnect();
   });
@@ -185,5 +187,40 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("assistant
     expect(result).toMatchObject({ replied: 0, escalated: 0 });
     expect(transport).not.toHaveBeenCalled();
     expect(await outgoing(stale.id)).toHaveLength(1);
+  });
+
+  it("deneme sınırındaki konuşmalar tur limitini doldurup yeni adayları açlığa sürüklemez (starvation)", async () => {
+    // Ayrı workspace: tur limiti yalnızca işlenebilir (deneme sınırını aşmamış) adaylara uygulanmalı.
+    const org = await prisma.organization.create({
+      data: { name: "Starvation fixture", slug: `starvation-${suffix}`, workspaces: { create: { name: "W2", slug: "w2" } } },
+      include: { workspaces: true },
+    });
+    const ws = org.workspaces[0]!.id;
+    const lead = await prisma.lead.create({
+      data: { workspaceId: ws, organizationId: org.id, firstName: "Test", lastName: "Lead", phone: encryptField(LEAD_PHONE), language: "de", channel: "WHATSAPP" },
+    });
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    // İki "takılı" konuşma: deneme sınırında, daha eski son gelen mesaj → SQL/LIMIT'te önce gelir.
+    for (const ageMin of [30, 20]) {
+      const c = await prisma.conversation.create({
+        data: { leadId: lead.id, workspaceId: ws, channel: "WHATSAPP", status: "ACTIVE", firstResponseAt: minutesAgo(ageMin + 1), initiatedBy: "bot" },
+      });
+      await prisma.message.create({
+        data: { conversationId: c.id, direction: "INCOMING", channel: "WHATSAPP", content: "Hallo", sender: "external", createdAt: minutesAgo(ageMin), metadata: { assistantAttempts: ASSISTANT_MAX_ATTEMPTS } },
+      });
+    }
+    // Daha yeni, işlenebilir aday (acil → LLM gerekmez, devredilir).
+    const fresh = await prisma.conversation.create({
+      data: { leadId: lead.id, workspaceId: ws, channel: "WHATSAPP", status: "ACTIVE", firstResponseAt: minutesAgo(11), initiatedBy: "bot" },
+    });
+    await prisma.message.create({
+      data: { conversationId: fresh.id, direction: "INCOMING", channel: "WHATSAPP", content: "Es ist dringend, starke Blutung", sender: "external", createdAt: minutesAgo(10) },
+    });
+    const whatsapp = vi.fn(async () => ({ id: "wamid.mock", error: null }));
+    // limit 2: SQL eskiden yalnızca iki takılı konuşmayı döndürüp JS'te eliyordu → yeni aday hiç işlenmezdi.
+    const result = await runAssistant({ llm: null, senders: { whatsapp }, workspaceId: ws, limit: 2 });
+    expect(result).toMatchObject({ escalated: 1, skipped: 0, failed: 0 });
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: fresh.id } })).status).toBe("ESCALATED");
+    await prisma.organization.deleteMany({ where: { id: org.id } });
   });
 });

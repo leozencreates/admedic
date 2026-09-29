@@ -41,10 +41,16 @@ function experiment(overrides: Record<string, unknown>) {
 
 describe("parseJsonColumn", () => {
   it("string ise parse eder, nesne ise aynen döner", () => {
-    expect(parseJsonColumn<{ a: number }>('{"a":1}')).toEqual({ a: 1 });
+    expect(parseJsonColumn<{ a: number }>('{"a":1}', { a: 0 })).toEqual({ a: 1 });
     const obj = { a: 1 };
-    expect(parseJsonColumn(obj)).toBe(obj);
-    expect(parseJsonColumn([1, 2])).toEqual([1, 2]);
+    expect(parseJsonColumn(obj, { a: 0 })).toBe(obj);
+    expect(parseJsonColumn([1, 2], [] as unknown[])).toEqual([1, 2]);
+  });
+  it("bozuk legacy string ve null için varsayılana döner (500 yerine)", () => {
+    expect(parseJsonColumn<{ a: number }>("{bozuk", { a: 7 })).toEqual({ a: 7 });
+    expect(parseJsonColumn<unknown[]>("[1,", [])).toEqual([]);
+    expect(parseJsonColumn<unknown[]>(null, [])).toEqual([]);
+    expect(parseJsonColumn<unknown[]>(undefined, [])).toEqual([]);
   });
 });
 
@@ -65,6 +71,26 @@ describe("decideWinner", () => {
     const d = decideWinner({ spend: 100, clicks: 100, leads: 0 }, { spend: 100, clicks: 100, leads: 12 });
     expect(d.winner).toBe("B");
     expect(d.edge).toBe(1);
+  });
+  it("iki tarafta da harcamasız lead varsa edge NaN olmaz, ölçülebilir fark yoktur", () => {
+    // (0 - 0) / 0 -> NaN idi; NaN < 0.2 false olduğu için "DECISIVE" + "%NaN" üretiyordu.
+    const d = decideWinner({ spend: 0, clicks: 30, leads: 12 }, { spend: 0, clicks: 28, leads: 15 });
+    expect(Number.isFinite(d.edge)).toBe(true);
+    expect(d.edge).toBe(0);
+    expect(d.winner).toBeNull();
+    expect(d.reason).toBe("EDGE_TOO_SMALL");
+  });
+  it("edge her zaman sonlu sayıdır", () => {
+    for (const a of [0, 1, 100]) {
+      for (const b of [0, 1, 100]) {
+        for (const la of [0, 5, 20]) {
+          for (const lb of [0, 5, 20]) {
+            const d = decideWinner({ spend: a, clicks: 1, leads: la }, { spend: b, clicks: 1, leads: lb });
+            expect(Number.isFinite(d.edge), `spend ${a}/${b} leads ${la}/${lb}`).toBe(true);
+          }
+        }
+      }
+    }
   });
 });
 
@@ -135,6 +161,37 @@ describe("recommendation engine", () => {
   it("tamamlanmamış deney için boş döner", async () => {
     findUnique.mockResolvedValue(experiment({ status: "DRAFT", snapshot: {}, metrics: [] }));
     expect(await generateRecommendations({ experimentId: "exp-3", workspaceId: "ws-1" })).toHaveLength(0);
+  });
+
+  it("harcamasız kazanan varyantta ek lead tahmini Infinity olmaz", async () => {
+    // kazanan CPL = 0/20 = 0 -> lose.spend / 0 = Infinity idi; JSON'da null olarak saklanıyordu.
+    findUnique.mockResolvedValue(experiment({
+      metrics: [{ spend: 0, clicks: 400, leads: 20 }, { spend: 100, clicks: 400, leads: 12 }],
+    }));
+    const recs = await generateRecommendations({ experimentId: "exp-1", workspaceId: "ws-1" });
+    expect(recs[0].type).toBe("BUDGET_REALLOCATION");
+    const impact = recs[0].expectedImpact as { estimatedAdditionalLeads: number; estimatedSavings: number };
+    expect(Number.isFinite(impact.estimatedAdditionalLeads)).toBe(true);
+    expect(impact.estimatedAdditionalLeads).toBe(0);
+    expect(JSON.stringify(recs[0])).not.toContain("null");
+  });
+
+  it("iki tarafta da sıfır harcamada CONTINUE önerir, metinde NaN yazmaz", async () => {
+    findUnique.mockResolvedValue(experiment({
+      metrics: [{ spend: 0, clicks: 30, leads: 12 }, { spend: 0, clicks: 28, leads: 15 }],
+    }));
+    const recs = await generateRecommendations({ experimentId: "exp-1", workspaceId: "ws-1" });
+    expect(recs[0].type).toBe("CONTINUE");
+    const text = JSON.stringify(recs[0]);
+    expect(text).not.toContain("NaN");
+    expect(text).not.toContain("Infinity");
+  });
+
+  it("bozuk legacy Json string'i 500 fırlatmaz", async () => {
+    findUnique.mockResolvedValue(experiment({ metrics: "[{\"spend\":1", snapshot: "{bozuk" }));
+    const recs = await generateRecommendations({ experimentId: "exp-1", workspaceId: "ws-1" });
+    expect(Array.isArray(recs)).toBe(true);
+    expect(JSON.stringify(recs)).not.toContain("NaN");
   });
 
   it("persistRecommendations açık eskileri EXPIRED yapar, yenileri PENDING kaydeder, CONTINUE'yu DB türüne eşler", async () => {

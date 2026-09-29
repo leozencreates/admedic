@@ -3,7 +3,7 @@ import { decrypt, encrypt } from "./encrypt";
 import { ingestMetaWebhook, type WebhookIngestSummary } from "./webhook-ingest";
 import { refetchPendingLeads } from "./lead-refetch";
 import { runAfterResponse } from "./after-response";
-import { logger } from "./log";
+import { errorSummary, logger } from "./log";
 
 /**
  * Meta webhook teslim kuyruğu (ADR-0023). İmzası doğrulanmış gövde işlenmeden ÖNCE şifreli olarak kalıcı yazılır:
@@ -24,9 +24,8 @@ type IngestResult = Awaited<ReturnType<typeof ingestMetaWebhook>>;
 export type Ingest = typeof ingestMetaWebhook;
 
 function shortError(error: unknown): string {
-  // Kişisel veri sızmasın: yalnızca hata sınıfı ve ilk satırın başı (gövde içeriği hata metnine girmez).
-  const text = error instanceof Error ? `${error.name}: ${error.message.split("\n")[0]}` : String(error);
-  return text.slice(0, 300);
+  // Şifreli gövdenin içeriği hata metni üzerinden düz metin olarak saklanmamalı.
+  return JSON.stringify(errorSummary(error));
 }
 
 function nextAttemptAt(attempts: number, now = new Date()): Date {

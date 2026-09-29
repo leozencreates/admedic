@@ -1,7 +1,9 @@
 import { describe, expect, it, beforeAll, afterAll, vi } from "vitest";
+import { randomBytes } from "node:crypto";
 import { loadEnv } from "@admedic/config";
 import { buildApp, LOG_REDACT_PATHS } from "../src/app";
 import { prisma, authorizeApiRequest, bearerToken, allowedOrigins, parseDays, tokenMatches } from "../src/lib";
+import * as apiLib from "../src/lib";
 
 let app: Awaited<ReturnType<typeof buildApp>>;
 
@@ -49,15 +51,39 @@ describe("api saf yardımcıları", () => {
 });
 
 describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
+  const dbEnabled = process.env.STUDIO_DB_TEST === "1";
+  let orgId = "";
   beforeAll(async () => {
     vi.stubEnv("API_TOKEN", "");
     vi.stubEnv("META_MOCK_MODE", "true");
     loadEnv({ fresh: true });
+    // Yetki/HTTP testleri DB gerektirmez; veri testleri yalnızca kendi kiracısını okur.
+    const primary = vi.spyOn(apiLib, "getPrimaryWorkspace").mockResolvedValue(null);
+    if (dbEnabled) {
+      const org = await prisma.organization.create({
+        data: { name: "API fixture", slug: `api-${randomBytes(8).toString("hex")}`, workspaces: { create: { name: "API workspace", slug: "main" } } },
+        include: { workspaces: true },
+      });
+      orgId = org.id;
+      const workspace = org.workspaces[0];
+      primary.mockResolvedValue(workspace);
+      const workspaceId = workspace.id;
+      const account = await prisma.adAccount.create({ data: { orgId, workspaceId, name: "API account", currency: "EUR" } });
+      const campaign = await prisma.campaign.create({ data: { workspaceId, adAccountId: account.id, name: "API campaign", dailyBudget: 5000 } });
+      const adset = await prisma.adSet.create({ data: { workspaceId, campaignId: campaign.id, name: "API adset", dailyBudget: 5000 } });
+      await prisma.ad.create({ data: { workspaceId, adSetId: adset.id, name: "API ad" } });
+      await prisma.insightSnapshot.create({ data: { workspaceId, campaignId: campaign.id, date: new Date(), spend: 1200, conversionValue: 2400 } });
+      await prisma.optimizationPolicy.create({ data: { workspaceId, mode: "APPROVAL" } });
+      await prisma.agentDecision.create({ data: { workspaceId, targetType: "CAMPAIGN", targetId: campaign.id, action: "KEEP", approval: "PENDING", reason: "Test" } });
+      await prisma.alert.create({ data: { workspaceId, type: "META_DISCONNECTED", severity: "WARNING", title: "Test", message: "Test" } });
+    }
     app = await buildApp({ logger: false });
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
+    if (orgId) await prisma.organization.delete({ where: { id: orgId } });
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     loadEnv({ fresh: true });
     await prisma.$disconnect();
@@ -72,31 +98,31 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     expect(root.json().endpoints).toContain("/v1/overview");
   });
 
-  it("GET /v1/overview → tek kiracılı çalışma alanı + 7g metrikler + kampanya listesi", async () => {
+  it.skipIf(!dbEnabled)("GET /v1/overview → tek kiracılı çalışma alanı + 7g metrikler + kampanya listesi", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/overview?days=7" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.appName).toBe(loadEnv().APP_NAME);
     expect(body.workspace.name).toBeTruthy();
     expect(body.days).toBe(7);
-    expect(body.counts).toMatchObject({ campaigns: 5, adsets: 10, ads: 50 });
-    expect(body.lastNDays.spendCents).toBeGreaterThan(0);
+    expect(body.counts).toMatchObject({ campaigns: 1, adsets: 1, ads: 1 });
+    expect(body.lastNDays.spendCents).toBe(1200);
     expect(body.lastNDays.roas === null || typeof body.lastNDays.roas === "number").toBe(true);
     expect(body.approvals.pending).toBeGreaterThan(0);
     expect(body.alerts.open).toBeGreaterThan(0);
     expect(body.policy.mode).toBe("APPROVAL");
-    expect(body.campaigns).toHaveLength(5);
+    expect(body.campaigns).toHaveLength(1);
     for (const c of body.campaigns) {
       expect(typeof c.dailyBudgetCents).toBe("number");
       expect(c.lastNDays).toHaveProperty("spendCents");
     }
   });
 
-  it("GET /v1/campaigns → 5 kampanya, her biri adAccount + adSetCount + ROAS + dailyBudgetCents", async () => {
+  it.skipIf(!dbEnabled)("GET /v1/campaigns → kampanya, adAccount + adSetCount + ROAS + dailyBudgetCents", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/campaigns?days=7" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.campaigns).toHaveLength(5);
+    expect(body.campaigns).toHaveLength(1);
     for (const c of body.campaigns) {
       expect(c.name).toBeTruthy();
       expect(c.adAccount.currency).toBeTruthy();
@@ -106,7 +132,7 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     }
   });
 
-  it("GET /v1/decisions → onay özeti + karar listesi", async () => {
+  it.skipIf(!dbEnabled)("GET /v1/decisions → onay özeti + karar listesi", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/decisions" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -114,7 +140,7 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     expect(body.decisions.length).toBeGreaterThan(0);
   });
 
-  it("GET /v1/alerts → açık uyarı özeti (open/critical/warning)", async () => {
+  it.skipIf(!dbEnabled)("GET /v1/alerts → açık uyarı özeti (open/critical/warning)", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/alerts" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -154,6 +180,25 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     }
   });
 
+  it("yüzde-kodlanmış yol yetki denetimini atlatamaz (router çözdüğü yola bakılır)", async () => {
+    vi.stubEnv("API_TOKEN", "test-token-123");
+    vi.stubEnv("META_MOCK_MODE", "false");
+    loadEnv({ fresh: true });
+    try {
+      // Ham `request.url` "/%76%31/alerts" görünür; router "/v1/alerts" ucuna eşler.
+      for (const encoded of ["/%76%31/alerts", "/v1/%61lerts", "/%76%31/overview", "/%76%31/decisions", "/%76%31/campaigns"]) {
+        const bypass = await app.inject({ method: "GET", url: encoded });
+        expect(bypass.statusCode, `${encoded} yetkisiz 401 dönmeli`).toBe(401);
+        const authed = await app.inject({ method: "GET", url: encoded, headers: { authorization: "Bearer test-token-123" } });
+        expect(authed.statusCode, `${encoded} belirteçle 200 dönmeli`).toBe(200);
+      }
+    } finally {
+      vi.stubEnv("API_TOKEN", "");
+      vi.stubEnv("META_MOCK_MODE", "true");
+      loadEnv({ fresh: true });
+    }
+  });
+
   it("CORS: Tauri ve AUTH_URL kaynakları kabul, yabancı kaynak reddedilir", async () => {
     const tauri = await app.inject({ method: "GET", url: "/health", headers: { origin: "tauri://localhost" } });
     expect(tauri.headers["access-control-allow-origin"]).toBe("tauri://localhost");
@@ -161,5 +206,8 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     expect(panel.headers["access-control-allow-origin"]).toBe(new URL(loadEnv().AUTH_URL).origin);
     const foreign = await app.inject({ method: "GET", url: "/health", headers: { origin: "https://evil.example" } });
     expect(foreign.headers["access-control-allow-origin"]).toBeUndefined();
+    // AUTH_URL http(s) değilse saydam "null" origin izin listesine girmemeli.
+    const opaque = await app.inject({ method: "GET", url: "/health", headers: { origin: "null" } });
+    expect(opaque.headers["access-control-allow-origin"]).not.toBe("null");
   });
 });

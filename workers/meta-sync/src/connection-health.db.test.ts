@@ -11,13 +11,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync bağlantı sağlığı (DB)", () => {
+describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("meta-sync bağlantı sağlığı (DB)", () => {
   const suffix = randomBytes(6).toString("hex");
   let orgId = "";
   let workspaceId = "";
   const webhookCalls: unknown[] = [];
 
   beforeAll(async () => {
+    vi.stubEnv("ENCRYPTION_KEY", randomBytes(32).toString("hex"));
     loadEnv({ fresh: true, overrides: { META_MOCK_MODE: "true", META_DISCONNECTED_WEBHOOK_URL: "" } });
     const org = await prisma.organization.create({
       data: { name: "Health fixture", slug: `health-${suffix}`, workspaces: { create: { name: "W", slug: "w" } } },
@@ -32,6 +33,7 @@ describe.skipIf(!process.env.DATABASE_URL && !loadEnv().DATABASE_URL)("meta-sync
   });
   afterAll(async () => {
     await prisma.organization.deleteMany({ where: { id: orgId } });
+    vi.unstubAllEnvs();
     loadEnv({ fresh: true });
     await prisma.$disconnect();
   });

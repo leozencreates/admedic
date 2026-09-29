@@ -131,7 +131,11 @@ export function authorizeApiRequest(authorization: string | undefined, env: AppE
 export function allowedOrigins(env: AppEnv = loadEnv()): string[] {
   const origins = new Set<string>(["tauri://localhost", "http://tauri.localhost"]);
   try {
-    origins.add(new URL(env.AUTH_URL).origin);
+    const url = new URL(env.AUTH_URL);
+    // `URL.origin` http(s) dışı şemalar için saydam ("null") origin döner; bu değer
+    // izin listesine girerse "Origin: null" gönderen herhangi bir kaynak (sandbox iframe,
+    // file://, cross-origin yönlendirme) kimlikli erişim kazanır.
+    if (url.protocol === "http:" || url.protocol === "https:") origins.add(url.origin);
   } catch {
     // AUTH_URL geçersizse yalnızca masaüstü kaynakları kalır.
   }

@@ -278,7 +278,8 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Instant Form rızası, bekl
     // Token düzeldi: elle deneme alanları tamamlar, WhatsApp konuşması açılır, rıza ikinci kez yazılmaz.
     failToken = false;
     const manual = await refetchPost(req("/api/leads/refetch", "POST", { leadId: stub.id }));
-    expect(await manual.json()).toMatchObject({ attempted: 1, recovered: 1, remaining: 0 });
+    const manualResult = await manual.json();
+    expect(manualResult, JSON.stringify(manualResult)).toMatchObject({ attempted: 1, recovered: 1, remaining: 0 });
     const recovered = await leadByLeadgen(`lg-${suffix}-6`);
     const recoveredMeta = recovered.metadata as Record<string, unknown>;
     expect(recoveredMeta.pendingFetch).toBeUndefined();
