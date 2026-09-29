@@ -6,8 +6,8 @@
 2. Kök `.env` dosyasına `.env.example` alanlarını uyarlayın. `DATABASE_URL` erişilebilir bir PostgreSQL veritabanını ve kullanıcıyı içermeli. `AUTH_URL` tarayıcıda kullanılacak tam origin olmalı (yerelde `http://localhost:3000`). `AUTH_SECRET` için rastgele güçlü bir değer kullanın; örnek dosyadaki boş alanı doldurun.
 3. `pnpm db:generate && pnpm --filter @admedic/database build`
 4. `pnpm db:deploy` — mevcut tabloları sıfırlamadan stüdyo migration'ını uygular.
-5. `.env` içinde `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD` (en az 12 karakter), `BOOTSTRAP_CLINIC` alanlarını doldurun. `pnpm --filter @admedic/web user:create` çalıştırın. Komut yeni kullanıcı, klinik ve çalışma alanı oluşturur; çalışma alanı ID'sini gösterir. Mevcut kullanıcının parolasını değiştirmez. Ardından bootstrap parolasını ortamdan kaldırın.
-6. `pnpm web:dev`, ardından `/login`. E-posta, parola ve çalışma alanı ID'si ile giriş yapın.
+5. `.env` içinde `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD` (en az 12 karakter), `BOOTSTRAP_CLINIC` alanlarını doldurun. `pnpm --filter @admedic/web user:create` çalıştırın. Komut yeni kullanıcı, klinik ve çalışma alanı oluşturur. Mevcut kullanıcının parolasını değiştirmez. Ardından bootstrap parolasını ortamdan kaldırın.
+6. `pnpm web:dev`, ardından `/login`. E-posta ve parolayla giriş yapın (kullanıcının çalışma alanı otomatik açılır; birden çoksa en son kullanılan).
 
 Kayıtlı demodaki eski bcrypt parolaları yeni oturum sisteminde kullanılmaz. Yeni kullanıcı için yukarıdaki CLI'ı kullanın. CLI yeni bir organizasyon açar; ekip daveti veya mevcut kliniğe kullanıcı ekleme arayüzü bu faza dahil değildir.
 

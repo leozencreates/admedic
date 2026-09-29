@@ -11,14 +11,12 @@ export function Login({
   appName,
   lang = DEFAULT_LANGUAGE,
   initialEmail = "",
-  initialWorkspace = "",
   next,
 }: {
   /** Uygulama adı (`APP_NAME` ortam değişkeni); koda yazılmaz. */
   appName: string;
   lang?: Language;
   initialEmail?: string;
-  initialWorkspace?: string;
   /** Oturum açılınca dönülecek uygulama içi yol (`?next=`); yoksa rolün ana sayfası. */
   next?: string;
 }) {
@@ -63,16 +61,6 @@ export function Login({
               type="password"
               autoComplete="current-password"
               maxLength={256}
-              required
-            />
-          </label>
-          <label className="field">
-            {t("login.workspace", lang)}
-            <input
-              name="workspace"
-              defaultValue={initialWorkspace}
-              autoComplete="off"
-              maxLength={100}
               required
             />
           </label>

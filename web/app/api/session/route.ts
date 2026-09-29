@@ -8,6 +8,22 @@ import { body, respond, sameOrigin, HttpError } from "../../_lib/http";
 import { tokenHash, verifyPassword } from "../../_lib/password";
 import { hasSpendAuthority } from "../../_lib/spend-authority";
 
+/**
+ * Girişte açılacak çalışma alanı: kullanıcının etkin üyesi olduğu kuruluşların çalışma alanlarından en son oturum
+ * açtığı; hiç oturum yoksa en eski çalışma alanı. Kullanıcı kimlik girmez (çalışma alanı kimliği formdan kaldırıldı).
+ */
+async function loginWorkspace(userId: string) {
+  const allowed = { org: { members: { some: { userId, status: "ACTIVE" as const } } } };
+  // Oturum süresi sabit olduğundan en geç biten oturum en son açılandır.
+  const last = await prisma.webSession.findFirst({
+    where: { userId, workspace: allowed },
+    orderBy: { expiresAt: "desc" },
+    select: { workspace: true },
+  });
+  if (last) return last.workspace;
+  return prisma.workspace.findFirst({ where: allowed, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+}
+
 export async function GET() {
   return respond(async () => {
     const actor = await currentActor();
@@ -29,7 +45,6 @@ export async function POST(request: Request) {
             .max(254)
             .transform((s) => s.toLowerCase()),
           password: z.string().min(1).max(256),
-          workspace: z.string().trim().min(1).max(100),
         })
         .strict(),
     );
@@ -41,20 +56,9 @@ export async function POST(request: Request) {
       input.password,
       user?.passwordHash ?? null,
     );
-    const workspace =
-      user && verified
-        ? await prisma.workspace.findFirst({
-            where: {
-              id: input.workspace,
-              org: { members: { some: { userId: user.id, status: "ACTIVE" } } },
-            },
-          })
-        : null;
+    const workspace = user && verified ? await loginWorkspace(user.id) : null;
     if (!user || !workspace)
-      throw new HttpError(
-        401,
-        "E-posta, parola veya çalışma alanı bilgileri geçersiz. Bilgileri kontrol edip tekrar deneyin.",
-      );
+      throw new HttpError(401, "E-posta veya parola geçersiz. Bilgileri kontrol edip tekrar deneyin.");
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 8 * 3600_000);
     const jar = await cookies();

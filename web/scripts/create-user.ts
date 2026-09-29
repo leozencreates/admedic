@@ -51,7 +51,7 @@ async function main() {
     return ws;
   });
   console.log(
-    `Kullanıcı oluşturuldu. Giriş için çalışma alanı ID: ${workspace.id}`,
+    `Kullanıcı oluşturuldu (çalışma alanı ${workspace.id}). Bu e-posta ve parolayla giriş yapın.`,
   );
 }
 main()

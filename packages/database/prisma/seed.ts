@@ -575,10 +575,8 @@ async function main() {
 
   console.log("  Uyarılar: 3, Denetim: 3, Ürün: 4, Landing: 3");
   console.log("✅ Demo veri tamam.");
-  // Giriş formu çalışma alanı kimliğini ister; kimlik her kurulumda farklıdır, bu yüzden hazır bağlantı yazılır.
   const base = (process.env.AUTH_URL || "http://localhost:3000").replace(/\/+$/, "");
-  console.log(`Demo girişi: ${base}/login?workspace=${workspace.id}`);
-  console.log(`   ${DEMO_EMAIL} / ${DEMO_PASSWORD} (hesap sahibi)`);
+  console.log(`Demo girişi: ${base}/login — ${DEMO_EMAIL} / ${DEMO_PASSWORD} (hesap sahibi)`);
 }
 
 main().catch((e) => {

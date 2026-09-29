@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; workspace?: string; next?: string }>;
+  searchParams: Promise<{ email?: string; next?: string }>;
 }) {
   const params = await searchParams;
   const lang = parseLanguage((await cookies()).get(UI_LANG_COOKIE)?.value);
@@ -21,7 +21,6 @@ export default async function LoginPage({
       appName={loadEnv().APP_NAME}
       lang={lang}
       initialEmail={typeof params.email === "string" ? params.email : ""}
-      initialWorkspace={typeof params.workspace === "string" ? params.workspace : ""}
       next={typeof params.next === "string" ? params.next : undefined}
     />
   );

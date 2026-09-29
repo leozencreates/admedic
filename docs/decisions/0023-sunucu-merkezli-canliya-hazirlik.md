@@ -108,3 +108,12 @@ bildirimi hiç gelmeyecekti.
   - hata kayıt hizmeti.
 - **Yeni göç:** `20260929090000_webhook_delivery_queue`.
 - **Yeni bağımlılıklar:** `@prisma/adapter-pg`, `pg`, `pino`.
+
+## Güncelleme (2026-09-29): giriş yalnızca e-posta ve parolayla
+- **Kimlik alanı kaldırıldı:** Giriş formundan ve `POST /api/session` ucundan "Çalışma alanı kimliği" kaldırıldı
+  (ürün sahibi isteği). Uca eski `workspace` alanı gönderilirse istek 400 ile reddedilir.
+- **Hangi çalışma alanı açılır:** Kullanıcının etkin üyesi olduğu kuruluşlardaki çalışma alanlarından en son oturum
+  açtığı. Hiç oturum yoksa en eskisi. Üyeliği etkin değilse giriş olmaz.
+- **Açık iş:** Birden çok çalışma alanı olan kullanıcı için arayüzde çalışma alanı değiştirici yok.
+- **dev-up.ps1:** Betik yalnızca ASCII karakterlerle yazıldı. Windows PowerShell 5.1, BOM'suz UTF-8 dosyayı Türkçe ANSI
+  kodlamasıyla okuyordu; uzun tire baytı tırnak sayılıp ayrıştırma bozuluyordu.

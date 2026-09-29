@@ -1,15 +1,15 @@
-﻿<#
+<#
 .SYNOPSIS
-  Admedic'i yerelde ayağa kaldırır: bağımlılıklar, Prisma client, migration, demo seed, paket derlemesi, web (ve isteğe bağlı API/worker).
+  Admedic'i yerelde ayaga kaldirir: bagimliliklar, Prisma client, migration, demo seed, paket derlemesi, web (ve istege bagli API/worker).
 
 .USAGE
-  scripts\dev-up.cmd            # çift tıkla ya da PowerShell'den çalıştır
-  scripts\dev-up.ps1 -NoSeed    # demo veriyi yeniden yükleme
-  scripts\dev-up.ps1 -WithApi -WithWorker   # Fastify API ve meta-sync worker'ı ayrı pencerelerde de başlat
-  scripts\dev-up.ps1 -SkipInstall           # pnpm install adımını atla
+  scripts\dev-up.cmd            # cift tikla ya da PowerShell'den calistir
+  scripts\dev-up.ps1 -NoSeed    # demo veriyi yeniden yukleme
+  scripts\dev-up.ps1 -WithApi -WithWorker   # Fastify API ve meta-sync worker'i ayri pencerelerde de baslat
+  scripts\dev-up.ps1 -SkipInstall           # pnpm install adimini atla
 
-  Gereksinimler: Node 20+, pnpm 11 (corepack enable), PostgreSQL (kök .env içindeki DATABASE_URL'e erişilebilir olmalı;
-  `docker compose up -d` ile de başlatılabilir).
+  Gereksinimler: Node 20+, pnpm 11 (corepack enable), PostgreSQL (kok .env icindeki DATABASE_URL'e erisilebilir olmali;
+  `docker compose up -d` ile de baslatilabilir).
 #>
 [CmdletBinding()]
 param(
@@ -31,7 +31,7 @@ function Write-Step([string]$text) {
 function Fail([string]$text) {
   Write-Host ""
   Write-Host ("HATA: " + $text) -ForegroundColor Red
-  Write-Host "Pencereyi kapatmadan önce Enter'a basın." -ForegroundColor Yellow
+  Write-Host "Pencereyi kapatmadan once Enter'a basin." -ForegroundColor Yellow
   Read-Host | Out-Null
   exit 1
 }
@@ -40,26 +40,26 @@ function Invoke-Step([string]$label, [string]$command) {
   Write-Step $label
   Write-Host ("    $ " + $command) -ForegroundColor DarkGray
   cmd /c $command
-  if ($LASTEXITCODE -ne 0) { Fail ("'" + $command + "' başarısız oldu (çıkış kodu " + $LASTEXITCODE + ")." ) }
+  if ($LASTEXITCODE -ne 0) { Fail ("'" + $command + "' basarisiz oldu (cikis kodu " + $LASTEXITCODE + ")." ) }
 }
 
-Write-Host "Admedic yerel geliştirme ortamı - " -NoNewline
+Write-Host "Admedic yerel gelistirme ortami - " -NoNewline
 Write-Host $root -ForegroundColor Green
 
-# ---- 0. Ön kontroller -------------------------------------------------------
-Write-Step "Ön kontroller"
+# ---- 0. On kontroller -------------------------------------------------------
+Write-Step "On kontroller"
 foreach ($tool in @("node", "pnpm")) {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-    Fail ("'" + $tool + "' bulunamadı. Node 20+ ve pnpm 11 kurulu olmalı (pnpm için: corepack enable).")
+    Fail ("'" + $tool + "' bulunamadi. Node 20+ ve pnpm 11 kurulu olmali (pnpm icin: corepack enable).")
   }
 }
 Write-Host ("    node " + (node -v) + ", pnpm " + (pnpm -v))
 
 if (-not (Test-Path (Join-Path $root ".env"))) {
-  Fail ".env dosyası yok. .env.example dosyasını .env olarak kopyalayıp DATABASE_URL, AUTH_URL ve ENCRYPTION_KEY alanlarını doldurun."
+  Fail ".env dosyasi yok. .env.example dosyasini .env olarak kopyalayip DATABASE_URL, AUTH_URL ve ENCRYPTION_KEY alanlarini doldurun."
 }
 
-# DATABASE_URL -> host:port erişilebilir mi?
+# DATABASE_URL -> host:port erisilebilir mi?
 $envLine = Get-Content (Join-Path $root ".env") | Where-Object { $_ -match '^\s*DATABASE_URL\s*=' } | Select-Object -First 1
 if ($envLine) {
   $url = ($envLine -replace '^\s*DATABASE_URL\s*=\s*', '').Trim().Trim('"').Trim("'")
@@ -73,17 +73,17 @@ if ($envLine) {
       $ok = $async.AsyncWaitHandle.WaitOne(3000, $false)
       if (-not $ok -or -not $client.Connected) { throw "timeout" }
       $client.EndConnect($async)
-      Write-Host ("    PostgreSQL erişilebilir: " + $dbHost + ":" + $dbPort)
+      Write-Host ("    PostgreSQL erisilebilir: " + $dbHost + ":" + $dbPort)
     } catch {
-      Fail ("PostgreSQL'e ulaşılamıyor (" + $dbHost + ":" + $dbPort + "). Veritabanını başlatın (örn. 'docker compose up -d') ve tekrar deneyin.")
+      Fail ("PostgreSQL'e ulasilamiyor (" + $dbHost + ":" + $dbPort + "). Veritabanini baslatin (orn. 'docker compose up -d') ve tekrar deneyin.")
     } finally {
       $client.Close()
     }
   }
 }
 
-# ---- 1. Artık dosyalar -------------------------------------------------------
-Write-Step "Artık dosyalar temizleniyor"
+# ---- 1. Artik dosyalar -------------------------------------------------------
+Write-Step "Artik dosyalar temizleniyor"
 $stale = @(
   "web\app\api\billing\invoices\[id]\pay\route.ts",
   "packages\database\prisma\seed.ts.bakZ7"
@@ -95,7 +95,7 @@ foreach ($rel in $stale) {
     Write-Host ("    silindi: " + $rel)
   }
 }
-# Boş kalan klasörleri de kaldır (Next.js boş route klasörünü sorun etmez, temizlik için).
+# Bos kalan klasorleri de kaldir (Next.js bos route klasorunu sorun etmez, temizlik icin).
 $payDir = Join-Path $root "web\app\api\billing\invoices\[id]\pay"
 $idDir  = Join-Path $root "web\app\api\billing\invoices\[id]"
 foreach ($d in @($payDir, $idDir)) {
@@ -104,33 +104,33 @@ foreach ($d in @($payDir, $idDir)) {
   }
 }
 
-# ---- 2. Bağımlılıklar --------------------------------------------------------
+# ---- 2. Bagimliliklar --------------------------------------------------------
 if (-not $SkipInstall) {
-  Invoke-Step "Bağımlılıklar (pnpm install)" "pnpm install"
+  Invoke-Step "Bagimliliklar (pnpm install)" "pnpm install"
 }
 
-# ---- 3. Veritabanı -----------------------------------------------------------
-Invoke-Step "Prisma client üretiliyor" "pnpm db:generate"
+# ---- 3. Veritabani -----------------------------------------------------------
+Invoke-Step "Prisma client uretiliyor" "pnpm db:generate"
 Invoke-Step "@admedic/database derleniyor" "pnpm --filter @admedic/database build"
-Invoke-Step "Migration'lar uygulanıyor (prisma migrate deploy)" "pnpm db:deploy"
+Invoke-Step "Migration'lar uygulaniyor (prisma migrate deploy)" "pnpm db:deploy"
 if (-not $NoSeed) {
-  Invoke-Step "Demo veri yükleniyor (yalnızca 'askmed-demo' organizasyonu sıfırlanır)" "pnpm db:seed"
+  Invoke-Step "Demo veri yukleniyor (yalnizca 'askmed-demo' organizasyonu sifirlanir)" "pnpm db:seed"
 }
 
 # ---- 4. Paketler -------------------------------------------------------------
-Invoke-Step "Paketler derleniyor (web ve worker dist üzerinden çözer)" "pnpm turbo run build --filter=./packages/* --env-mode=loose"
+Invoke-Step "Paketler derleniyor (web ve worker dist uzerinden cozer)" "pnpm turbo run build --filter=./packages/* --env-mode=loose"
 
 # ---- 5. Sunucular ------------------------------------------------------------
 if ($WithApi) {
-  Write-Step "Fastify API ayrı pencerede başlatılıyor (http://127.0.0.1:3001)"
+  Write-Step "Fastify API ayri pencerede baslatiliyor (http://127.0.0.1:3001)"
   Start-Process powershell -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location '" + $root + "'; pnpm api:dev")
 }
 if ($WithWorker) {
-  Write-Step "meta-sync worker ayrı pencerede başlatılıyor"
+  Write-Step "meta-sync worker ayri pencerede baslatiliyor"
   Start-Process powershell -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location '" + $root + "'; pnpm worker:sync")
 }
 
-# Sunucu hazır olunca varsayılan tarayıcıyı aç (arka planda bekler).
+# Sunucu hazir olunca varsayilan tarayiciyi ac (arka planda bekler).
 $opener = {
   param($target)
   for ($i = 0; $i -lt 90; $i++) {
@@ -143,7 +143,7 @@ $opener = {
 }
 Start-Job -ScriptBlock $opener -ArgumentList "http://localhost:3000/login" | Out-Null
 
-Write-Step "Web paneli başlatılıyor: http://localhost:3000  (durdurmak için Ctrl+C)"
-Write-Host "    Giriş: yukarıdaki demo verisi çıktısındaki 'Demo girişi' bağlantısı (çalışma alanı kimliği dolu gelir)." -ForegroundColor DarkGray
-Write-Host "    Değişiklikleri görmek için: docs/remaining-work.md §0 ve README 'Bu turda değişenler'." -ForegroundColor DarkGray
+Write-Step "Web paneli baslatiliyor: http://localhost:3000  (durdurmak icin Ctrl+C)"
+Write-Host "    Giris: admin@admedic.io / demo1234 (demo hesap sahibi)." -ForegroundColor DarkGray
+Write-Host "    Degisiklikleri gormek icin: docs/remaining-work.md bolum 0 ve README 'Bu turda degisenler'." -ForegroundColor DarkGray
 cmd /c "pnpm web:dev"

@@ -487,12 +487,12 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")(
       expect(
         (
           await login(
-            req({ email, password: "incorrect", workspace: owner.workspaceId }),
+            req({ email, password: "incorrect" }),
           )
         ).status,
       ).toBe(401);
       expect(
-        (await login(req({ email, password, workspace: owner.workspaceId })))
+        (await login(req({ email, password })))
           .status,
       ).toBe(200);
       expect(

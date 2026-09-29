@@ -13,7 +13,6 @@ test.describe("authenticated studio", () => {
   const password = randomBytes(24).toString("hex");
   let orgId: string;
   let userId: string;
-  let workspaceId: string;
   test.beforeAll(async () => {
     const user = await prisma.user.create({
       data: { email, passwordHash: await hashPassword(password) },
@@ -29,7 +28,6 @@ test.describe("authenticated studio", () => {
       include: { workspaces: true },
     });
     orgId = org.id;
-    workspaceId = org.workspaces[0].id;
   });
   test.afterAll(async () => {
     if (orgId) await prisma.organization.delete({ where: { id: orgId } });
@@ -46,8 +44,7 @@ test.describe("authenticated studio", () => {
     await expect(page).toHaveURL(/\/login/);
     await page.getByLabel("E-posta", { exact: true }).fill(email);
     await page.getByLabel("Parola", { exact: true }).fill(password);
-    await page.getByLabel("Çalışma alanı kimliği").fill(workspaceId);
-    await page.getByRole("button", { name: "Çalışma alanına gir" }).click();
+    await page.getByRole("button", { name: "Giriş yap" }).click();
     // Giriş, `next` parametresiyle istenen sayfaya (/studio) geri döner.
     await expect(page).toHaveURL((url) => url.pathname === "/studio");
     await page.getByLabel("Klinik adı", { exact: true }).fill("Browser clinic");

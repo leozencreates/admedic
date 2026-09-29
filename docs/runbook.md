@@ -39,7 +39,7 @@
      -e BOOTSTRAP_EMAIL=siz@ornek.com -e BOOTSTRAP_PASSWORD='en-az-12-karakter' -e BOOTSTRAP_CLINIC='Klinik adı' \
      migrate sh -c "cd /app/web && pnpm user:create"
    ```
-   Komut çalışma alanı kimliğini yazar; giriş sayfasında bu kimlik istenir.
+   Ardından bu e-posta ve parolayla giriş yapın.
 7. **Canlıya geçiş sayfası:** Panelde Ayarlar → Canlıya geçiş. Engel kalmayana kadar sunucu ayarlarını düzeltin.
 
 ## Meta uygulaması ayarları

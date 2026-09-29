@@ -52,7 +52,7 @@ pnpm db:generate               # Prisma client
 pnpm --filter @admedic/database build
 pnpm db:deploy                 # migration'ları uygular (geliştirmede: pnpm db:migrate)
 pnpm db:seed                   # demo kiracı + kampanya/insight verisi (isteğe bağlı)
-pnpm --filter @admedic/web user:create   # BOOTSTRAP_EMAIL/PASSWORD/CLINIC ile ilk kullanıcı; çalışma alanı ID'sini yazar
+pnpm --filter @admedic/web user:create   # BOOTSTRAP_EMAIL/PASSWORD/CLINIC ile ilk kullanıcı; ardından e-posta ve parolayla giriş
 pnpm web:dev                   # http://localhost:3000 → /login
 ```
 
