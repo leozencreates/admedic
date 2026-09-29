@@ -56,7 +56,13 @@ foreach ($tool in @("node", "pnpm")) {
 Write-Host ("    node " + (node -v) + ", pnpm " + (pnpm -v))
 
 if (-not (Test-Path (Join-Path $root ".env"))) {
-  Fail ".env dosyasi yok. .env.example dosyasini .env olarak kopyalayip DATABASE_URL, AUTH_URL ve ENCRYPTION_KEY alanlarini doldurun."
+  $example = Join-Path $root ".env.example"
+  if (-not (Test-Path $example)) {
+    Fail (".env ve .env.example bulunamadi (" + $root + "). Betik proje klasorunun icindeki scripts klasorunden calistirilmali.")
+  }
+  # Yerel gelistirme icin ornek dosya yeterli (DATABASE_URL: admedic/admedic@localhost:5432/admedic_dev, deneme modu).
+  Copy-Item $example (Join-Path $root ".env")
+  Write-Host "    .env dosyasi .env.example'dan olusturuldu (yerel deneme ayarlari)."
 }
 
 # DATABASE_URL -> host:port erisilebilir mi?
@@ -75,7 +81,7 @@ if ($envLine) {
       $client.EndConnect($async)
       Write-Host ("    PostgreSQL erisilebilir: " + $dbHost + ":" + $dbPort)
     } catch {
-      Fail ("PostgreSQL'e ulasilamiyor (" + $dbHost + ":" + $dbPort + "). Veritabanini baslatin (orn. 'docker compose up -d') ve tekrar deneyin.")
+      Fail ("PostgreSQL'e ulasilamiyor (" + $dbHost + ":" + $dbPort + "). Once scripts\setup-postgres.cmd dosyasina cift tiklayin (PostgreSQL'i kurar ve baslatir), sonra bu betigi tekrar calistirin.")
     } finally {
       $client.Close()
     }
