@@ -28,17 +28,65 @@ $superPassword = "postgres"
 
 # ---- 1) PostgreSQL hizmeti ----
 Step "PostgreSQL kontrol ediliyor"
-$service = Get-Service -Name "postgresql*" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $service) {
-  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Fail "winget bulunamadi. Microsoft Store'dan 'Uygulama Yukleyicisi' (App Installer) kurulup tekrar denenmeli."
-  }
-  Step "PostgreSQL 17 kuruluyor (birkac dakika surer, pencereyi kapatmayin)"
+function Find-Service {
+  Get-Service -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "postgresql*" -or $_.DisplayName -like "*postgres*" } | Select-Object -First 1
+}
+function Find-Bin {
+  $i = Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\initdb.exe" -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending | Select-Object -First 1
+  if ($i) { return $i.DirectoryName } else { return $null }
+}
+function Install-Pg {
   winget install --id PostgreSQL.PostgreSQL.17 -e --silent --accept-package-agreements --accept-source-agreements `
     --override "--mode unattended --unattendedmodeui none --superpassword $superPassword --serverport 5432"
   Start-Sleep -Seconds 5
-  $service = Get-Service -Name "postgresql*" -ErrorAction SilentlyContinue | Select-Object -First 1
-  if (-not $service) { Fail "Kurulum tamamlandi gorunuyor ama PostgreSQL hizmeti bulunamadi." }
+}
+
+$service = Find-Service
+if (-not $service) {
+  if (-not (Find-Bin)) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+      Fail "winget bulunamadi. Microsoft Store'dan 'Uygulama Yukleyicisi' (App Installer) kurulup tekrar denenmeli."
+    }
+    Step "PostgreSQL 17 kuruluyor (birkac dakika surer, pencereyi kapatmayin)"
+    Install-Pg
+    $service = Find-Service
+    if (-not $service -and -not (Find-Bin)) {
+      # winget paketi 'kurulu' saniyor ama dosyalar yok: yarim kalmis kurulum. Kaldirip yeniden kur.
+      Step "Yarim kalmis kurulum bulundu; kaldirilip yeniden kuruluyor"
+      winget uninstall --id PostgreSQL.PostgreSQL.17 -e --silent --accept-source-agreements
+      Start-Sleep -Seconds 5
+      Install-Pg
+      $service = Find-Service
+    }
+  }
+  if (-not $service) {
+    # Programlar kurulu ama hizmet yok: kendi veri klasorumuzu olusturup hizmeti kaydediyoruz.
+    $bin = Find-Bin
+    if (-not $bin) { Fail "PostgreSQL kurulamadi (C:\Program Files\PostgreSQL altinda program yok)." }
+    $busy = Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue
+    if ($busy) { Fail "5432 portunu baska bir program kullaniyor; PostgreSQL hizmeti bu portta baslatilamaz." }
+    $data = "C:\ProgramData\AdmedicPostgres\data"
+    Step ("PostgreSQL hizmeti olusturuluyor (" + $data + ")")
+    if ((Test-Path $data) -and (Get-ChildItem $data -Force | Select-Object -First 1)) {
+      Write-Host "    Veri klasoru zaten dolu, yeniden kullaniliyor"
+    } else {
+      New-Item -ItemType Directory -Force -Path $data | Out-Null
+      $pwFile = Join-Path $env:TEMP "admedic-pg-pw.txt"
+      [IO.File]::WriteAllText($pwFile, $superPassword)
+      & (Join-Path $bin "initdb.exe") -D $data -U postgres --pwfile=$pwFile -A scram-sha-256 -E UTF8 --no-locale 2>&1 | Out-Host
+      $code = $LASTEXITCODE
+      Remove-Item $pwFile -Force -ErrorAction SilentlyContinue
+      if ($code -ne 0) { Fail "initdb basarisiz oldu (yukaridaki cikti)." }
+    }
+    & icacls (Split-Path -Parent $data) /grant "*S-1-5-20:(OI)(CI)F" /T /Q | Out-Null
+    & (Join-Path $bin "pg_ctl.exe") register -N "postgresql-admedic" -D $data -S auto 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Fail "PostgreSQL hizmeti kaydedilemedi (pg_ctl register)." }
+    $service = Get-Service -Name "postgresql-admedic" -ErrorAction SilentlyContinue
+    if (-not $service) { Fail "Kurulum tamamlandi gorunuyor ama PostgreSQL hizmeti bulunamadi." }
+    Write-Host "    Hizmet olusturuldu: postgresql-admedic"
+  }
 } else {
   Write-Host ("    Kurulu: " + $service.Name + " (" + $service.Status + ")")
 }
