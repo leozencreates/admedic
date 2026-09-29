@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Admedic'i yerelde ayağa kaldırır: bağımlılıklar, Prisma client, migration, demo seed, paket derlemesi, web (ve isteğe bağlı API/worker).
 
@@ -43,7 +43,7 @@ function Invoke-Step([string]$label, [string]$command) {
   if ($LASTEXITCODE -ne 0) { Fail ("'" + $command + "' başarısız oldu (çıkış kodu " + $LASTEXITCODE + ")." ) }
 }
 
-Write-Host "Admedic yerel geliştirme ortamı — " -NoNewline
+Write-Host "Admedic yerel geliştirme ortamı - " -NoNewline
 Write-Host $root -ForegroundColor Green
 
 # ---- 0. Ön kontroller -------------------------------------------------------
@@ -59,7 +59,7 @@ if (-not (Test-Path (Join-Path $root ".env"))) {
   Fail ".env dosyası yok. .env.example dosyasını .env olarak kopyalayıp DATABASE_URL, AUTH_URL ve ENCRYPTION_KEY alanlarını doldurun."
 }
 
-# DATABASE_URL → host:port erişilebilir mi?
+# DATABASE_URL -> host:port erişilebilir mi?
 $envLine = Get-Content (Join-Path $root ".env") | Where-Object { $_ -match '^\s*DATABASE_URL\s*=' } | Select-Object -First 1
 if ($envLine) {
   $url = ($envLine -replace '^\s*DATABASE_URL\s*=\s*', '').Trim().Trim('"').Trim("'")
