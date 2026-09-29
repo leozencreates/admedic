@@ -117,7 +117,7 @@ if (-not $SkipInstall) {
 
 # ---- 3. Veritabani -----------------------------------------------------------
 Invoke-Step "Prisma client uretiliyor" "pnpm db:generate"
-Invoke-Step "@admedic/database derleniyor" "pnpm --filter @admedic/database build"
+Invoke-Step "@admedic/database ve bagimliliklari derleniyor" "pnpm --filter @admedic/database... build"
 Invoke-Step "Migration'lar uygulaniyor (prisma migrate deploy)" "pnpm db:deploy"
 if (-not $NoSeed) {
   Invoke-Step "Demo veri yukleniyor (yalnizca 'askmed-demo' organizasyonu sifirlanir)" "pnpm db:seed"
