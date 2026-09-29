@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEV_AUTH_SECRET, EnvSchema, getLlmConfig, requireGraphVersion, loadEnv } from "./env";
+import { DEFAULT_DATABASE_URL, DEV_AUTH_SECRET, EnvSchema, getLlmConfig, requireGraphVersion, loadEnv } from "./env";
 
 describe("environment boundaries", () => {
   it.each([["false", false], ["0", false], ["true", true], ["1", true]])("parses mock mode %s", (value, expected) => {
@@ -56,8 +56,12 @@ describe("production guard", () => {
   it("rejects dev defaults and unset mock mode in production, allows explicit demo", () => {
     const strict = () => loadEnv({ fresh: true, overrides: { NODE_ENV: "production", AUTH_SECRET: "x".repeat(40), ENCRYPTION_KEY: "a".repeat(64), META_API_VERSION: "v26.0" } });
     expect(strict).toThrow(/META_MOCK_MODE/);
-    expect(() => loadEnv({ fresh: true, overrides: { NODE_ENV: "production", AUTH_SECRET: "x".repeat(40), ENCRYPTION_KEY: "a".repeat(64), META_API_VERSION: "v26.0", META_MOCK_MODE: "false" } })).not.toThrow();
-    expect(() => loadEnv({ fresh: true, overrides: { NODE_ENV: "production", AUTH_SECRET: "x".repeat(40), ENCRYPTION_KEY: "a".repeat(64), ALLOW_MOCK_IN_PRODUCTION: "true" } })).not.toThrow();
+    const live = { NODE_ENV: "production", AUTH_SECRET: "x".repeat(40), ENCRYPTION_KEY: "a".repeat(64), META_API_VERSION: "v26.0", META_MOCK_MODE: "false", META_APP_SECRET: "s".repeat(32), AUTH_URL: "https://panel.example.com", DATABASE_URL: "postgresql://db:5432/admedic" };
+    expect(() => loadEnv({ fresh: true, overrides: live })).not.toThrow();
+    // Canlı Meta: webhook gizli anahtarı ve https adres zorunlu; varsayılan veritabanıyla başlamaz (ADR-0023).
+    expect(() => loadEnv({ fresh: true, overrides: { ...live, AUTH_URL: "http://panel.example.com" } })).toThrow(/AUTH_URL/);
+    expect(() => loadEnv({ fresh: true, overrides: { ...live, DATABASE_URL: DEFAULT_DATABASE_URL } })).toThrow(/DATABASE_URL/);
+    expect(() => loadEnv({ fresh: true, overrides: { NODE_ENV: "production", AUTH_SECRET: "x".repeat(40), ENCRYPTION_KEY: "a".repeat(64), ALLOW_MOCK_IN_PRODUCTION: "true", DATABASE_URL: "postgresql://db:5432/admedic" } })).not.toThrow();
     expect(() => loadEnv({ fresh: true, overrides: { NODE_ENV: "production", META_MOCK_MODE: "false", META_API_VERSION: "v26.0", AUTH_SECRET: DEV_AUTH_SECRET, ENCRYPTION_KEY: "" } })).toThrow(/AUTH_SECRET|ENCRYPTION_KEY/);
     loadEnv({ fresh: true });
   });

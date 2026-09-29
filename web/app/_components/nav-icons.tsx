@@ -15,6 +15,7 @@ import {
   Megaphone,
   Plug,
   Receipt,
+  Rocket,
   Route,
   ScrollText,
   ShieldCheck,
@@ -45,6 +46,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   guard: ShieldCheck,
   rules: ScrollText,
   billing: Receipt,
+  launch: Rocket,
 };
 
 export function NavGlyph({ icon, size = 18 }: { icon: NavIcon; size?: number }) {

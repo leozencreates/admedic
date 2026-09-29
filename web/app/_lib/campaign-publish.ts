@@ -34,6 +34,7 @@ import { leadFormConsentSnapshot, leadFormTexts } from "./lead-form-texts";
 import { requireLiveMetaConnection, resolvePublishPage } from "./meta-connection";
 import { requireSpendAuthority } from "./spend-authority";
 import { assertWithinMonthlyCap } from "./spend-cap";
+import { logger } from "./log";
 
 /** Eşzamanlı yayın isteklerini engelleyen kilidin ömrü (süresi dolan kilit geçersizdir). */
 const PUBLISH_LOCK_MS = 90_000;
@@ -408,7 +409,7 @@ export async function publishCampaign(
     try {
       await write();
     } catch {
-      console.error(`[campaign-publish] yetim Meta ${kind}: ${metaId} (yerel ${id})`);
+      logger.error(`[campaign-publish] yetim Meta ${kind}: ${metaId} (yerel ${id})`);
       try {
         await logAudit({
           actor,
@@ -840,7 +841,7 @@ export async function activateCampaign(actor: Actor, id: string): Promise<Activa
       try {
         await meta.setStatus({ entityType: "campaign", entityId: metaCampaignId, status: "PAUSED" }, live.token);
       } catch {
-        console.error(`[campaign-activate] Meta kampanyası duraklatılamadı: ${metaCampaignId} (yerel ${id})`);
+        logger.error(`[campaign-activate] Meta kampanyası duraklatılamadı: ${metaCampaignId} (yerel ${id})`);
       }
     }
     try {

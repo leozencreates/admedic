@@ -43,3 +43,7 @@ test-results/
 playwright-report/
 npm-debug.log*
 pnpm-debug.log*
+
+# Üretim (ADR-0023)
+!deploy/.env.production.example
+deploy/backups/

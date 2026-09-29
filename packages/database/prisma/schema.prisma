@@ -3,8 +3,11 @@
 // Faz 1 + 2: multi-tenant RBAC, Meta varlıkları, Insights, Deneyler, Autopilot
 // ---------------------------------------------------------------------------
 
+// Rust'sız istemci (ADR-0023): sorgu motoru ikili dosyası indirilmez ve imaja girmez; bağlantı `@prisma/adapter-pg`
+// sürücü bağdaştırıcısıyla kurulur (`src/index.ts` createPrismaClient).
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 datasource db {
@@ -1387,4 +1390,35 @@ enum InvoiceStatus {
   PAID
   VOID
   OVERDUE
+}
+
+// ------------------------------------------------ Webhook teslim kuyruğu (ADR-0023) ------------------------------------------------
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+/**
+ * İmzası doğrulanmış Meta webhook gövdesi, işlenmeden ÖNCE kalıcı yazılır (şifreli). İşleme hata verirse
+ * satır bekleyen kalır ve arka plan süpürücüsü artan aralıklarla yeniden dener; Meta'nın kendi yeniden
+ * denemesine bağımlı kalınmaz. İşlenince gövde silinir (veri en aza indirme); satır kısa süre sonra temizlenir.
+ */
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  source        String                @default("meta")
+  /** Ham gövde, ENCRYPTION_KEY ile şifreli; işlenince null. */
+  payload       String?
+  status        WebhookDeliveryStatus @default(PENDING)
+  attempts      Int                   @default(0)
+  nextAttemptAt DateTime              @default(now())
+  /** Kişisel veri içermeyen kısa hata metni. */
+  lastError     String?
+  processedAt   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
 }

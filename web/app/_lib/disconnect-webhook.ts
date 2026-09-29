@@ -1,4 +1,5 @@
 import { loadEnv } from "@admedic/config";
+import { logger } from "./log";
 
 export interface DisconnectWebhookPayload {
   workspaceId: string;
@@ -32,12 +33,12 @@ export async function deliverDisconnectWebhook(
       }),
     });
     if (!res.ok) {
-      console.warn(`[meta-webhook] teslim ${res.status}: ${await res.text().catch(() => "")}`);
+      logger.warn(`[meta-webhook] teslim ${res.status}: ${await res.text().catch(() => "")}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn(`[meta-webhook] teslim başarısız: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`[meta-webhook] teslim başarısız: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }

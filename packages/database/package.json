@@ -22,12 +22,15 @@
   "dependencies": {
     "@admedic/config": "workspace:*",
     "@admedic/shared": "workspace:*",
+    "@prisma/adapter-pg": "6.19.3",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
+    "pg": "^8.23.0",
     "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "dotenv": "^16.4.5",
     "prisma": "^6.19.3",
     "tsx": "^4.19.2",

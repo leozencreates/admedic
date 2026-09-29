@@ -1,6 +1,7 @@
 # Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-29 (altı fazın genel incelemesi ve düzeltmeleri, ADR-0022; 2026-09-28: içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
+Son güncelleme: 2026-09-29 (Faz 7-A canlıya hazırlık: sunucu paketi, webhook kuyruğu, günlük, sayfa aboneliği,
+Canlıya geçiş sayfası, ADR-0023; altı fazın genel incelemesi ve düzeltmeleri, ADR-0022; 2026-09-28: içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
 arasında **hâlâ açık** olan maddeleri tutar; kapatılan maddeler buraya yazılmaz (git geçmişi ve
@@ -57,16 +58,25 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 10. **2026-09-29 genel inceleme (ADR-0022):** migration yok. Demo uyarı metinleri tohum verisinde Türkçeleştirildi;
     yerel demo veritabanında eski metinlerin ("ROAS -52%", "ad_1_1_2") yenilenmesi için `pnpm db:seed` gerekir.
 
+11. **2026-09-29 Faz 7-A (ADR-0023):** yeni migration `20260929090000_webhook_delivery_queue` (toplam 25) ve yeni
+    bağımlılıklar (`@prisma/adapter-pg`, `pg`, `pino`, işçide `tsx`) — depo kökünde `pnpm install` ve
+    `scripts\dev-up.cmd`. Prisma artık Rust'sız istemci kullanır (sorgu motoru indirilmez). Canlıya geçiş için sırayla:
+    - **Ürün sahibi:** Türkiye'de barındırma sağlayıcısı ve sunucu, alan adı, Meta işletme doğrulaması, uygulamanın
+      bağlı olacağı Business Manager, pilot klinik reklam hesabı (`docs/app-review.md`).
+    - **Kurulum:** `docs/runbook.md` (Docker Compose; imaj derlemesi bu ortamda denenemedi, ilk kurulumda doğrulanacak).
+    - **Denetim:** panelde Ayarlar → Canlıya geçiş; engel kalmayınca uçtan uca deneme ve App Review.
+    - Mevcut Meta bağlantıları yeniden kurulmalı: sayfa webhook aboneliği ve `pages_read_engagement` izni bağlanırken alınır.
+
 ## 1. Mimari (spec §4) — P1
 
-- **Kuyruk yok (Redis + BullMQ):** webhook işleme, karşılama/LLM çağrısı ve WhatsApp gönderimi istek içinde
-  çalışır (`web/app/_lib/webhook-ingest.ts`, `maxDuration=60`); insights/anomali/asistan işleri 5 dk'lık
-  `setInterval` ile (`workers/meta-sync`). Öneri: `REDIS_URL` + BullMQ kuyrukları (`webhook-ingest`,
-  `insights-sync`, `assistant-reply`, `capi-events`), yeniden deneme + ölü mektup; webhook yalnızca
-  imzayı doğrulayıp ham olayı kuyruğa atar.
-- **Gözlemlenebilirlik:** web tarafında pino/Sentry yok; `respond()` yalnızca PII içermeyen kısa bir
-  `console.error` satırı yazar. Öneri: `pino` + `redact` (apps/api'de var) web route handler'larına da,
-  Sentry DSN env ile.
+- **Kuyruk kısmi (ADR-0023):** Meta webhook teslimleri PostgreSQL kuyruğunda kalıcı ve yeniden denenir
+  (`webhook-queue.ts`). İşleme hâlâ istekte başlar (karşılama/LLM dahil, `maxDuration=60`). Giden WhatsApp gönderimi,
+  CAPI olayları ve asistan teslim hatası için yeniden deneme yok. insights/anomali/asistan işleri 5 dk'lık
+  `setInterval` ile (`workers/meta-sync`). Hacim büyürse BullMQ'ya geçiş ayrı karar.
+- **Gözlemlenebilirlik (ADR-0023):** web ve işçi pino ile tek satırlık JSON yazar (maskeli); `onRequestError` sunucu
+  hatalarını kaydeder; `/api/health` dış izleme içindir. Hata kayıt hizmeti (Sentry vb.) bağlanmadı: sağlayıcı ve veri
+  konumu ürün sahibi kararı. Uyarı kanalı yok (sağlık ucu `degraded` olunca kimseye bildirim gitmez).
+- **CSP dar:** Güvenlik başlıkları var; betik/stil kaynakları için nonce'lu içerik güvenliği politikası yok.
 - **CI yok (Faz 0):** ADR-0003 rev.2 ile GitHub bırakıldı; yerelde `pnpm verify` tek kapı. Öneri: en
   azından pre-push hook veya yerel bir `verify` zorunluluğu; GitHub'a dönülürse Windows runner'da Tauri build.
 - **Playwright:** stüdyo akışı (`web/e2e/studio.pw.ts`) ve 24 sayfalık erişilebilirlik kapısı (`web/e2e/a11y.pw.ts`,

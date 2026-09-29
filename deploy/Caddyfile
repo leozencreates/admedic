@@ -1,0 +1,20 @@
+# Admedic ters vekil (ADR-0023): HTTPS sonlandırma, sıkıştırma, istek boyutu sınırı.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	# Görsel yükleme dahil en büyük istek; Meta webhook'ları küçüktür.
+	request_body {
+		max_size 12MB
+	}
+	# Sağlık ucu dışarıdan izlenebilir; ayrıntı içermez.
+	reverse_proxy web:3000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	log {
+		output stdout
+		format json
+	}
+}

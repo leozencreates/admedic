@@ -1,0 +1,17 @@
+# Derleme bağlamına girmez: bağımlılıklar imajda kurulur, gizli değerler ortamdan gelir.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/backups
+desktop/src-tauri/target
+legacy
+web/test-results
+web/playwright-report

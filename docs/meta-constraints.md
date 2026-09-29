@@ -385,3 +385,38 @@ resmi Python SDK (`adobjects/ad.py`, `adgroupreviewfeedback.py`, `adgroupissuesi
 - ❗ **DOĞRULANMADI:** PAUSED oluşturulan reklamların etkinleştirilmeden incelenip incelenmediği; worker PUBLISHED_PAUSED
   kampanyaları 6 saatte, ACTIVE kampanyaları 15 dakikada bir okur.
 
+## 2026-09-29 — App Review ve erişim düzeyleri (canlıya hazırlık, ADR-0023)
+Kaynaklar (2026-09-29 okundu): developers.meta.com/blog/updates-to-ads-management-standard-access-feature ve
+developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/app-review.
+- **Marketing API erişim düzeyi** (eski adı "Ads Management Standard Access"): 4 Mayıs 2026'dan itibaren alt düzey
+  "Limited Access", üst düzey "Full Access". Üst düzeye başvuru koşulu: son 15 günde 500+ Marketing API çağrısı ve son
+  500 çağrıda hata oranı %15'in altında. Bu özellik için ekran kaydı artık istenmiyor. Bu, `ads_management` izninden
+  ayrı bir özelliktir; kodda değişiklik gerekmez.
+  → Sonuç: pilot hesapta Limited Access ile başlanır; gerçek kullanım birikince Full Access'e başvurulur.
+- **WhatsApp izinleri** (`whatsapp_business_messaging`, `whatsapp_business_management`): Advanced access için her
+  izne ayrı yazılı açıklama ve ayrı ekran kaydı zorunlu (mesaj gönderip WhatsApp'ta alındığını gösteren; şablon
+  oluşturmayı gösteren). Ekran görüntüsü kabul edilmez. Ortalama inceleme süresi ~24 saat.
+- ❗ **DOĞRULANMADI:** `ads_management`, `leads_retrieval`, `pages_manage_ads`, `pages_show_list`,
+  `business_management` izinlerinin Advanced access başvurusu için güncel ekran kaydı ve işletme doğrulaması
+  koşulları resmi sayfadan okunmadı; başvuru öncesi Uygulama Paneli → App Review ekranında her izin için ayrı
+  denetlenmeli (`docs/app-review.md`).
+- ❗ **DOĞRULANMADI (canlı):** Canlı doğrulama sonuçları henüz yok. Canlıya geçiş sayfasının (`/go-live`) Meta
+  denetimi ilk kez gerçek hesapta çalıştırıldığında sonuçlar tarihiyle buraya yazılacak.
+
+### Sayfa webhook aboneliği (lead ve mesaj bildirimleri)
+Kaynaklar (2026-09-29 okundu): developers.facebook.com/docs/graph-api/reference/page/subscribed_apps ve
+developers.facebook.com/documentation/ads-commerce/marketing-api/guides/lead-ads/quickstart/webhooks-integration.
+- Meta, Anında Form lead'i (`leadgen`) ve sayfa mesajı (`messages`) bildirimini **yalnızca sayfa uygulamaya abone
+  edildiyse** gönderir; uygulama panelinde webhook tanımlamak yetmez. Sayfanın uygulama ayarlarında platform kapalıysa da
+  bildirim gelmez.
+- Abone etme: `POST /{version}/{page-id}/subscribed_apps` + `subscribed_fields` (ör. `leadgen,messages`), **sayfa erişim
+  anahtarıyla**. Yanıt `{ "success": true }`. Okuma: `GET /{page-id}/subscribed_apps` → `data[].id` (uygulama kimliği) ve
+  `data[].subscribed_fields`.
+- İzinler: `pages_manage_metadata`, `pages_show_list`; lead bildirimi için Lead Ads kılavuzu ayrıca `leads_retrieval`,
+  `pages_read_engagement`, `ads_management` sayar. Sayfa anahtarı, sayfada ADVERTISE görevi olan kişiden alınmış olmalı.
+- **Kod (bu tur):** Daha önce abonelik hiç yapılmıyordu; canlıda lead bildirimi gelmezdi. OAuth dönüşünde anahtarı olan
+  her sayfa abone edilir (`subscribeDiscoveredPages`, Messenger izni varsa `messages` de); başarısızlık sayfa bağlantısının
+  `lastError` alanına yazılır. `pages_read_engagement` OAuth izin listesine eklendi. Canlıya geçiş sayfası aboneliği okur.
+- ❗ **DOĞRULANMADI (canlı):** `subscribed_fields` için virgülle ayrılmış biçimin (dizi yerine) kabul edildiği;
+  Graph dizi parametrelerini virgüllü metin olarak da kabul eder, ilk canlı bağlantıda Canlıya geçiş sayfasından doğrulanmalı.
+

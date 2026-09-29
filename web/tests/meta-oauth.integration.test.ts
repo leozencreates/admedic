@@ -88,6 +88,7 @@ function graphStub(calls: GraphCall[], opts: { permissions?: unknown; accounts?:
     if (path.endsWith("/me/permissions")) return jsonResponse(opts.permissions ?? { data: [] });
     if (path.endsWith("/me/accounts")) return jsonResponse(opts.accounts ?? { data: [] });
     if (path.endsWith("/me/adaccounts")) return jsonResponse(opts.adaccounts ?? { data: [] });
+    if (path.endsWith("/subscribed_apps") && init?.method === "POST") return jsonResponse({ success: true });
     if (path.endsWith("/debug_token")) return jsonResponse({ data: { is_valid: false, error: { code: 190, message: "Error validating access token: The session is invalid" } } });
     return jsonResponse({ error: { code: 1, message: `beklenmeyen çağrı: ${path}` } }, 400);
   };
@@ -303,6 +304,17 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Meta OAuth ve bağlantı y�
     const secondPage = await prisma.metaConnection.findFirstOrThrow({ where: { orgId: orgIds[0], type: "PAGE", pageId: `page_live2_${suffix}` } });
     expect(secondPage.tokenCiphertext).toBeNull();
     expect(secondPage.instaId).toBeNull();
+
+    // Sayfa webhook aboneliği (ADR-0023): yalnızca anahtarı olan sayfa, sayfa anahtarıyla; Messenger izni verildiği
+    // için lead + mesaj alanları.
+    const subscriptions = calls.filter((c) => c.url.includes("/subscribed_apps"));
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0].url).toContain(`/page_live_${suffix}/subscribed_apps`);
+    const form = new URLSearchParams(String(subscriptions[0].init?.body));
+    expect(form.get("subscribed_fields")).toBe("leadgen,messages");
+    expect(form.get("access_token")).toBe("page_tok_live");
+    expect(form.get("appsecret_proof")).toMatch(/^[0-9a-f]{64}$/);
+    expect(livePage.lastError).toBeNull();
 
     // hasDefault: yalnızca ilk keşfedilen hesap varsayılan olur.
     const adAccounts = await prisma.adAccount.findMany({ where: { orgId: orgIds[0], connectionId: bm.id }, orderBy: { createdAt: "asc" } });

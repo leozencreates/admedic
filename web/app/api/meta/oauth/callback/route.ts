@@ -19,6 +19,7 @@ import {
   mockDiscoveredPages,
   syncDiscoveredAdAccounts,
   syncPageConnections,
+  subscribeDiscoveredPages,
 } from "../../../../_lib/meta-connection";
 import { logAudit } from "../../../../_lib/audit";
 import { runAfterResponse } from "../../../../_lib/after-response";
@@ -30,6 +31,7 @@ import {
   getGrantedPermissions,
   rawGraph,
 } from "@admedic/meta-api";
+import { logger } from "../../../../_lib/log";
 // Yanıttan sonra bekleyen lead çekimleri de bu süre içinde çalışır (after).
 export const maxDuration = 30;
 
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
     const mapped = errorToHttp(error);
     if (mapped.status >= 500 && !(error instanceof HttpError)) {
       const code = (error as { code?: unknown } | null)?.code;
-      console.error(
+      logger.error(
         `[oauth] ${error instanceof Error ? error.name : "Error"}${code ? ` ${String(code)}` : ""}: ${
           error instanceof Error ? error.message.slice(0, 200) : "unknown"
         }`,
@@ -148,7 +150,7 @@ async function handleCallback(request: Request, env: Env): Promise<CallbackResul
     expiresAt = exchanged.expiresAt ?? expiresAt;
     longLived = true;
   } catch (e) {
-    console.warn(`[oauth] uzun ömürlü token değişimi başarısız: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
+    logger.warn(`[oauth] uzun ömürlü token değişimi başarısız: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
   }
 
   // 3) Verilen izinler: kod değişimi yanıtında `granted_scopes` gelmez → /me/permissions.
@@ -222,13 +224,19 @@ async function handleCallback(request: Request, env: Env): Promise<CallbackResul
         expiresAt: longLived ? null : data.expiresAt,
       });
       pages = synced.created + synced.updated;
+      // Lead ve mesaj bildirimleri için sayfalar uygulamaya abone edilir (ADR-0023); hata bağlantıya yazılır.
+      if (!env.META_MOCK_MODE) {
+        const subscription = await subscribeDiscoveredPages(actor.orgId, discovered, grantedScopes);
+        if (subscription.failed)
+          logger.warn({ failed: subscription.failed, subscribed: subscription.subscribed }, "[oauth] sayfa webhook aboneliği kısmen başarısız");
+      }
       // Sayfa token'ları yenilendi: alanları daha önce çekilemeyen lead'ler yanıttan sonra yeniden denenir.
       if (pages > 0)
         await runAfterResponse("lead-refetch", () =>
           refetchPendingLeads({ orgId: actor.orgId, limit: 25, budgetMs: 12_000, force: true }),
         );
     } catch (err) {
-      console.warn(`[oauth] sayfa keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
+      logger.warn(`[oauth] sayfa keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
     }
   }
 
@@ -239,7 +247,7 @@ async function handleCallback(request: Request, env: Env): Promise<CallbackResul
       const discovered = await createMetaClient({ mock: false }).getAdAccounts(accessToken);
       adAccounts = await syncDiscoveredAdAccounts(actor, connectionId, discovered);
     } catch (err) {
-      console.warn(`[oauth] reklam hesabı keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
+      logger.warn(`[oauth] reklam hesabı keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
     }
   }
 

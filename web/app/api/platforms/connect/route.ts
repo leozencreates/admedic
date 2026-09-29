@@ -7,6 +7,7 @@ import { createMetaClient } from "@admedic/meta-api";
 import { encrypt } from "../../../_lib/encrypt";
 import { logAudit } from "../../../_lib/audit";
 import { syncDiscoveredAdAccounts } from "../../../_lib/meta-connection";
+import { logger } from "../../../_lib/log";
 export const maxDuration = 30;
 const ConnectSchema = z.object({ platform: z.enum(["GOOGLE_ADS", "TIKTOK", "META"]), accessToken: z.string() }).strict();
 export async function POST(request: Request) {
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
         // Varsayılan hesap bayrağı döngü içinde güncellenir (yalnızca ilk hesap varsayılan olur).
         await syncDiscoveredAdAccounts(actor, connectionId, discovered);
       } catch (err) {
-        console.warn(`[platforms/connect] reklam hesabı keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
+        logger.warn(`[platforms/connect] reklam hesabı keşfi başarısız: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
       }
     }
     return { name: input.platform, status: "ACTIVE", accounts: 1 };

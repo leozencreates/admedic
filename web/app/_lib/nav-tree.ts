@@ -30,7 +30,8 @@ export type NavIcon =
   | "platforms"
   | "guard"
   | "rules"
-  | "billing";
+  | "billing"
+  | "launch";
 
 /** Rozet kaynağı: bir insandan eylem bekleyen sayılar (`/api/shell`). */
 export type NavBadge = "approvals" | "leads" | "alerts";
@@ -124,6 +125,7 @@ export const NAV_TREE: readonly NavGroupDef[] = [
       { href: "/policies", key: "nav.policies", icon: "guard", roles: MANAGE },
       { href: "/policy-rules", key: "nav.policyRules", icon: "rules", roles: EDIT },
       { href: "/billing", key: "nav.billing", icon: "billing", roles: MANAGE },
+      { href: "/go-live", key: "nav.goLive", icon: "launch", roles: ["OWNER"] },
     ],
   },
 ];

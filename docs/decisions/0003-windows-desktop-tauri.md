@@ -69,3 +69,9 @@ Kararı özetleyen tek cümle: "GitHub yok = repo yerel kalır; ad kuralı deği
 - Kabuk `apps/api` salt okunur REST'ini `API_TOKEN` Bearer belirteciyle tüketir; `web/` Next.js paneli
   SPA+API modeline **taşınmadı** (ADR-0001 durum notu) — masaüstü ile web aynı veritabanını, farklı HTTP
   katmanlarını kullanır. Kurulum: `desktop/README.md`.
+
+## Revizyon 3 (2026-09-29): Sunucu merkezli mimari — ADR-0023
+- "Veri lokasyonu PC" kuralı kaldırıldı: canlıda Meta webhook'ları 7/24 erişilebilen bir HTTPS sunucusu gerektirir.
+- Ürünün merkezi Türkiye'de barındırılan tek sunucudur (panel, işçi, PostgreSQL). Masaüstü programı bu sunucuya bağlanan
+  bir istemci olarak kalır.
+

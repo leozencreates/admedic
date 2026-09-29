@@ -106,6 +106,7 @@ test.describe("erişilebilirlik kapısı", () => {
     "/policies",
     "/policy-rules",
     "/billing",
+    "/go-live",
   ];
 
   for (const vp of VIEWPORTS) {

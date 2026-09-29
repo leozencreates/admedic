@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { logger } from "./log";
 
 /**
  * İşi yanıt gönderildikten sonra çalıştırır (Next `after`; Meta webhook'u ve OAuth dönüşü bekletilmez).
@@ -10,7 +11,7 @@ export async function runAfterResponse(label: string, task: () => Promise<unknow
     try {
       await task();
     } catch (error) {
-      console.warn(`[${label}] arka plan işi tamamlanamadı: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
+      logger.warn(`[${label}] arka plan işi tamamlanamadı: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
     }
   };
   try {

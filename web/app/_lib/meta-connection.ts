@@ -6,6 +6,7 @@ import {
   getGraphVersion,
   getTokenDebug,
   graphAuth,
+  graphPost,
   MetaGraphError,
   nextPageUrl,
   rawGraph,
@@ -474,3 +475,82 @@ export async function syncDiscoveredAdAccounts(
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
+
+// ------------------------------------------------------------------------------------
+// Sayfa webhook aboneliği (ADR-0023). Meta, Anında Form lead'i ve sayfa mesajı bildirimlerini ancak sayfa
+// uygulamaya abone edildiyse gönderir: `POST /{page-id}/subscribed_apps` (sayfa erişim anahtarı; izinler
+// pages_manage_metadata, pages_show_list; leadgen için ayrıca leads_retrieval, pages_read_engagement,
+// ads_management). Kaynak: developers.facebook.com/docs/graph-api/reference/page/subscribed_apps ve Lead Ads
+// webhook kılavuzu (2026-09-29, docs/meta-constraints.md).
+// ------------------------------------------------------------------------------------
+
+/** Sayfa için istenecek bildirim alanları: lead her zaman; mesaj yalnızca Messenger izni verildiyse. */
+export function pageWebhookFields(grantedScopes: readonly string[]): string[] {
+  return grantedScopes.includes("pages_messaging") ? ["leadgen", "messages"] : ["leadgen"];
+}
+
+/** Sayfayı uygulamanın webhook'una abone eder. Hata `MetaGraphError` olarak yükselir. */
+export async function subscribePageWebhooks(
+  pageId: string,
+  pageToken: string,
+  fields: readonly string[],
+  fetchFn: typeof fetch = fetch,
+): Promise<boolean> {
+  const env = loadEnv();
+  const body = await graphPost(
+    getGraphVersion(),
+    `${pageId}/subscribed_apps`,
+    { subscribed_fields: fields.join(",") },
+    pageToken,
+    fetchFn,
+    env.META_APP_SECRET,
+  );
+  return isRecord(body) && body.success === true;
+}
+
+/** Sayfanın bu uygulamaya hangi alanlarla abone olduğu (uygulama listede yoksa boş liste). */
+export async function readPageSubscription(
+  pageId: string,
+  pageToken: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<string[]> {
+  const appId = loadEnv().META_APP_ID;
+  const body = await graphGetAuthed(`${pageId}/subscribed_apps`, {}, pageToken, fetchFn);
+  const rows = isRecord(body) && Array.isArray(body.data) ? body.data : [];
+  for (const row of rows) {
+    if (!isRecord(row) || (appId && String(row.id) !== appId)) continue;
+    return Array.isArray(row.subscribed_fields) ? row.subscribed_fields.map(String) : [];
+  }
+  return [];
+}
+
+/**
+ * Keşfedilen sayfaların hepsini abone eder; başarısız olanın bağlantısına kısa hata yazılır (Meta bağlantıları ve
+ * Canlıya geçiş sayfalarında görünür). Hata fırlatmaz.
+ */
+export async function subscribeDiscoveredPages(
+  orgId: string,
+  pages: readonly DiscoveredPage[],
+  grantedScopes: readonly string[],
+  fetchFn: typeof fetch = fetch,
+): Promise<{ subscribed: number; failed: number }> {
+  const fields = pageWebhookFields(grantedScopes);
+  let subscribed = 0;
+  let failed = 0;
+  for (const page of pages) {
+    if (!page.accessToken) continue;
+    try {
+      if (await subscribePageWebhooks(page.id, page.accessToken, fields, fetchFn)) subscribed++;
+      else throw new Error("Meta aboneliği onaylamadı.");
+    } catch (err) {
+      failed++;
+      const message = err instanceof Error ? err.message.slice(0, 300) : String(err);
+      await prisma.metaConnection.updateMany({
+        where: { orgId, type: "PAGE", pageId: page.id },
+        data: { lastError: `Sayfa lead/mesaj bildirimlerine abone edilemedi: ${message}` },
+      });
+    }
+  }
+  return { subscribed, failed };
+}
+

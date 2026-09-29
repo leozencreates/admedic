@@ -13,6 +13,7 @@ import { tryDecryptField } from "./encrypt";
 import { requireLiveMetaConnection } from "./meta-connection";
 import { logAudit } from "./audit";
 import { HttpError } from "./http";
+import { logger } from "./log";
 
 /**
  * CRM → Meta Conversions API köprüsü (spec 3.9). Lead durum geçişinden offline dönüşüm
@@ -181,7 +182,7 @@ export async function sendLeadConversion(input: SendLeadConversionInput): Promis
     return { status: "SENT", eventName, eventId: externalId, conversionEventId, eventsReceived, mock: mockMode };
   } catch (err) {
     // PII içermeyen kısa teşhis; çağıranı (lead güncellemesi) asla bozmaz.
-    console.warn(`[capi] lead dönüşümü gönderilemedi (${eventName}): ${err instanceof Error ? err.name : "Error"}`);
+    logger.warn(`[capi] lead dönüşümü gönderilemedi (${eventName}): ${err instanceof Error ? err.name : "Error"}`);
     return { status: "FAILED", reason: "META_ERROR", message: "Dönüşüm gönderilemedi.", eventName };
   }
 }

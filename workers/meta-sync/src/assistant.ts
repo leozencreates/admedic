@@ -20,6 +20,7 @@ import {
   type HandoffReason,
   type LlmLogSink,
 } from "@admedic/llm";
+import { logger } from "./log";
 
 /**
  * Otomatik yanıt tetikleyicisi (spec 3.8): webhook (W2) gelen mesajı kaydeder ama bot yanıtı
@@ -387,7 +388,7 @@ export async function runAssistant(options: AssistantRunOptions = {}): Promise<A
       result[await handleConversation(conversation, llm, options)]++;
     } catch (err) {
       // PII yok: yalnızca konuşma kimliği ve hata sınıfı.
-      console.warn(`[assistant] konuşma ${conversation.id} işlenemedi: ${err instanceof Error ? err.name : "hata"}`);
+      logger.warn(`[assistant] konuşma ${conversation.id} işlenemedi: ${err instanceof Error ? err.name : "hata"}`);
       result.failed++;
     }
   }

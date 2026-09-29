@@ -11,6 +11,7 @@ import {
   billingMode,
   type PlanCode,
 } from "../../_lib/stripe";
+import { logger } from "../../../../_lib/log";
 
 /**
  * Stripe webhook (spec 3.12).
@@ -374,7 +375,7 @@ export async function POST(request: Request) {
       // Yalnızca Stripe hiç yapılandırılmamışken (gizli anahtar VE webhook anahtarı yok, production dışı)
       // imzasız gövde kabul edilir. Gerçek Stripe anahtarı varsa imzasız istek her zaman 401.
       mock = true;
-      console.warn("[billing] Stripe webhook imzasız kabul edildi (Stripe yapılandırılmamış, NODE_ENV!=production).");
+      logger.warn("[billing] Stripe webhook imzasız kabul edildi (Stripe yapılandırılmamış, NODE_ENV!=production).");
       try {
         payload = JSON.parse(raw);
       } catch {

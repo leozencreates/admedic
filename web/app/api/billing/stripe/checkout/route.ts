@@ -5,6 +5,7 @@ import { body, respond, sameOrigin, HttpError } from "../../../../_lib/http";
 import { logAudit } from "../../../../_lib/audit";
 import { PlanSchema, billingMode, getStripe, isPaidPlan, planPriceId } from "../../_lib/stripe";
 import { activateFreePlan, applyPlanLocally, serializeSubscription } from "../../_lib/billing";
+import { logger } from "../../../../_lib/log";
 
 /**
  * Plan seçimi / Stripe Checkout (spec 3.12). OWNER/ADMIN.
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
         subscription_data: { metadata: { organizationId: actor.orgId, plan: input.plan } },
       });
     } catch (error) {
-      console.error(`[billing] Stripe checkout oturumu açılamadı: ${error instanceof Error ? error.message.slice(0, 200) : "unknown"}`);
+      logger.error(`[billing] Stripe checkout oturumu açılamadı: ${error instanceof Error ? error.message.slice(0, 200) : "unknown"}`);
       throw new HttpError(502, "Stripe Checkout oturumu açılamadı; daha sonra tekrar deneyin.");
     }
     if (!session.url) throw new HttpError(502, "Stripe ödeme sayfası bağlantısı alınamadı. Birkaç dakika sonra tekrar deneyin.");

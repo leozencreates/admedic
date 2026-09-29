@@ -33,6 +33,7 @@ import {
   renderReportPdf,
   sendWeeklyReportEmail,
 } from "@admedic/reporting";
+import { logger } from "./log";
 
 /** Çözülemeyen (bozuk/anahtarı değişmiş) token null döner; çağıran bağlantıyı atlar ve döngü sürer. */
 const decryptToken = (ciphertext: string): string | null => {
@@ -71,16 +72,20 @@ let running = false;
 async function runGuarded(): Promise<void> {
   if (running) return;
   running = true;
+  const startedAt = Date.now();
   try {
-    await runScheduled(createMetaClient());
-  } catch {
+    const summary = await runScheduled(createMetaClient());
+    logger.info({ ...summary, ms: Date.now() - startedAt }, "zamanlanmış tur tamamlandı");
+  } catch (err) {
     // runScheduled kendi içinde workspace bazında hata yakalar; buraya düşen hatalar döngüyü durdurmaz.
+    logger.error({ err: errorSummary(err) }, "zamanlanmış tur tamamlanamadı");
   } finally {
     running = false;
   }
 }
 export function start(intervalMs = 5 * 60 * 1000): void {
   stop();
+  logger.info({ intervalMs }, "işçi başladı");
   void runGuarded();
   timer = setInterval(() => void runGuarded(), intervalMs);
 }
@@ -151,14 +156,14 @@ async function runScheduled(meta: MetaClientLike) {
       }
     } catch (err) {
       // PII yok: yalnızca workspace id ve hata sınıfı/kodu.
-      console.warn(`[meta-sync] workspace ${wsId} senkronu tamamlanamadı: ${errorSummary(err)}`);
+      logger.warn(`[meta-sync] workspace ${wsId} senkronu tamamlanamadı: ${errorSummary(err)}`);
     }
   }
   // AI asistan turu (spec 3.8): yanıtlanmamış gelen mesajlara bot yanıtı / devir (W7, assistant.ts).
   try {
     await runAssistant();
   } catch (err) {
-    console.warn(`[meta-sync] asistan turu tamamlanamadı: ${errorSummary(err)}`);
+    logger.warn(`[meta-sync] asistan turu tamamlanamadı: ${errorSummary(err)}`);
   }
   return { insightsSynced, alertsCreated, webhooksDelivered, completed, emailsSent };
 }
@@ -202,7 +207,7 @@ export async function deliverWeeklyReport(workspaceId: string, reportRecipient?:
       return result.error ? 0 : 1;
     }, { timeout: 60_000 });
   } catch (err) {
-    console.warn(`[reporting] Haftalık rapor teslimi tamamlanamadı (workspace ${workspaceId}): ${errorSummary(err)}`);
+    logger.warn(`[reporting] Haftalık rapor teslimi tamamlanamadı (workspace ${workspaceId}): ${errorSummary(err)}`);
     return 0;
   }
 }
@@ -267,7 +272,7 @@ export async function checkConnectionHealth(
     const token = decryptToken(conn.tokenCiphertext);
     if (!token) {
       // Durum değiştirilmez (geçici anahtar hatası olabilir); bağlantı bu turda atlanır.
-      console.warn(`[meta-sync] bağlantı ${conn.id}: token çözülemedi (ENCRYPTION_KEY değişmiş olabilir); atlandı.`);
+      logger.warn(`[meta-sync] bağlantı ${conn.id}: token çözülemedi (ENCRYPTION_KEY değişmiş olabilir); atlandı.`);
       continue;
     }
     const now = Date.now();
@@ -296,7 +301,7 @@ export async function checkConnectionHealth(
         }
       } catch (err) {
         // debug_token çağrısı başarısızsa (ağ/rate limit) sessiz geç; işlem devam eder.
-        console.warn(`[meta-sync] debug_token başarısız (bağlantı ${conn.id}): ${errorSummary(err)}`);
+        logger.warn(`[meta-sync] debug_token başarısız (bağlantı ${conn.id}): ${errorSummary(err)}`);
       }
     }
 
@@ -428,12 +433,12 @@ async function deliverDisconnectWebhook(
       }),
     });
     if (!res.ok) {
-      console.warn(`[meta-sync] webhook teslimi ${res.status}: ${await res.text().catch(() => "")}`);
+      logger.warn(`[meta-sync] webhook teslimi ${res.status}: ${await res.text().catch(() => "")}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn(`[meta-sync] webhook teslimi başarısız: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`[meta-sync] webhook teslimi başarısız: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }
@@ -468,7 +473,7 @@ function lazyAdSetBudgetTotals(meta: MetaClientLike, metaAccountId: string, toke
         return totals;
       })
       .catch((err: unknown) => {
-        console.warn(`[meta-sync] ad set bütçeleri alınamadı (hesap ${accountId}); bütçe zenginleştirmesi atlandı: ${errorSummary(err)}`);
+        logger.warn(`[meta-sync] ad set bütçeleri alınamadı (hesap ${accountId}); bütçe zenginleştirmesi atlandı: ${errorSummary(err)}`);
         return null;
       });
     return cached;
@@ -593,11 +598,11 @@ export async function syncInsights(meta: MetaClientLike, workspace: any): Promis
       }
     } catch (err) {
       if (isMetaThrottleError(err)) {
-        console.warn(`[meta-sync] Meta rate limit (hesap ${account.id}); bu turda atlandı: ${errorSummary(err)}`);
+        logger.warn(`[meta-sync] Meta rate limit (hesap ${account.id}); bu turda atlandı: ${errorSummary(err)}`);
         continue;
       }
       if (err instanceof MetaGraphError) {
-        console.warn(`[meta-sync] Meta insights alınamadı (hesap ${account.id}); atlandı: ${errorSummary(err)}`);
+        logger.warn(`[meta-sync] Meta insights alınamadı (hesap ${account.id}); atlandı: ${errorSummary(err)}`);
         continue;
       }
       throw err;
@@ -657,7 +662,7 @@ export async function syncAdReviews(
       alerts += result.alertsCreated;
     } catch (err) {
       if (err instanceof MetaGraphError) {
-        console.warn(`[meta-sync] reklam incelemesi okunamadı (kampanya ${campaign.id}); atlandı: ${errorSummary(err)}`);
+        logger.warn(`[meta-sync] reklam incelemesi okunamadı (kampanya ${campaign.id}); atlandı: ${errorSummary(err)}`);
         continue;
       }
       throw err;

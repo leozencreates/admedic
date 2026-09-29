@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@admedic/database";
+import { prisma, Prisma, uniqueViolationFields } from "@admedic/database";
 import { getLlmConfig, loadEnv } from "@admedic/config";
 import {
   MetaGraphError,
@@ -17,6 +17,7 @@ import { sendWhatsAppMessage, normalizeTemplateName } from "./whatsapp";
 import { resolveWhatsAppTransport } from "./whatsapp-tenant";
 import { sendMessengerMessage } from "./messenger";
 import { recordInstantFormConsent } from "./lead-consent";
+import { logger } from "./log";
 
 /**
  * Meta webhook alımı (Lead Ads, Messenger, Instagram DM, WhatsApp Cloud API).
@@ -413,7 +414,7 @@ async function resolveTenant(
   const orgIds = new Set(candidates.map((c) => c.orgId));
   let connection: (typeof candidates)[number] | null = candidates.find((c) => c.type === "PAGE") ?? candidates[0] ?? null;
   if (orgIds.size > 1) {
-    console.warn(`[webhook] kaynak kimliği ${orgIds.size} farklı organizasyonda kayıtlı; olay yok sayıldı.`);
+    logger.warn(`[webhook] kaynak kimliği ${orgIds.size} farklı organizasyonda kayıtlı; olay yok sayıldı.`);
     connection = null;
   }
   let tenant: TenantContext | null = null;
@@ -481,13 +482,10 @@ class DuplicateEventError extends Error {
 }
 
 function isUniqueViolation(error: unknown, column?: string): boolean {
-  const e = error as { code?: unknown; meta?: { target?: unknown } } | null;
-  if (!e || e.code !== "P2002") return false;
-  if (!column) return true;
-  const target = e.meta?.target;
-  if (target === undefined || target === null) return true;
-  const text = Array.isArray(target) ? target.join(",") : String(target);
-  return text.includes(column);
+  const fields = uniqueViolationFields(error);
+  if (fields === null) return false;
+  if (!column || fields.length === 0) return true;
+  return fields.join(",").includes(column);
 }
 
 /** Transaction ömürlü danışma kilidi: `$queryRaw` void döndüremediği için `$executeRaw` kullanılır. */

@@ -1,4 +1,5 @@
 import type { MetaClientLike } from "@admedic/meta-api";
+import { logger } from "./log";
 
 type AdSetBudgetRow = { id: string; metaAdSetId: string | null; dailyBudget: number | null };
 
@@ -85,7 +86,7 @@ export async function pushBudgetToMeta(input: {
             input.token,
           );
         } catch {
-          console.error(`[campaign-budget] ad set bütçesi geri alınamadı: ${adSet.metaAdSetId}`);
+          logger.error(`[campaign-budget] ad set bütçesi geri alınamadı: ${adSet.metaAdSetId}`);
         }
       }
       throw error;

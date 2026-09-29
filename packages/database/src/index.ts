@@ -1,14 +1,20 @@
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 import { loadEnv } from "@admedic/config";
 import { isAdmedicError } from "@admedic/shared";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
+/**
+ * Rust'sız Prisma istemcisi (ADR-0023): bağlantı `pg` sürücü bağdaştırıcısıyla kurulur (istemci motoru
+ * `datasourceUrl` ile bağdaştırıcıyı birlikte kabul etmez). `allowExitOnIdle`: boşta bağlantılar betiği açık tutmaz.
+ */
 export function createPrismaClient(datasourceUrl?: string): PrismaClient {
   const env = loadEnv();
+  const connectionString = datasourceUrl ?? env.DATABASE_URL;
   return new PrismaClient({
-    datasourceUrl: datasourceUrl ?? env.DATABASE_URL,
+    adapter: new PrismaPg({ connectionString, allowExitOnIdle: true }),
     log: env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 }
@@ -23,6 +29,7 @@ export { isAdmedicError };
 
 export * from "@prisma/client";
 export { anonymizeLead, anonymizeExpiredLeads } from "./privacy";
+export { uniqueViolationFields } from "./errors";
 export {
   applyAdReviewSync,
   type AdReviewStateValue,

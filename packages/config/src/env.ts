@@ -13,6 +13,8 @@ const graphVersion = () =>
   );
 
 export const DEV_AUTH_SECRET = "admedic-dev-only-secret";
+/** Yerel geliştirme veritabanı; üretimde bu değerle başlatılmaz. */
+export const DEFAULT_DATABASE_URL = "postgresql://localhost:5432/admedic_dev";
 
 export const EnvSchema = z.object({
   NODE_ENV: z.preprocess(blankToUndefined, z.enum(["development", "test", "production"]).default("development")),
@@ -23,7 +25,7 @@ export const EnvSchema = z.object({
   DATABASE_URL: z
     .string()
     .min(1)
-    .default("postgresql://localhost:5432/admedic_dev"),
+    .default(DEFAULT_DATABASE_URL),
   /** Kuyruk altyapısı (spec §4, henüz kullanılmıyor); ayarlanmadıysa undefined. */
   REDIS_URL: optionalString(),
 
@@ -152,6 +154,11 @@ function assertProductionSecrets(env: AppEnv) {
   if (env.AUTH_SECRET === DEV_AUTH_SECRET) problems.push("AUTH_SECRET geliştirme varsayılanında");
   if (!env.ENCRYPTION_KEY) problems.push("ENCRYPTION_KEY ayarlanmadı");
   if (!env.META_MOCK_MODE && !env.metaGraphApiVersion) problems.push("META_API_VERSION ayarlanmadı");
+  if (env.DATABASE_URL === DEFAULT_DATABASE_URL) problems.push("DATABASE_URL ayarlanmadı");
+  // Canlı Meta ile çalışırken (ADR-0023): webhook imzası ve appsecret_proof için gizli anahtar, çerez ve OAuth
+  // dönüşü için HTTPS adres zorunlu.
+  if (!env.META_MOCK_MODE && !env.metaWebhookSecret) problems.push("META_APP_SECRET ayarlanmadı (webhook imzası doğrulanamaz)");
+  if (!env.META_MOCK_MODE && !/^https:\/\//i.test(env.AUTH_URL)) problems.push("AUTH_URL https:// ile başlamalı");
   if (env.META_MOCK_MODE && !env.ALLOW_MOCK_IN_PRODUCTION)
     problems.push("META_MOCK_MODE üretimde açık (gerçek Meta verisi yerine sahte veri üretilir); META_MOCK_MODE=false yapın ya da demo için ALLOW_MOCK_IN_PRODUCTION=true");
   if (problems.length)

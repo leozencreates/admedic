@@ -11,6 +11,7 @@ import {
   type LeadgenFetchResult,
   type TenantContext,
 } from "./webhook-ingest";
+import { logger } from "./log";
 
 /**
  * Alanları çekilemeyen Lead Ads lead'lerinin (`metadata.pendingFetch`) yeniden denenmesi (ADR-0015).
@@ -297,7 +298,7 @@ export async function refetchPendingLeads(input: RefetchInput): Promise<RefetchS
           psid: null,
         });
       } catch (error) {
-        console.warn(`[lead-refetch] karşılama gönderilemedi (lead ${lead.id}): ${error instanceof Error ? error.message.slice(0, 120) : "?"}`);
+        logger.warn(`[lead-refetch] karşılama gönderilemedi (lead ${lead.id}): ${error instanceof Error ? error.message.slice(0, 120) : "?"}`);
       }
     }
   }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { loadEnv } from "@admedic/config";
 import { isAdmedicError } from "@admedic/shared";
+import { errorSummary, logger } from "./log";
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -79,12 +80,7 @@ export async function respond(action: () => Promise<unknown>) {
     const mapped = errorToHttp(error);
     if (mapped.status >= 500 && !(error instanceof HttpError)) {
       // Kişisel veri içermeyen kısa teşhis satırı (hata sınıfı + Prisma kodu).
-      const code = (error as { code?: unknown } | null)?.code;
-      console.error(
-        `[api] ${error instanceof Error ? error.name : "Error"}${code ? ` ${String(code)}` : ""}: ${
-          error instanceof Error ? error.message.slice(0, 200) : "unknown"
-        }`,
-      );
+      logger.error({ err: errorSummary(error) }, "API isteği tamamlanamadı");
     }
     return Response.json(
       { error: mapped.message },

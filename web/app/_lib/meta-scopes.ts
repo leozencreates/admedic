@@ -20,6 +20,11 @@ export const META_OPTIONAL_SCOPES = [
   "pages_manage_metadata",
   /** Instant Form (leadgen_forms) oluşturma ve sayfa token'ıyla lead okuma (lead ads App Review). */
   "pages_manage_ads",
+  /**
+   * Sayfanın uygulamaya webhook aboneliği (`subscribed_apps`, leadgen) için Lead Ads webhook kılavuzunda istenen izin
+   * (docs/meta-constraints.md, 2026-09-29).
+   */
+  "pages_read_engagement",
   "pages_messaging",
   "instagram_basic",
   "instagram_manage_messages",
@@ -35,6 +40,7 @@ export const META_OAUTH_SCOPES = [
   "pages_show_list",
   "pages_manage_metadata",
   "pages_manage_ads",
+  "pages_read_engagement",
   "pages_messaging",
   "leads_retrieval",
   "instagram_basic",
@@ -74,6 +80,8 @@ export function scopeLabel(scope: string): string {
       return "Sayfa meta verisi yönetimi";
     case "pages_manage_ads":
       return "Sayfa reklamlarını ve formlarını yönetme";
+    case "pages_read_engagement":
+      return "Sayfa içeriğini okuma (lead bildirim aboneliği)";
     case "pages_show_list":
       return "Sayfa listesini görüntüleme";
     case "pages_messaging":

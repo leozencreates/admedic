@@ -1,0 +1,73 @@
+# Admedic üretim yığını (ADR-0023) — tek sunucu, Türkiye'de barındırma.
+#   cd deploy && cp .env.production.example .env   (değerleri doldurun)
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Ayrıntı: docs/runbook.md
+name: admedic
+
+x-app-env: &app-env
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://${POSTGRES_USER:-admedic}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}@postgres:5432/${POSTGRES_DB:-admedic}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admedic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}
+      POSTGRES_DB: ${POSTGRES_DB:-admedic}
+    # Dışarıya açılmaz; yalnızca iç ağdan erişilir.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Tek seferlik: bekleyen veritabanı göçlerini uygular; web ve işçi bundan sonra başlar.
+  migrate:
+    <<: *app-env
+    build: { context: .., target: tools }
+    image: admedic-tools:${APP_VERSION:-latest}
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    <<: *app-env
+    build: { context: .., target: web }
+    image: admedic-web:${APP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    expose: ["3000"]
+
+  worker:
+    <<: *app-env
+    build: { context: .., target: worker }
+    image: admedic-worker:${APP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  # HTTPS: Caddy, DOMAIN için Let's Encrypt sertifikasını kendisi alır ve yeniler (80 ve 443 açık olmalı).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN gerekli}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL gerekli}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
