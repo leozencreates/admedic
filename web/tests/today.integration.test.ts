@@ -5,7 +5,7 @@ import { prisma, type Role } from "@admedic/database";
 import type { Actor } from "../app/_lib/auth";
 import { changeDraft } from "../app/_lib/studio-service";
 import { listCorrectionRequests } from "../app/_lib/pending-approvals";
-import { setupSteps, todayQueue } from "../app/_lib/today";
+import { setupSteps, todayLeadTeam, todayPipeline, todayQueue } from "../app/_lib/today";
 
 /**
  * Bugün kuyruğu ve düzeltme istenenler (ADR-0018): içerik düzeltme isteğinin gerekçesi denetim kaydına yazılır
@@ -108,6 +108,61 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("Bugün kuyruğu ve düzeltm
   it("reklam uzmanı devir ve yanıt bekleyen lead satırlarını görmez (hastaya yazamaz, ADR-0022)", async () => {
     const { items } = await todayQueue(actors.MEDIA_BUYER!);
     expect(items.some((i) => i.kind === "Hasta devri" || i.key === "leads-waiting")).toBe(false);
+  });
+
+  it("akış bandı role göre aşama gösterir; sayılar çalışma alanıyla sınırlıdır (ADR-0030)", async () => {
+    const owner = await todayPipeline(actors.OWNER!);
+    expect(owner.map((s) => s.key)).toEqual(["draft", "review", "live", "leads", "booked", "alerts"]);
+    const count = (key: string) => owner.find((s) => s.key === key)!.count;
+    // Onay bekleyen içerik taslağı; iki yanıt bekleyen lead (devir + form); yabancı kuruluşun uyarısı sayılmaz.
+    expect(count("review")).toBe(1);
+    expect(count("leads")).toBe(2);
+    expect(count("alerts")).toBe(1);
+    expect(count("draft") + count("live") + count("booked")).toBe(0);
+    expect(owner.find((s) => s.key === "leads")).toMatchObject({ label: "Yanıt bekleyen lead", href: "/leads?tab=waiting", tone: "warn" });
+
+    // Hasta koordinatörü kampanya ve onay aşamalarını görmez.
+    expect((await todayPipeline(actors.PATIENT_COORDINATOR!)).map((s) => s.key)).toEqual(["leads", "booked", "alerts"]);
+    // Reklam uzmanı hastaya yazamaz: lead hücresi yeni lead sayısıdır ve eylem beklemez.
+    const buyer = await todayPipeline(actors.MEDIA_BUYER!);
+    expect(buyer.find((s) => s.key === "leads")).toMatchObject({ label: "Yeni lead", count: 2, href: "/leads", tone: "idle" });
+    expect(buyer.find((s) => s.key === "review")?.count).toBe(1);
+  });
+
+  it("lead takımı özeti: kadro her zaman, sayılar son çalıştırmadan; sayfayı göremeyen rolde yok (ADR-0030)", async () => {
+    expect(await todayLeadTeam(actors.PATIENT_COORDINATOR!)).toBeNull();
+    const before = (await todayLeadTeam(actors.OWNER!))!;
+    expect(before).toMatchObject({ status: null, teamSize: 50, agentsDone: 0, pendingProposals: 0 });
+    expect(before.teams).toHaveLength(7);
+    expect(before.teams.reduce((sum, t) => sum + t.specialists, 0)).toBe(42);
+
+    const owner = actors.OWNER!;
+    const run = await prisma.leadTeamRun.create({
+      data: {
+        workspaceId: owner.workspaceId, organizationId: owner.orgId, status: "COMPLETED", simulated: true,
+        agentsTotal: 50, agentsCompleted: 3, agentsFailed: 1,
+        reports: {
+          create: [
+            { agentKey: "market:germany", role: "SPECIALIST", team: "market", status: "COMPLETED" },
+            { agentKey: "market:uk", role: "SPECIALIST", team: "market", status: "FAILED" },
+            { agentKey: "lead:market", role: "LEAD", team: "market", status: "COMPLETED" },
+            { agentKey: "director", role: "DIRECTOR", team: null, status: "COMPLETED" },
+          ],
+        },
+      },
+    });
+    await prisma.leadTeamProposal.createMany({
+      data: [
+        { runId: run.id, workspaceId: owner.workspaceId, rank: 1, title: "A", angle: "a", currency: "EUR", rationale: "r" },
+        { runId: run.id, workspaceId: owner.workspaceId, rank: 2, title: "B", angle: "b", currency: "EUR", rationale: "r", status: "REJECTED" },
+      ],
+    });
+    const after = (await todayLeadTeam(owner))!;
+    expect(after).toMatchObject({ status: "COMPLETED", simulated: true, agentsDone: 4, pendingProposals: 1 });
+    // Yalnızca raporunu tamamlayan uzman sayılır (lider ve başarısız uzman sayılmaz).
+    expect(after.teams.find((t) => t.key === "market")?.reported).toBe(1);
+    expect(after.teams.filter((t) => t.key !== "market").every((t) => t.reported === 0)).toBe(true);
+    await prisma.leadTeamRun.delete({ where: { id: run.id } });
   });
 
   it("düzeltme isteğinin gerekçesi yalnızca gönderene döner ve reklam uzmanının kuyruğuna düşer", async () => {

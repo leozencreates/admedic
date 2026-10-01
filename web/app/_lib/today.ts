@@ -6,7 +6,9 @@
  * sayfaya götürür. Bu modül hiçbir kaydı değiştirmez.
  */
 import { prisma, type Prisma } from "@admedic/database";
-import { ESCALATION_ROLES, type Actor } from "./auth";
+import { TEAMS, TEAM_SIZE } from "@admedic/lead-team";
+import { alertScope } from "./alert-scope";
+import { EDIT_ROLES, ESCALATION_ROLES, LEAD_READ_ROLES, type Actor } from "./auth";
 import { formatDuration, formatMoney, formatNumber, formatPercent } from "./format";
 import { HANDOFF_ALERT_TYPE } from "./lead-assistant";
 import { needsReplySummary } from "./inbox";
@@ -342,25 +344,96 @@ export async function setupSteps(actor: Actor): Promise<SetupStep[]> {
   ];
 }
 
-/** Analist / izleyici: son 7 günün en iyi ve en zayıf kampanyaları (reklam getirisine göre). */
-export async function campaignExtremes(actor: Actor): Promise<{ best: CampaignRow[]; worst: CampaignRow[] }> {
+/** Son 7 günde harcaması olan kampanyalar, reklam getirisine göre yüksekten düşüğe. */
+async function campaignRowsByRoas(actor: Actor): Promise<CampaignRow[]> {
   const totals = await campaignMetrics(actor.workspaceId, sinceDays(7));
   const withSpend = [...totals.entries()].filter(([, t]) => t.spend > 0);
-  if (!withSpend.length) return { best: [], worst: [] };
+  if (!withSpend.length) return [];
   const campaigns = await prisma.campaign.findMany({
     where: { workspaceId: actor.workspaceId, id: { in: withSpend.map(([id]) => id) } },
     select: { id: true, name: true, adAccount: { select: { currency: true } } },
   });
   const byId = new Map(campaigns.map((c) => [c.id, c]));
-  const rows: CampaignRow[] = withSpend
+  return withSpend
     .filter(([id]) => byId.has(id))
-    .map(([id, t]) => {
+    .map(([id, t]): CampaignRow => {
       const c = byId.get(id)!;
       return { id: c.id, name: c.name, currency: c.adAccount.currency || "EUR", spend: t.spend, leads: t.leads, roas: roas(t) };
     })
     .sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0));
+}
+
+/** Analist / izleyici: son 7 günün en iyi ve en zayıf kampanyaları (reklam getirisine göre). */
+export async function campaignExtremes(actor: Actor): Promise<{ best: CampaignRow[]; worst: CampaignRow[] }> {
+  const rows = await campaignRowsByRoas(actor);
   // En düşük listesi en yüksek listesindeki kampanyayı tekrar etmez (az kampanyada liste kısalır).
   return { best: rows.slice(0, 3), worst: rows.slice(Math.max(3, rows.length - 3)).reverse() };
+}
+
+/** Bugün ekranındaki kampanya getirisi çubukları (ADR-0030): son 7 günün en yüksek getirili kampanyaları. */
+export async function campaignRanking(actor: Actor, limit = 5): Promise<CampaignRow[]> {
+  return (await campaignRowsByRoas(actor)).slice(0, limit);
+}
+
+export interface PipelineStage {
+  key: "draft" | "review" | "live" | "leads" | "booked" | "alerts";
+  label: string;
+  count: number;
+  href: string;
+  /** `live`: yayındaki iş (vurgulu); `warn`: bir insandan eylem bekleyen iş (yalnızca sayı sıfırdan büyükken amber). */
+  tone: "idle" | "live" | "warn";
+}
+
+const CAMPAIGN_READ_ROLES: Actor["role"][] = ["OWNER", "ADMIN", "MEDIA_BUYER", "ANALYST", "VIEWER"];
+
+/**
+ * Akış bandı (ADR-0030): işin hangi aşamada kaç kayıtla durduğu — taslak, onay, yayın, lead, randevu, uyarı.
+ * Her hücre rolün menüde görebildiği sayfaya gider; rolün göremediği aşama bantta yer almaz. Sayılar çalışma
+ * alanıyla sınırlıdır; onay sayısı Onaylar kutusuyla aynı kapsamı kullanır.
+ */
+export async function todayPipeline(actor: Actor): Promise<PipelineStage[]> {
+  const role = actor.role;
+  const stages: PipelineStage[] = [];
+  const inWorkspace = { workspaceId: actor.workspaceId };
+
+  if (CAMPAIGN_READ_ROLES.includes(role)) {
+    const [draft, live] = await Promise.all([
+      prisma.campaign.count({ where: { ...inWorkspace, workflowStatus: { in: ["DRAFT", "REJECTED"] } } }),
+      prisma.campaign.count({ where: { ...inWorkspace, workflowStatus: "ACTIVE" } }),
+    ]);
+    stages.push({ key: "draft", label: "Taslak", count: draft, href: "/campaigns", tone: "idle" });
+    if (EDIT_ROLES.includes(role)) {
+      const [all, canApproveSpend] = await Promise.all([
+        listPendingApprovals(actor.workspaceId, { limit: approvalScanLimit(role) }),
+        hasSpendAuthority(actor),
+      ]);
+      const pending = scopePendingApprovals(all, actor, { canApproveSpend }).counts.total;
+      stages.push({ key: "review", label: "Onay bekliyor", count: pending, href: "/approvals", tone: "warn" });
+    }
+    stages.push({ key: "live", label: "Yayında", count: live, href: "/campaigns", tone: "live" });
+  }
+
+  if (LEAD_READ_ROLES.includes(role)) {
+    const [waiting, booked] = await Promise.all([
+      canReply(role)
+        ? needsReplySummary(actor).then((summary) => summary.count)
+        : prisma.lead.count({ where: { ...inWorkspace, status: "NEW" } }),
+      prisma.lead.count({ where: { ...inWorkspace, status: "CONSULTATION_BOOKED" } }),
+    ]);
+    stages.push(
+      canReply(role)
+        ? { key: "leads", label: "Yanıt bekleyen lead", count: waiting, href: "/leads?tab=waiting", tone: "warn" }
+        : { key: "leads", label: "Yeni lead", count: waiting, href: "/leads", tone: "idle" },
+    );
+    stages.push({ key: "booked", label: "Randevu", count: booked, href: "/leads", tone: "idle" });
+  }
+
+  const scope = alertScope(actor);
+  if (scope) {
+    const open = await prisma.alert.count({ where: { ...scope, status: "OPEN" } });
+    stages.push({ key: "alerts", label: "Açık uyarı", count: open, href: "/alerts", tone: "warn" });
+  }
+  return stages;
 }
 
 export interface CampaignRow {
@@ -370,4 +443,56 @@ export interface CampaignRow {
   spend: number;
   leads: number;
   roas: number | null;
+}
+
+export interface LeadTeamSnapshot {
+  /** Hiç çalıştırılmadıysa null. */
+  status: "RUNNING" | "COMPLETED" | "FAILED" | null;
+  simulated: boolean;
+  teamSize: number;
+  agentsDone: number;
+  /** Son çalıştırmanın bir insanın kararını bekleyen önerileri. */
+  pendingProposals: number;
+  startedAt: Date | null;
+  teams: { key: string; title: string; specialists: number; reported: number }[];
+}
+
+const LEAD_TEAM_VIEW_ROLES: Actor["role"][] = [...EDIT_ROLES, "ANALYST"];
+
+/**
+ * Bugün ekranındaki lead takımı özeti (ADR-0030): kadro hiyerarşisi ve son çalıştırmanın durumu. Sayfayı menüde
+ * göremeyen rolde null döner. Yalnızca okur; takılı kalan çalıştırmayı Lead takımı sayfası kapatır.
+ */
+export async function todayLeadTeam(actor: Actor): Promise<LeadTeamSnapshot | null> {
+  if (!LEAD_TEAM_VIEW_ROLES.includes(actor.role)) return null;
+  const latest = await prisma.leadTeamRun.findFirst({
+    where: { workspaceId: actor.workspaceId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, status: true, simulated: true, agentsCompleted: true, agentsFailed: true, startedAt: true },
+  });
+  const [reports, pendingProposals] = latest
+    ? await Promise.all([
+        prisma.leadTeamReport.findMany({
+          where: { runId: latest.id, role: "SPECIALIST", status: "COMPLETED" },
+          select: { team: true },
+        }),
+        prisma.leadTeamProposal.count({ where: { runId: latest.id, workspaceId: actor.workspaceId, status: "PENDING" } }),
+      ])
+    : [[], 0];
+  const reported = new Map<string, number>();
+  for (const r of reports) if (r.team) reported.set(r.team, (reported.get(r.team) ?? 0) + 1);
+  return {
+    status: latest?.status ?? null,
+    simulated: latest?.simulated ?? false,
+    teamSize: TEAM_SIZE,
+    agentsDone: latest ? latest.agentsCompleted + latest.agentsFailed : 0,
+    pendingProposals,
+    startedAt: latest?.startedAt ?? null,
+    teams: TEAMS.map((team) => ({
+      key: team.key,
+      title: team.title,
+      specialists: team.specialists.length,
+      reported: reported.get(team.key) ?? 0,
+    })),
+  };
 }

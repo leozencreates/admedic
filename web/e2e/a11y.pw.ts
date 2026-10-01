@@ -117,6 +117,7 @@ test.describe("erişilebilirlik kapısı", () => {
     "/insights",
     "/recommendations",
     "/decisions",
+    "/lead-team",
     "/alerts",
     "/clinic",
     "/meta-connections",

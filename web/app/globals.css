@@ -1,79 +1,158 @@
 @import "tailwindcss";
+@import "./kontrol.css";
 
 /*
- * Tasarım belirteçleri — K1-B "Operasyon Odası" (ADR-0017 · Faz 2). Bileşenler yalnızca bu adları kullanır.
- * Kontrast (WCAG göreli parlaklık): ink-2 #475467 beyazda 7,6:1 · ink-3 #667085 beyazda 4,8:1 ·
- * brand-600 #5B45D0 beyazda 6,6:1 · input kenarı #828B9E beyazda 3,4:1 (≥3:1 bileşen sınırı).
- * Eski adlar (muted, brand, brand-strong, pill, input) yeni değerlere bağlanır; sayfalar bozulmaz.
+ * Tasarım belirteçleri — "Kontrol merkezi" (ADR-0030; ADR-0017'deki açık temanın yerini alır).
+ * Koyu zemin, ince çizgili paneller, parlak mor vurgu. Bileşenler yalnızca bu adları kullanır.
+ * Kontrast (WCAG, panel zemini #0f1324 üzerinde): ink 15,6:1 · ink-2 11,3:1 · ink-3 8,0:1 · brand-700 (metin) 8,6:1 ·
+ * giriş kenarı #646c9a 3,3:1 (≥3:1 bileşen sınırı) · brand-600 dolgu üzerinde beyaz metin 5,0:1.
+ * Marka rolleri ayrıdır: brand-600 dolgudur (düğme zemini), brand-700 ve brand-strong koyu zeminde metindir.
  */
 @theme {
-  --font-sans: "IBM Plex Sans", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-sans: "Red Hat Text", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Red Hat Display", "Red Hat Text", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Red Hat Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   /* Yüzey ve metin */
-  --color-canvas: #f4f5f8;
-  --color-surface: #ffffff;
-  --color-subtle: #f8f9fb;
-  --color-ink: #101828;
-  --color-ink-2: #475467;
-  --color-ink-3: #667085;
-  --color-line: #e4e7ec;
-  --color-line-soft: #f2f4f7;
-  --color-btn-line: #d0d5dd;
+  --color-canvas: #0b0e1a;
+  --color-surface: #0f1324;
+  --color-subtle: #151a33;
+  --color-raised: #1a2040;
+  --color-ink: #e9ebf7;
+  --color-ink-2: #c5c9e3;
+  --color-ink-3: #a3a9c9;
+  --color-line: #232a4a;
+  --color-line-soft: #1a2040;
+  --color-btn-line: #343c66;
 
   /* Marka (durum anlamı taşımaz) */
-  --color-brand-50: #f3f1fd;
-  --color-brand-100: #e6e1fb;
-  --color-brand-200: #cbc1f6;
-  --color-brand-600: #5b45d0;
-  --color-brand-700: #4a36b3;
+  --color-brand-50: #1a1840;
+  --color-brand-100: #2a2466;
+  --color-brand-200: #4a3fa8;
+  --color-brand-600: #6c58e8;
+  --color-brand-700: #b3a8ff;
+  --color-brand-fill-hover: #5d49d6;
+  --color-brand-glow: #8b7bff;
 
-  /* Koyu menü */
-  --color-nav: #0f1426;
-  --color-nav-fg: #aeb6ca;
-  --color-nav-muted: #8a94ac;
-  --color-nav-active: #2a2562;
-  --color-nav-line: #242b45;
+  /* Menü şeridi */
+  --color-nav: #0d1020;
+  --color-nav-fg: #a3a9c9;
+  --color-nav-muted: #8d93b5;
+  --color-nav-active: #2a2466;
+  --color-nav-line: #1f2543;
 
   /* Durum tonları: zemin / kenar / metin (amber = bir insandan eylem bekleniyor) */
-  --color-ok-bg: #ecfdf3;
-  --color-ok-line: #abefc6;
-  --color-ok: #067647;
-  --color-warn-bg: #fffaeb;
-  --color-warn-line: #fedf89;
-  --color-warn: #93370d;
-  --color-warn-badge: #fef0c7;
-  --color-bad-bg: #fef3f2;
-  --color-bad-line: #fecdca;
-  --color-bad: #b42318;
-  --color-bad-fill: #c4320a;
-  --color-info-bg: #eff8ff;
-  --color-info-line: #b2ddff;
-  --color-info: #175cd3;
-  --color-neutral-bg: #f2f4f7;
-  --color-neutral: #344054;
+  --color-ok-bg: #0f2a1f;
+  --color-ok-line: #1f5a3d;
+  --color-ok: #6ee7a8;
+  --color-warn-bg: #2b2110;
+  --color-warn-line: #5c4514;
+  --color-warn: #ffd98a;
+  --color-warn-badge: #4a3a12;
+  --color-bad-bg: #2d1416;
+  --color-bad-line: #6b2428;
+  --color-bad: #ff9c94;
+  --color-bad-fill: #d13438;
+  --color-info-bg: #10233f;
+  --color-info-line: #1f4a85;
+  --color-info: #8fc2ff;
+  --color-neutral-bg: #1a2040;
+  --color-neutral: #c5c9e3;
 
   /* Geriye dönük adlar (Faz 1 sayfaları) */
-  --color-muted: #475467;
-  --color-muted-on-dark: #aeb6ca;
-  --color-brand: #5b45d0;
-  --color-brand-strong: #4a36b3;
-  --color-pill: #4a36b3;
-  --color-input: #828b9e;
+  --color-muted: #a3a9c9;
+  --color-muted-on-dark: #a3a9c9;
+  --color-brand: #8b7bff;
+  --color-brand-strong: #b3a8ff;
+  --color-pill: #b3a8ff;
+  --color-input: #646c9a;
 
-  --radius-control: 6px;
-  --radius-card: 8px;
-  --radius-dialog: 12px;
-  --shadow-dropdown: 0 4px 8px -2px rgb(16 24 40 / 0.1);
-  --shadow-dialog: 0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+  /*
+   * Tailwind paletinin koyu karşılıkları: sayfalarda doğrudan kullanılan `slate/rose/amber/emerald/violet`
+   * sınıfları (ör. `bg-rose-50 text-rose-800 border-rose-200`) koyu zeminde de aynı anlamı taşısın diye rampalar
+   * ters çevrildi: 50–300 koyu zemin ve kenar, 400–500 orta ton, 600–950 açık metin.
+   */
+  --color-slate-50: #151a33;
+  --color-slate-100: #1a2040;
+  --color-slate-200: #232a4a;
+  --color-slate-300: #343c66;
+  --color-slate-400: #6f769c;
+  --color-slate-500: #8d93b5;
+  --color-slate-600: #a3a9c9;
+  --color-slate-700: #c5c9e3;
+  --color-slate-800: #dfe2f2;
+  --color-slate-900: #e9ebf7;
+  --color-slate-950: #f4f5fb;
+  --color-neutral-50: #151a33;
+  --color-neutral-100: #1a2040;
+  --color-neutral-200: #232a4a;
+  --color-neutral-300: #343c66;
+  --color-neutral-400: #6f769c;
+  --color-neutral-500: #8d93b5;
+  --color-neutral-600: #a3a9c9;
+  --color-neutral-700: #c5c9e3;
+  --color-neutral-800: #dfe2f2;
+  --color-neutral-900: #e9ebf7;
+  --color-rose-50: #2d1416;
+  --color-rose-100: #3a181b;
+  --color-rose-200: #6b2428;
+  --color-rose-300: #8f2f35;
+  --color-rose-400: #e5484d;
+  --color-rose-500: #f2555a;
+  --color-rose-600: #ff7b74;
+  --color-rose-700: #ff9c94;
+  --color-rose-800: #ffb8b1;
+  --color-rose-900: #ffd4cf;
+  --color-amber-50: #2b2110;
+  --color-amber-100: #3a2c12;
+  --color-amber-200: #5c4514;
+  --color-amber-300: #7a5a17;
+  --color-amber-400: #f5b83d;
+  --color-amber-500: #ffc24a;
+  --color-amber-600: #ffcf6b;
+  --color-amber-700: #ffd98a;
+  --color-amber-800: #ffe3a8;
+  --color-amber-900: #ffedc7;
+  --color-emerald-50: #0f2a1f;
+  --color-emerald-100: #123425;
+  --color-emerald-200: #1f5a3d;
+  --color-emerald-300: #2a7a52;
+  --color-emerald-400: #34c784;
+  --color-emerald-500: #4ade97;
+  --color-emerald-600: #6ee7a8;
+  --color-emerald-700: #86efb8;
+  --color-emerald-800: #a7f3cc;
+  --color-emerald-900: #c9f8df;
+  --color-violet-50: #1a1840;
+  --color-violet-100: #2a2466;
+  --color-violet-200: #3f3690;
+  --color-violet-300: #5547c4;
+  --color-violet-400: #7c6cf2;
+  --color-violet-500: #8b7bff;
+  --color-violet-600: #a093ff;
+  --color-violet-700: #b3a8ff;
+  --color-violet-800: #c9c1ff;
+  --color-violet-900: #dfdaff;
+
+  --radius-control: 8px;
+  --radius-card: 14px;
+  --radius-dialog: 16px;
+  --shadow-dropdown: 0 0 0 1px rgb(255 255 255 / 0.04), 0 12px 28px -8px rgb(0 0 0 / 0.7);
+  --shadow-dialog: 0 0 0 1px rgb(255 255 255 / 0.05), 0 24px 48px -12px rgb(0 0 0 / 0.8);
 }
 
 :root {
-  --background: #f4f5f8;
-  --foreground: #101828;
-  --focus-ring: #5b45d0;
-  --focus-ring-on-dark: #cbc1f6;
+  /* Yerel denetimler (tarih seçici, açılır liste, kaydırma çubuğu) koyu çizilsin. */
+  color-scheme: dark;
+  --background: #0b0e1a;
+  --foreground: #e9ebf7;
+  --focus-ring: #a093ff;
+  --focus-ring-on-dark: #a093ff;
   --topbar-h: 56px;
   --tabbar-h: 64px;
+  /* Masaüstü menü şeridi ve bölüm menüsü genişlikleri (ADR-0030). */
+  --rail-w: 88px;
+  --subnav-w: 216px;
 }
 
 @theme inline {
@@ -93,6 +172,10 @@
   a {
     color: inherit;
   }
+  h1,
+  h2 {
+    font-family: var(--font-display);
+  }
   .tabular,
   td,
   dd {
@@ -104,7 +187,6 @@
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
-  .app-sidebar :focus-visible,
   .app-sheet :focus-visible {
     outline-color: var(--focus-ring-on-dark);
   }
@@ -139,7 +221,7 @@
     z-index: 100;
     padding: 10px 14px;
     border-radius: var(--radius-control);
-    background: white;
+    background: var(--color-raised);
     color: var(--color-ink);
     font-size: 14px;
     font-weight: 600;
@@ -151,18 +233,6 @@
   .app-shell {
     display: flex;
     min-height: 100vh;
-  }
-  .app-sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    width: 248px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 16px 12px 12px;
-    background: var(--color-nav);
-    color: var(--color-nav-fg);
   }
   .app-brand {
     display: flex;
@@ -319,7 +389,7 @@
     padding: 0 8px 0 10px;
     border: 1px solid var(--color-input);
     border-radius: var(--radius-control);
-    background: var(--color-surface);
+    background: var(--color-canvas);
     color: var(--color-ink-3);
   }
   .app-search:focus-within {
@@ -342,7 +412,7 @@
     color: var(--color-ink-3);
   }
   .kbd {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 20px;
     color: var(--color-ink-2);
@@ -390,7 +460,7 @@
     position: absolute;
     top: -7px;
     right: -7px;
-    border: 2px solid white;
+    border: 2px solid var(--color-surface);
     min-width: 20px;
     height: 20px;
     padding: 0 5px;
@@ -456,7 +526,7 @@
     padding: 6px;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
-    background: var(--color-surface);
+    background: var(--color-subtle);
     box-shadow: var(--shadow-dropdown);
   }
   .popover--wide {
@@ -488,7 +558,7 @@
   }
   .popover__item:hover,
   .popover__item:focus-visible {
-    background: var(--color-subtle);
+    background: var(--color-raised);
   }
   .popover__item svg {
     flex-shrink: 0;
@@ -523,9 +593,9 @@
     flex: 1;
     min-width: 0;
     width: 100%;
-    max-width: 1440px;
+    max-width: 1520px;
     margin: 0 auto;
-    padding: 24px 32px 64px;
+    padding: 28px 32px 64px;
   }
   .login-main {
     min-height: 100vh;
@@ -596,9 +666,10 @@
   }
   .page-header h1 {
     margin: 0;
-    font-size: 24px;
-    line-height: 32px;
-    font-weight: 600;
+    font-size: 28px;
+    line-height: 36px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     color: var(--color-ink);
     overflow-wrap: anywhere;
   }
@@ -644,7 +715,7 @@
   .studio-card h2 {
     font-size: 16px;
     line-height: 24px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--color-ink);
   }
   .section-kicker {
@@ -673,7 +744,7 @@
     min-height: 36px;
     border: 1px solid var(--color-input);
     border-radius: var(--radius-control);
-    background: var(--color-surface);
+    background: var(--color-canvas);
     padding: 7px 10px;
     color: var(--color-ink);
     font-size: 14px;
@@ -718,15 +789,16 @@
     color: white;
   }
   .primary-button:hover {
-    background: var(--color-brand-700);
+    background: var(--color-brand-fill-hover);
+    border-color: var(--color-brand-fill-hover);
   }
   .secondary-button {
-    background: var(--color-surface);
-    color: var(--color-neutral);
+    background: var(--color-subtle);
+    color: var(--color-ink);
     border: 1px solid var(--color-btn-line);
   }
   .secondary-button:hover {
-    background: var(--color-subtle);
+    background: var(--color-raised);
   }
   .ghost-button {
     background: transparent;
@@ -742,7 +814,7 @@
     color: white;
   }
   .danger-button:hover {
-    background: #a52a08;
+    background: #b3282c;
   }
   .primary-button:disabled,
   .secondary-button:disabled,
@@ -750,7 +822,7 @@
     opacity: 1;
     background: var(--color-line-soft);
     border-color: var(--color-line);
-    color: #98a2b3;
+    color: var(--color-slate-500);
   }
   .text-link {
     color: var(--color-brand-700);
@@ -771,19 +843,19 @@
     border-radius: var(--radius-dialog);
     padding: 24px;
     color: var(--color-ink);
-    background: white;
+    background: var(--color-subtle);
     box-shadow: var(--shadow-dialog);
   }
   .app-dialog::backdrop {
-    background: rgb(16 24 40 / 0.45);
+    background: rgb(4 6 14 / 0.7);
   }
 
   /* ── Reklam önizleme ──────────────────────────────────────────────────── */
   .ad-preview {
     overflow: hidden;
-    background: white;
-    border: 1px solid #e7e9f2;
-    border-radius: 20px;
+    background: var(--color-subtle);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
   }
   .variant-marker {
     display: inline-flex;
@@ -792,8 +864,8 @@
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: #eeeafa;
-    color: var(--color-pill);
+    background: var(--color-brand-100);
+    color: var(--color-brand-700);
     font-weight: 700;
   }
   .ad-art {
@@ -833,9 +905,6 @@
 
   /* ── Telefon ve tablet (K7-A): ince üst çubuk, alt sekme çubuğu, tam ekran menü ── */
   @media (max-width: 1023px) {
-    .app-sidebar {
-      display: none;
-    }
     .app-topbar {
       padding: 0 8px 0 16px;
       gap: 4px;
@@ -959,7 +1028,7 @@
     }
     .app-tab[aria-current="page"],
     .app-tab[aria-expanded="true"] {
-      color: var(--color-brand-600);
+      color: var(--color-brand-700);
     }
     .app-tab__icon {
       position: relative;
@@ -1091,9 +1160,9 @@
     min-width: 56px;
     min-height: 56px;
     padding: 6px 16px 6px 6px;
-    border: 1px solid var(--color-nav-line);
+    border: 1px solid var(--color-btn-line);
     border-radius: 999px;
-    background: var(--color-nav);
+    background: var(--color-raised);
     color: #ffffff;
     font-size: 14px;
     line-height: 20px;
@@ -1147,7 +1216,7 @@
     width: 100%;
     height: 100%;
     border-radius: 999px;
-    background: radial-gradient(circle at 35% 30%, var(--color-brand-200), var(--color-brand-600) 55%, var(--color-brand-700));
+    background: radial-gradient(circle at 35% 30%, var(--color-brand-700), var(--color-brand-600) 55%, var(--color-brand-200));
     color: #ffffff;
     transform: scale(calc(1 + var(--va-level) * 0.12));
     transition: transform 90ms linear;
@@ -1247,7 +1316,7 @@
     color: var(--color-ink);
   }
   .va-panel__send:not(:disabled) {
-    color: var(--color-brand-600);
+    color: var(--color-brand-700);
   }
   .va-panel__lines {
     flex: 1;

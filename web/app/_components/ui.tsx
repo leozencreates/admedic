@@ -25,7 +25,7 @@ export function Badge({ tone = "gray", children }: { tone?: Tone; children: Reac
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg border border-line bg-surface p-5 ${className}`}>
+    <div className={`rounded-card border border-line bg-surface p-5 ${className}`}>
       {children}
     </div>
   );
@@ -45,7 +45,7 @@ export function StatCard({
   return (
     <Card>
       <p className="text-sm font-medium text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-ink">{value}</p>
+      <p className="mt-2 font-display text-[26px] font-bold leading-8 tabular-nums text-ink">{value}</p>
       {hint ? <div className="mt-2 text-xs text-muted">{hint}</div> : null}
     </Card>
   );
@@ -63,7 +63,7 @@ export function SectionHeading({
   return (
     <div className="mb-4 flex items-end justify-between gap-4">
       <div>
-        <h2 className="text-lg font-semibold text-ink">{title}</h2>
+        <h2 className="text-lg font-bold text-ink">{title}</h2>
         {description ? <p className="text-sm text-muted">{description}</p> : null}
       </div>
       {action}
@@ -73,7 +73,7 @@ export function SectionHeading({
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-btn-line p-6 text-center text-sm text-muted">
+    <div className="rounded-card border border-dashed border-btn-line p-6 text-center text-sm text-muted">
       {message}
     </div>
   );

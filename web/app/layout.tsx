@@ -2,10 +2,16 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { loadEnv } from "@admedic/config";
 
-// IBM Plex Sans (+ Arapça) yerel paketlerden gelir; derleme ve çalışma sırasında ağ gerekmez (ADR-0017).
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
+// Red Hat Text / Display / Mono (ADR-0030) ve Arapça için IBM Plex Sans Arabic yerel paketlerden gelir; derleme ve
+// çalışma sırasında ağ gerekmez (ADR-0017).
+import "@fontsource/red-hat-text/400.css";
+import "@fontsource/red-hat-text/500.css";
+import "@fontsource/red-hat-text/600.css";
+import "@fontsource/red-hat-display/600.css";
+import "@fontsource/red-hat-display/700.css";
+import "@fontsource/red-hat-display/800.css";
+import "@fontsource/red-hat-mono/500.css";
+import "@fontsource/red-hat-mono/600.css";
 import "@fontsource/ibm-plex-sans-arabic/400.css";
 import "@fontsource/ibm-plex-sans-arabic/600.css";
 
@@ -30,7 +36,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: env.APP_NAME, template: `%s · ${env.APP_NAME}` },
     description: t("layout.description", lang),
     // iPhone/iPad'de "Ana Ekrana Ekle" ile açıldığında Safari çubukları olmadan, ürün adıyla çalışır (ADR-0025).
-    appleWebApp: { capable: true, title: env.APP_NAME, statusBarStyle: "default" },
+    appleWebApp: { capable: true, title: env.APP_NAME, statusBarStyle: "black" },
   };
 }
 

@@ -1,0 +1,605 @@
+/*
+ * "Kontrol merkezi" bileşenleri (ADR-0030): menü şeridi ve bölüm menüsü, akış bandı, paneller, getiri çubukları
+ * ve lead takımı hiyerarşisi. Renkler yalnızca globals.css belirteçlerinden gelir.
+ * globals.css bu dosyayı içe aktarır; sınıf adları `kc-` ile başlar ve kabuk sınıflarıyla çakışmaz.
+ */
+@layer components {
+  /* ── Menü şeridi: en çok sekiz hedef, simge + görünür ad ──────────────── */
+  .kc-rail {
+    position: sticky;
+    top: 0;
+    z-index: 31;
+    height: 100vh;
+    width: var(--rail-w);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 14px 0 12px;
+    background: var(--color-nav);
+    border-right: 1px solid var(--color-nav-line);
+  }
+  .kc-rail__brand {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+  .kc-rail__list {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 6px;
+    scrollbar-width: none;
+  }
+  .kc-rail__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 2px;
+    border-radius: 12px;
+    color: var(--color-nav-fg);
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+  }
+  .kc-rail__item:hover {
+    color: #ffffff;
+  }
+  .kc-rail__item:hover .kc-rail__icon {
+    background: rgb(255 255 255 / 0.06);
+  }
+  .kc-rail__item[aria-current] {
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .kc-rail__item[aria-current] .kc-rail__icon {
+    background: var(--color-nav-active);
+  }
+  .kc-rail__item:focus-visible {
+    outline-color: var(--focus-ring-on-dark);
+  }
+  .kc-rail__icon {
+    position: relative;
+    width: 48px;
+    height: 34px;
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .kc-rail__icon .count-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    border: 2px solid var(--color-nav);
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+  }
+  .kc-rail__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Bölüm menüsü: etkin grubun sayfaları ─────────────────────────────── */
+  .kc-subnav {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: 100vh;
+    width: var(--subnav-w);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 18px 10px 12px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-line);
+  }
+  .kc-subnav__title {
+    padding: 0 10px 14px;
+    font-family: var(--font-display);
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+  .kc-subnav__list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scrollbar-width: thin;
+  }
+  .kc-subnav__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 0 10px;
+    border-radius: var(--radius-control);
+    color: var(--color-ink-2);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .kc-subnav__link svg {
+    flex-shrink: 0;
+    color: var(--color-ink-3);
+  }
+  .kc-subnav__link:hover {
+    background: var(--color-subtle);
+    color: var(--color-ink);
+  }
+  .kc-subnav__link[aria-current="page"] {
+    background: var(--color-brand-100);
+    color: #ffffff;
+  }
+  .kc-subnav__link[aria-current="page"] svg {
+    color: #ffffff;
+  }
+  .kc-subnav__foot {
+    flex-shrink: 0;
+    margin-top: 8px;
+    padding: 10px 10px 0;
+    border-top: 1px solid var(--color-line);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+
+  /* ── Akış bandı: işin hangi aşamada kaç kayıtla durduğu ──────────────── */
+  .kc-band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 2px;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .kc-band > li {
+    display: flex;
+    min-width: 0;
+  }
+  .kc-band__cell {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 18px;
+    background: var(--color-subtle);
+    color: var(--color-ink-3);
+    text-decoration: none;
+  }
+  .kc-band__cell:hover {
+    background: var(--color-raised);
+  }
+  .kc-band__cell:focus-visible {
+    outline-offset: -3px;
+  }
+  .kc-band__label {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+  /* Sıfır sönük, dolu aşama parlak: göz önce işin olduğu yere gider (büyük rakam, 3:1 yeterli). */
+  .kc-band__num {
+    font-family: var(--font-mono);
+    font-size: 32px;
+    line-height: 36px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-slate-400);
+  }
+  .kc-band__cell[data-active="true"] .kc-band__num {
+    color: var(--color-ink);
+  }
+  .kc-band__cell[data-tone="live"][data-active="true"] {
+    background: #3a2db0;
+    color: #e3deff;
+  }
+  .kc-band__cell[data-tone="live"][data-active="true"] .kc-band__num {
+    color: #ffffff;
+  }
+  .kc-band__cell[data-tone="warn"][data-active="true"] {
+    background: var(--color-warn-bg);
+    color: var(--color-warn);
+  }
+  .kc-band__cell[data-tone="warn"][data-active="true"] .kc-band__num {
+    color: var(--color-amber-500);
+  }
+
+  /* ── Panel: başlıklı içerik kutusu ────────────────────────────────────── */
+  .kc-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  .kc-panel__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+  }
+  .kc-panel__head h2 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+  .kc-panel__meta {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+  .kc-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .kc-divider {
+    height: 1px;
+    background: var(--color-line);
+  }
+
+  /* Sizden beklenen iş: sorun kırmızı, insan eylemi bekleyen amber (ton metinde de yazar). */
+  .kc-task {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-subtle);
+  }
+  .kc-task[data-tone="problem"] {
+    border-color: var(--color-bad-line);
+    background: var(--color-bad-bg);
+  }
+  .kc-task[data-tone="human"][data-lead="true"] {
+    border-color: var(--color-warn-line);
+    background: var(--color-warn-bg);
+  }
+  /* İlk işten sonrakiler sıkı satırdır: metin solda, tek eylem sağda. */
+  .kc-task[data-lead="false"] {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .kc-task__body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+  .kc-task[data-lead="false"] .kc-task__wait {
+    margin-left: 0;
+  }
+  .kc-task > a {
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .kc-task[data-lead="false"] > a {
+    align-self: center;
+  }
+  .kc-task[data-lead="false"] .kc-task__title {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+  .kc-task__wait {
+    margin-left: auto;
+    font-weight: 500;
+    color: var(--color-ink-3);
+    white-space: nowrap;
+  }
+  .kc-task__kind {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    color: var(--color-ink-2);
+  }
+  .kc-task[data-tone="problem"] .kc-task__kind {
+    color: var(--color-bad);
+  }
+  .kc-task[data-tone="human"] .kc-task__kind {
+    color: var(--color-warn);
+  }
+  .kc-dot {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--color-slate-400);
+  }
+  .kc-dot[data-tone="problem"],
+  .kc-dot[data-tone="failed"] {
+    background: var(--color-rose-400);
+  }
+  .kc-dot[data-tone="human"] {
+    background: var(--color-amber-500);
+  }
+  .kc-dot[data-tone="done"] {
+    background: var(--color-emerald-400);
+  }
+  .kc-task__title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 700;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+
+  /* Bugün ekranının sütunları: sığdığı kadar yan yana, dar ekranda alt alta. */
+  .kc-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+
+  /* Göstergeler: büyük rakam, altında tek satır bağlam. */
+  .kc-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+  .kc-kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .kc-kpi dt {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--color-ink-3);
+  }
+  .kc-kpi__value {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 32px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  .kc-kpi__value[data-warn="true"] {
+    color: var(--color-amber-500);
+  }
+  .kc-kpi__flag {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    color: var(--color-warn);
+  }
+  .kc-kpi__hint {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+
+  /* Getiri çubuğu */
+  .kc-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--color-raised);
+    overflow: hidden;
+  }
+  .kc-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--color-brand-glow);
+  }
+
+  /* ── Hiyerarşi: direktör → takımlar → uzmanlar ───────────────────────── */
+  .kc-node {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--color-subtle);
+    color: var(--color-ink);
+  }
+  .kc-node--director {
+    padding: 12px 14px;
+    background: #3a2db0;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .kc-node__meta {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .kc-node--director .kc-node__meta {
+    color: #e3deff;
+  }
+  .kc-node--human {
+    border: 1px solid var(--color-warn-line);
+    background: var(--color-warn-bg);
+    color: var(--color-warn);
+    font-weight: 600;
+  }
+  .kc-node--human .kc-node__meta {
+    color: var(--color-warn);
+    font-weight: 500;
+  }
+  .kc-branch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-left: 18px;
+    padding-left: 16px;
+    border-left: 1px solid var(--color-btn-line);
+  }
+
+  /* Lead takımı sayfasındaki tam şema: direktör üstte, takımlar ortak çizgiden iner. */
+  .kc-org {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  /* Direktör ortada (dikey çizgi tam altından iner); onay kutusu sağında durur. */
+  .kc-org__top {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px 20px;
+  }
+  .kc-org__director {
+    grid-column: 2;
+  }
+  .kc-org__human {
+    grid-column: 3;
+    justify-self: start;
+    max-width: 280px;
+  }
+  @media (max-width: 860px) {
+    .kc-org__top {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+    }
+    .kc-org__director,
+    .kc-org__human {
+      grid-column: 1;
+      justify-self: center;
+    }
+    .kc-org__human {
+      order: 2;
+    }
+  }
+  .kc-org__director {
+    min-width: min(280px, 100%);
+    padding: 16px 20px;
+    border-radius: var(--radius-card);
+    background: #3a2db0;
+    color: #ffffff;
+    text-align: center;
+  }
+  .kc-org__director strong {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 17px;
+    line-height: 24px;
+  }
+  .kc-org__director span {
+    font-size: 13px;
+    color: #e3deff;
+  }
+  .kc-org__human {
+    padding: 12px 16px;
+    border: 1px solid var(--color-warn-line);
+    border-radius: var(--radius-card);
+    background: var(--color-warn-bg);
+    color: var(--color-warn);
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .kc-org__stem {
+    width: 1px;
+    height: 24px;
+    background: var(--color-btn-line);
+  }
+  /* Ortak çizgi her takımın üst kenarıdır: dar ekranda takımlar alt satıra inince çizgi onlarla birlikte iner. */
+  .kc-org__teams {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  }
+  .kc-org__team {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    padding: 0 6px 16px;
+    border-top: 1px solid var(--color-btn-line);
+  }
+  .kc-org__team::before {
+    content: "";
+    align-self: center;
+    width: 1px;
+    height: 20px;
+    background: var(--color-btn-line);
+  }
+  .kc-org__lead {
+    padding: 10px 12px;
+    border: 1px solid var(--color-brand-200);
+    border-radius: 12px;
+    background: var(--color-brand-50);
+    text-align: center;
+  }
+  .kc-org__lead strong {
+    display: block;
+    color: var(--color-ink);
+  }
+  .kc-org__lead span {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-3);
+  }
+  .kc-org__specialists {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--color-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-ink-2);
+  }
+  .kc-org__specialists li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* Telefon ve tablette şerit ve bölüm menüsü yoktur (alt sekme çubuğu + Menü, ADR-0017 K7-A). */
+  @media (max-width: 1023px) {
+    .kc-rail,
+    .kc-subnav {
+      display: none;
+    }
+  }
+}

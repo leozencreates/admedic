@@ -127,7 +127,7 @@ export default function RecommendationsPage() {
                   key={s}
                   type="button"
                   aria-pressed={active}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition ${active ? "bg-brand-strong text-white ring-brand-strong" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition ${active ? "bg-brand-600 text-white ring-brand-600" : "bg-surface text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
                   onClick={() => setFilter(s)}
                 >
                   {active ? <span aria-hidden="true">✓ </span> : null}
@@ -155,7 +155,7 @@ export default function RecommendationsPage() {
                   .map(([k, v]) => ({ key: k, label: impactLabel(k, v, currency) }))
                   .filter((i): i is { key: string; label: string } => i.label !== null);
                 return (
-                  <article key={r.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <article key={r.id} className="rounded-xl border border-slate-200 bg-surface p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={status.tone}>{status.label}</Badge>
                       <Badge tone="gray">{priorityLabel(r.priority)}</Badge>

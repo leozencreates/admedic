@@ -7,8 +7,8 @@ export default function Loading() {
         <div className="h-4 w-80 max-w-full animate-pulse rounded-lg bg-slate-200/60" />
       </div>
       <div className="grid grid-cols-2 gap-5">
-        <div className="h-64 animate-pulse rounded-3xl bg-white" />
-        <div className="h-64 animate-pulse rounded-3xl bg-white" />
+        <div className="h-64 animate-pulse rounded-xl bg-surface" />
+        <div className="h-64 animate-pulse rounded-xl bg-surface" />
       </div>
       <p className="text-sm text-muted">Çalışma alanı yükleniyor…</p>
     </div>

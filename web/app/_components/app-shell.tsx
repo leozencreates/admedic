@@ -12,6 +12,7 @@ import { Nav, type BadgeCounts } from "./nav";
 import { NavGlyph } from "./nav-icons";
 import { LanguageSwitcher } from "./language-switcher";
 import { BrandMark } from "./brand-mark";
+import { RailNav } from "./rail-nav";
 import { VoiceAssistant, ASSISTANT_TOGGLE_EVENT } from "./voice-assistant";
 import { isToggleShortcut } from "./voice-assistant/state";
 
@@ -30,8 +31,8 @@ export const LEAD_SEARCH_EVENT = "app:lead-search";
 const SUMMARY_REFRESH_MS = 60_000;
 
 /**
- * Uygulama kabuğu (ADR-0017 · Faz 2):
- * - Masaüstü: koyu, gruplu ve rol filtreli yan menü (K2-A) + üst çubuk (arama, ortam, "Yeni", zil, hesap).
+ * Uygulama kabuğu (ADR-0017 · Faz 2; masaüstü gezinme ADR-0030):
+ * - Masaüstü: menü şeridi + etkin grubun bölüm menüsü (rol filtreli) + üst çubuk (arama, ortam, "Yeni", zil, hesap).
  * - Telefon/tablet (K7-A): ince üst çubuk (sayfa adı, arama, zil) + rol bazlı alt sekme çubuğu ve tam ekran menü.
  * - Giriş sayfasında kabuk çizilmez. Sayfa gövdeleri henüz yalnızca Türkçe olduğundan `main lang="tr"`.
  */
@@ -216,31 +217,15 @@ export function AppShell({
         {t("layout.skip", lang)}
       </a>
       <div className="app-shell">
-        <aside className="app-sidebar" aria-label={appName}>
-          <div className="app-brand">
-            <span className="app-brand__mark" aria-hidden="true">
-              <BrandMark />
-            </span>
-            <span className="min-w-0">
-              <span className="app-brand__name">{appName}</span>
-              <span className="app-brand__sub">{user?.workspaceName ?? t("layout.tagline", lang)}</span>
-            </span>
-          </div>
-          <Nav
-            id="yan-menu"
-            groups={groups}
-            label={t("layout.mainNav", lang)}
-            counts={counts}
-            badgeLabels={badgeLabels}
-          />
-          <div className="app-nav__foot">
-            <div className="app-nav__meta">
-              {metaLines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
-            </div>
-          </div>
-        </aside>
+        <RailNav
+          groups={groups}
+          label={t("layout.mainNav", lang)}
+          counts={counts}
+          badgeLabels={badgeLabels}
+          brand={<BrandMark />}
+          appName={appName}
+          metaLines={metaLines}
+        />
 
         <div className="app-column">
           <header className="app-topbar" ref={topbarRef}>
@@ -355,7 +340,7 @@ export function AppShell({
                               <Link href={n.href} className="popover__item">
                                 <span
                                   className={`mt-1.5 size-2 shrink-0 rounded-full ${
-                                    sev.tone === "red" ? "bg-bad-fill" : sev.tone === "amber" ? "bg-[#dc6803]" : "bg-[#2e90fa]"
+                                    sev.tone === "red" ? "bg-bad-fill" : sev.tone === "amber" ? "bg-amber-500" : "bg-info"
                                   }`}
                                   aria-hidden="true"
                                 />
@@ -460,7 +445,7 @@ export function AppShell({
             </button>
           </div>
           {logoutError ? (
-            <p role="alert" className="text-sm text-rose-300">
+            <p role="alert" className="text-sm text-bad">
               {logoutError}
             </p>
           ) : null}

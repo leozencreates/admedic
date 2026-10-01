@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { NAV_ITEMS, activeNavHref, navContext, navTreeFor, newActionsFor, tabItemsFor } from "../app/_lib/nav-tree";
+import {
+  NAV_ITEMS,
+  activeNavHref,
+  activeRailKey,
+  navContext,
+  navTreeFor,
+  newActionsFor,
+  railItemsFor,
+  tabItemsFor,
+} from "../app/_lib/nav-tree";
 
 const hrefs = (role: string | null) => navTreeFor(role, "tr").flatMap((g) => g.items.map((i) => i.href));
 
@@ -78,5 +87,52 @@ describe("menü ağacı (ADR-0017 · K2-A)", () => {
   });
   it("alt sekme çubuğunda uzun ad kısaltılır", () => {
     expect(tabItemsFor("MEDIA_BUYER", "tr").find((t) => t.href === "/studio")?.label).toBe("Oluştur");
+  });
+});
+
+describe("menü şeridi (ADR-0030)", () => {
+  const rail = (role: string | null) => railItemsFor(navTreeFor(role, "tr"));
+
+  it("hesap sahibinde sekiz hedef: üç günlük iş doğrudan, beş grup bölüm menüsüyle", () => {
+    const items = rail("OWNER");
+    expect(items.map((i) => i.key)).toEqual(["/", "/approvals", "/leads", "ads", "tests", "campaigns", "performance", "settings"]);
+    expect(items.map((i) => i.label)).toEqual(["Bugün", "Onaylar", "Lead'ler", "Reklamlar", "Testler", "Kampanyalar", "Performans", "Ayarlar"]);
+    expect(items.slice(0, 3).every((i) => i.children.length === 0)).toBe(true);
+    const performance = items.find((i) => i.key === "performance")!;
+    expect(performance.href).toBe("/insights");
+    expect(performance.children.map((c) => c.href)).toEqual(["/insights", "/recommendations", "/decisions", "/lead-team", "/alerts"]);
+    // Grubun rozeti içindeki sayfalardan gelir (Uyarılar).
+    expect(performance.badges).toEqual(["alerts"]);
+    expect(items.find((i) => i.key === "/approvals")!.badges).toEqual(["approvals"]);
+  });
+
+  it("hiçbir rolde sekizden fazla hedef yoktur ve her sayfa bir hedefin altındadır", () => {
+    for (const role of ["OWNER", "ADMIN", "MEDIA_BUYER", "PATIENT_COORDINATOR", "ANALYST", "VIEWER"]) {
+      const items = rail(role);
+      expect(items.length).toBeLessThanOrEqual(8);
+      const reachable = items.flatMap((i) => (i.children.length ? i.children.map((c) => c.href) : [i.href]));
+      expect(reachable.sort()).toEqual(navTreeFor(role, "tr").flatMap((g) => g.items.map((i) => i.href)).sort());
+    }
+  });
+
+  it("tek sayfalı grup o sayfanın adı ve simgesiyle görünür, bölüm menüsü açmaz", () => {
+    const coordinator = rail("PATIENT_COORDINATOR");
+    expect(coordinator.map((i) => [i.label, i.href, i.icon, i.children.length])).toEqual([
+      ["Lead'ler", "/leads", "leads", 0],
+      ["Uyarılar", "/alerts", "alerts", 0],
+    ]);
+    expect(rail("VIEWER").find((i) => i.key === "campaigns")).toMatchObject({ label: "Kampanyalar", href: "/campaigns", children: [] });
+  });
+
+  it("etkin hedef: kendi sayfası, bölüm menüsündeki sayfa ya da onun kayıt sayfası", () => {
+    const items = rail("OWNER");
+    expect(activeRailKey(items, "/")).toBe("/");
+    expect(activeRailKey(items, "/leads/abc")).toBe("/leads");
+    expect(activeRailKey(items, "/lead-team")).toBe("performance");
+    expect(activeRailKey(items, "/campaign-planner")).toBe("campaigns");
+    expect(activeRailKey(items, "/campaigns/c1")).toBe("campaigns");
+    expect(activeRailKey(items, "/login")).toBeNull();
+    // Rolün göremediği sayfa hiçbir hedefi etkinleştirmez.
+    expect(activeRailKey(rail("VIEWER"), "/clinic")).toBeNull();
   });
 });

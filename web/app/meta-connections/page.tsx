@@ -419,7 +419,7 @@ export default function MetaConnectionsPage() {
                   )}
                   {c.lastError && <p className="mt-1 text-xs text-rose-700">Son hata: {c.lastError}</p>}
                   {isEditing && (
-                    <form onSubmit={saveIds} className="mt-3 grid gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
+                    <form onSubmit={saveIds} className="mt-3 grid gap-4 rounded-lg border border-slate-200 bg-surface p-3 sm:grid-cols-2">
                       <p className="text-xs text-muted sm:col-span-2">
                         Otomatik eşleme açılana kadar bu kimlik numaralarını elle girin. Boş bıraktığınız alan temizlenir.
                       </p>

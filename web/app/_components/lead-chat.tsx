@@ -56,7 +56,7 @@ const PARTY_LABEL: Record<Party, string> = {
 /** Hasta solda nötr; ekip sağda marka renginde; asistan sağda açık tonda (etiket ve saat ≥12 px, kontrast ≥4,5:1). */
 const BUBBLE: Record<Exclude<Party, "system">, { box: string; meta: string }> = {
   lead: { box: "bg-slate-100 text-slate-900", meta: "text-muted" },
-  team: { box: "bg-brand-strong text-white", meta: "text-violet-100" },
+  team: { box: "bg-brand-600 text-white", meta: "text-white" },
   assistant: { box: "bg-violet-50 text-slate-900 ring-1 ring-inset ring-violet-200", meta: "text-pill" },
 };
 /** Kullanıcı mesaj listesinin sonuna bu kadar yakınsa yeni mesaj geldiğinde liste sona kaydırılır. */

@@ -6,6 +6,7 @@ import { Badge, Card, EmptyState, IntroPanel, PageHeader, SectionHeading, type T
 import { ConfirmDialog, Dialog } from "../_components/dialog";
 import { formatDate, formatMoney, formatNumber } from "../_lib/format";
 import { countryName, languageName, priorityLabel } from "../_lib/labels";
+import { OrgChart } from "./org-chart";
 
 interface Run {
   id: string;
@@ -166,6 +167,8 @@ export default function LeadTeamPage() {
   const done = latest ? latest.agentsCompleted + latest.agentsFailed : 0;
   const reportOf = new Map(data.reports.map((r) => [r.agentKey, r]));
   const director = reportOf.get("director");
+  const specialistCount = data.teams.reduce((sum, team) => sum + team.specialists.length, 0);
+  const pendingProposals = data.proposals.filter((p) => p.status === "PENDING").length;
 
   return (
     <div className="space-y-6">
@@ -197,6 +200,21 @@ export default function LeadTeamPage() {
       <p role="status" className={notice ? "text-sm text-emerald-800" : "sr-only"}>
         {notice}
       </p>
+
+      <section aria-labelledby="hiyerarsi-baslik" className="kc-panel">
+        <div className="kc-panel__head">
+          <h2 id="hiyerarsi-baslik">Hiyerarşi</h2>
+          <p className="kc-panel__meta">
+            1 direktör · {data.teams.length} takım lideri · {specialistCount} uzman
+          </p>
+        </div>
+        <OrgChart
+          teams={data.teams}
+          statusOf={(key) => reportOf.get(key)?.status}
+          hasRun={latest !== null}
+          pendingProposals={pendingProposals}
+        />
+      </section>
 
       <Card>
         <SectionHeading title="Son çalıştırma" description={`24 saatte en fazla ${data.dailyRunLimit} çalıştırma yapılabilir.`} />
@@ -330,8 +348,8 @@ export default function LeadTeamPage() {
 
       <Card>
         <SectionHeading
-          title="Kadro ve raporlar"
-          description="1 direktör, 7 takım lideri ve 42 uzman. Her takımın lider özeti ve uzman bulguları son çalıştırmadan gelir."
+          title="Takım raporları"
+          description="Her takımın lider özeti ve uzman bulguları son çalıştırmadan gelir."
         />
         <div className="mt-4 space-y-2">
           {data.teams.map((team) => {

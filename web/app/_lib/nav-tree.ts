@@ -32,7 +32,8 @@ export type NavIcon =
   | "guard"
   | "rules"
   | "billing"
-  | "launch";
+  | "launch"
+  | "settings";
 
 /** Rozet kaynağı: bir insandan eylem bekleyen sayılar (`/api/shell`). */
 export type NavBadge = "approvals" | "leads" | "alerts";
@@ -165,6 +166,65 @@ export function navTreeFor(role: string | null | undefined, lang: Language): Nav
     // Grubun tek öğesi grupla aynı adı taşıyorsa (izleyicide "Kampanyalar") başlık tekrar edilmez.
     return { id: group.id, label: items.length === 1 && items[0].label === label ? null : label, items };
   }).filter((group) => group.items.length > 0);
+}
+
+/**
+ * Menü şeridi (ADR-0030): masaüstünde dar şeritte en çok sekiz hedef görünür. Günlük işler (Bugün, Onaylar,
+ * Lead'ler) doğrudan hedeftir; diğer gruplar tek hedefe iner ve sayfaları yanda açılan bölüm menüsünde listelenir.
+ */
+export interface RailItemView {
+  /** Günlük hedefte sayfanın yolu, grupta grup kimliği. */
+  key: string;
+  /** Tıklanınca açılan sayfa: hedefin kendisi ya da grubun rolün görebildiği ilk sayfası. */
+  href: string;
+  label: string;
+  icon: NavIcon;
+  /** Hedefin (ya da grubundaki sayfaların) rozet kaynakları; şeritte toplamı gösterilir. */
+  badges: NavBadge[];
+  /** Bölüm menüsünün sayfaları; tek sayfalı hedefte boş. */
+  children: NavLinkView[];
+}
+
+const GROUP_ICON: Record<Exclude<NavGroupDef["id"], "daily">, NavIcon> = {
+  ads: "studio",
+  tests: "tests",
+  campaigns: "campaigns",
+  performance: "insights",
+  settings: "settings",
+};
+
+export function railItemsFor(groups: NavGroupView[]): RailItemView[] {
+  return groups.flatMap((group): RailItemView[] => {
+    if (group.id === "daily")
+      return group.items.map((item) => ({
+        key: item.href,
+        href: item.href,
+        label: item.label,
+        icon: item.icon,
+        badges: item.badge ? [item.badge] : [],
+        children: [],
+      }));
+    const first = group.items[0];
+    if (!first) return [];
+    return [
+      {
+        key: group.id,
+        href: first.href,
+        // Tek sayfalı grup o sayfanın adıyla ve simgesiyle görünür (hasta koordinatöründe "Uyarılar").
+        label: group.items.length === 1 ? first.label : (group.label ?? first.label),
+        icon: group.items.length === 1 ? first.icon : GROUP_ICON[group.id],
+        badges: [...new Set(group.items.flatMap((item) => (item.badge ? [item.badge] : [])))],
+        children: group.items.length > 1 ? group.items : [],
+      },
+    ];
+  });
+}
+
+/** Yolun bağlı olduğu şerit hedefi: hedefin kendisi ya da bölüm menüsündeki sayfalardan biri etkinse. */
+export function activeRailKey(items: RailItemView[], pathname: string): string | null {
+  const active = activeNavHref(pathname);
+  if (!active) return null;
+  return items.find((item) => item.href === active || item.children.some((child) => child.href === active))?.key ?? null;
 }
 
 /** Bölümü menüde görebilen roller ve menü adı (sayfa düzeyinde rol koruması için); menüde olmayan yol → null. */

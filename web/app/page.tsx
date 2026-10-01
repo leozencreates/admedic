@@ -4,13 +4,24 @@ import { connection } from "next/server";
 import { loadEnv } from "@admedic/config";
 import { CircleCheck, Circle } from "lucide-react";
 
+import { LeadTeamPanel, PerformancePanel, PipelineBand, QueuePanel } from "./_components/today-board";
 import { IntroPanel, PageHeader, Td, Th } from "./_components/ui";
 import { requirePageActor } from "./_lib/auth";
-import { formatDuration, formatMoney, formatNumber, formatRoas } from "./_lib/format";
+import { formatMoney, formatNumber, formatRoas } from "./_lib/format";
 import { t } from "./_lib/i18n";
 import { uiLanguage } from "./_lib/page-meta";
 import { campaignHref } from "./_lib/record-refs";
-import { campaignExtremes, setupSteps, todayKpis, todayQueue, type CampaignRow, type QueueItem } from "./_lib/today";
+import {
+  campaignExtremes,
+  campaignRanking,
+  setupSteps,
+  todayKpis,
+  todayLeadTeam,
+  todayPipeline,
+  todayQueue,
+  type CampaignRow,
+  type QueueItem,
+} from "./_lib/today";
 
 /** Kök sayfa kök layout ile aynı segmentte olduğundan şablon uygulanmaz; başlık tam yazılır. */
 export async function generateMetadata(): Promise<Metadata> {
@@ -18,19 +29,24 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Bugün (ADR-0018 · K3-A): rolünüze göre sizden beklenen işler (satır başına tek eylem), temel göstergeler
- * ve kurulum tamamlanana kadar kurulum rehberi. Analist ve izleyici için en iyi / en zayıf kampanyalar.
+ * Bugün (ADR-0018 · K3-A, görünüm ADR-0030): üstte işin hangi aşamada durduğunu gösteren akış bandı; altında
+ * rolünüze göre sizden beklenen işler, performans ve lead takımı. Kurulum tamamlanana kadar kurulum rehberi.
+ * Analist ve izleyici için kuyruk yerine en iyi / en zayıf kampanyalar.
  */
 export default async function TodayPage() {
   await connection();
   const actor = await requirePageActor("/");
   const manager = actor.role === "OWNER" || actor.role === "ADMIN";
   const readOnly = actor.role === "ANALYST" || actor.role === "VIEWER";
-  const [queue, kpis, setup, extremes] = await Promise.all([
+  const [queue, kpis, setup, extremes, pipeline, ranking, team] = await Promise.all([
     readOnly ? Promise.resolve({ items: [] as QueueItem[], total: 0, more: false }) : todayQueue(actor),
     actor.role === "PATIENT_COORDINATOR" ? Promise.resolve([]) : todayKpis(actor),
     manager ? setupSteps(actor) : Promise.resolve([]),
     readOnly ? campaignExtremes(actor) : Promise.resolve(null),
+    todayPipeline(actor),
+    // Salt okuyan rollerde en iyi / en zayıf tablosu zaten var; çubuklar aynı veriyi tekrar etmesin.
+    readOnly || actor.role === "PATIENT_COORDINATOR" ? Promise.resolve(null) : campaignRanking(actor),
+    todayLeadTeam(actor),
   ]);
   const setupDone = setup.filter((s) => s.done).length;
   const showSetup = setup.length > 0 && setupDone < setup.length;
@@ -40,22 +56,22 @@ export default async function TodayPage() {
   const now = Date.now();
 
   const setupCard = (
-    <section aria-labelledby="kurulum-baslik" className="studio-card">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+    <section aria-labelledby="kurulum-baslik" className="kc-panel">
+      <div className="kc-panel__head">
         <h2 id="kurulum-baslik">Kurulum</h2>
-        <p className="text-sm text-ink-3">
+        <p className="kc-panel__meta">
           {setupDone}/{setup.length} adım tamamlandı
         </p>
       </div>
-      <div aria-hidden="true" className="mt-3 flex h-2 overflow-hidden rounded-full bg-line-soft">
-        <span className="bg-brand-600" style={{ width: `${(setupDone / setup.length) * 100}%` }} />
+      <div aria-hidden="true" className="kc-bar">
+        <span style={{ width: `${(setupDone / setup.length) * 100}%` }} />
       </div>
-      <ol className="mt-3 divide-y divide-line-soft">
+      <ol className="divide-y divide-line">
         {setup.map((step) => (
           <li key={step.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">
               {step.done ? (
-                <CircleCheck size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#079455]" aria-hidden="true" />
+                <CircleCheck size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ok" aria-hidden="true" />
               ) : (
                 <Circle size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ink-3" aria-hidden="true" />
               )}
@@ -79,7 +95,7 @@ export default async function TodayPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Bugün"
         description={
@@ -87,88 +103,18 @@ export default async function TodayPage() {
             ? "Son 7 günün temel göstergeleri ve kampanyaların durumu."
             : queue.total > 0
               ? `Sizden beklenen ${countText} iş var; önce sorunlar, sonra en uzun bekleyenler.`
-              : "Sizden beklenen iş yok. Temel göstergeler aşağıda."
+              : "Sizden beklenen iş yok. İşin hangi aşamada durduğu aşağıda."
         }
       />
 
+      <PipelineBand stages={pipeline} />
+
       {showSetup && setupFirst ? setupCard : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        {readOnly && extremes ? (
-          <Extremes best={extremes.best} worst={extremes.worst} />
-        ) : (
-          <section aria-labelledby="kuyruk-baslik" className="studio-card min-w-0">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="kuyruk-baslik">Sizden beklenenler</h2>
-              {queue.total > queue.items.length || queue.more ? (
-                <p className="text-sm text-ink-3">
-                  En önemli {formatNumber(queue.items.length)} iş gösteriliyor ({countText} toplam)
-                </p>
-              ) : null}
-            </div>
-            {queue.items.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-2">Şu an sizden beklenen iş yok. Yeni bir iş geldiğinde burada görünür.</p>
-            ) : (
-              <ul className="mt-2 divide-y divide-line-soft">
-                {queue.items.map((item) => (
-                  <li key={item.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <div className="flex min-w-0 gap-3">
-                      <span
-                        aria-hidden="true"
-                        className={`mt-1.5 size-2.5 shrink-0 rounded-full ${item.tone === "problem" ? "bg-bad-fill" : "bg-[#dc6803]"}`}
-                      />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-ink-3">
-                          {item.kind}
-                          {item.tone === "problem" ? <span className="sr-only"> (sorun)</span> : null}
-                        </p>
-                        <p id={`is-${item.key}`} className="break-words font-medium text-ink">
-                          {item.title}
-                        </p>
-                        {item.context ? <p className="break-words text-sm text-ink-2">{item.context}</p> : null}
-                        {item.since ? (
-                          <p className="text-xs text-ink-3">{formatDuration(now - item.since.getTime())} bekliyor</p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <Link
-                      href={item.action.href}
-                      aria-describedby={`is-${item.key}`}
-                      className={`${item.tone === "problem" ? "primary-button" : "secondary-button"} shrink-0 self-start sm:self-auto`}
-                    >
-                      {item.action.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-
-        {kpis.length > 0 ? (
-          <section aria-labelledby="gosterge-baslik" className="studio-card self-start !p-0">
-            <h2 id="gosterge-baslik" className="border-b border-line px-4 py-3">
-              Temel göstergeler
-            </h2>
-            <dl>
-              {kpis.map((kpi, i) => (
-                <div key={kpi.key} className={`px-4 py-3 ${i < kpis.length - 1 ? "border-b border-line-soft" : ""}`}>
-                  <dt className="text-xs font-medium text-ink-2">{kpi.label}</dt>
-                  <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${kpi.warn ? "text-warn" : "text-ink"}`}>
-                    {kpi.value}
-                    {kpi.warn ? <span className="ml-2 align-middle text-xs font-medium">Hedefin dışında</span> : null}
-                  </dd>
-                  {kpi.hint ? <dd className="mt-0.5 text-xs text-ink-3">{kpi.hint}</dd> : null}
-                </div>
-              ))}
-            </dl>
-            <div className="border-t border-line px-4 py-3">
-              <Link href="/insights" className="text-link text-sm">
-                İçgörüler
-              </Link>
-            </div>
-          </section>
-        ) : null}
+      <div className="kc-cols">
+        {readOnly && extremes ? <Extremes best={extremes.best} worst={extremes.worst} /> : <QueuePanel queue={queue} now={now} />}
+        {kpis.length > 0 ? <PerformancePanel kpis={kpis} ranking={ranking} /> : null}
+        {team ? <LeadTeamPanel team={team} /> : null}
       </div>
 
       {showSetup && !setupFirst ? setupCard : null}
@@ -216,8 +162,10 @@ function Extremes({ best, worst }: { best: CampaignRow[]; worst: CampaignRow[] }
     </div>
   );
   return (
-    <section aria-labelledby="kampanya-ozet" className="studio-card min-w-0 space-y-6">
-      <h2 id="kampanya-ozet">Kampanyalar, son 7 gün</h2>
+    <section aria-labelledby="kampanya-ozet" className="kc-panel">
+      <div className="kc-panel__head">
+        <h2 id="kampanya-ozet">Kampanyalar, son 7 gün</h2>
+      </div>
       {table(best, "En yüksek reklam getirisi")}
       {worst.length ? table(worst, "En düşük reklam getirisi") : null}
     </section>

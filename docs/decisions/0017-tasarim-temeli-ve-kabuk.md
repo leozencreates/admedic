@@ -2,6 +2,8 @@
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, "Faz 2 planını onaylıyorum")
+- Sonraki karar: ADR-0030 (2026-10-01) açık temayı koyu temayla, IBM Plex Sans'ı Red Hat ailesiyle ve masaüstü yan menüsünü
+  menü şeridi + bölüm menüsüyle değiştirdi. Menü ağacı, rol süzgeci, sayfa başlığı ve mobil gezinme kararları geçerlidir.
 - Önceki karar: ADR-0016 (K1–K11 kararları ve Faz 1)
 - Uygulanan kararlar: K1-B (Operasyon odası), K2-A (iş alanına göre gruplu menü), K6-B (kompakt başlık),
   K7-A (mobil alt sekme çubuğu), ekip kararları (Lucide, IBM Plex, karanlık mod yok)

@@ -18,6 +18,7 @@ import {
   Rocket,
   Route,
   ScrollText,
+  Settings,
   ShieldCheck,
   Sparkles,
   Users,
@@ -49,6 +50,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   rules: ScrollText,
   billing: Receipt,
   launch: Rocket,
+  settings: Settings,
 };
 
 export function NavGlyph({ icon, size = 18 }: { icon: NavIcon; size?: number }) {

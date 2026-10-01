@@ -495,7 +495,7 @@ export default function ClinicPage() {
                 className={`min-h-10 rounded-lg px-3 py-2 text-sm font-medium ${
                   selectedId === c.id
                     ? "bg-violet-50 text-violet-900 ring-1 ring-violet-300"
-                    : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
+                    : "bg-surface text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
                 }`}
               >
                 {c.name}
@@ -555,7 +555,7 @@ export default function ClinicPage() {
                         onClick={() => toggleLanguage(l)}
                         aria-pressed={on}
                         className={`inline-flex min-h-9 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium ${
-                          on ? "bg-violet-50 text-violet-900 ring-1 ring-violet-300" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
+                          on ? "bg-violet-50 text-violet-900 ring-1 ring-violet-300" : "bg-surface text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50"
                         }`}
                       >
                         {on ? <span aria-hidden="true">✓</span> : null}
