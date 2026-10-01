@@ -4,7 +4,11 @@
  * - Lead'ler adla değil yalnızca oturum ref'iyle (`l3`) görünür; ad, e-posta, telefon, mesaj içeriği, ilgilenilen
  *   hizmet (sağlık beyanı), meta veri ve onay metni hiçbir zaman dönmez. Sayılar ve durumlar döner.
  * - Gerçek kimlikler ref'e çevrilir (`ref-map.ts`); ajan veritabanı kimliği görmez.
- * - Serbest metinler (uyarı başlığı, karar gerekçesi) kısaltılır ve e-posta/telefon benzeri diziler maskelenir.
+ * - Serbest metinler (uyarı başlığı, karar gerekçesi) kısaltılır; e-posta, telefon ve kimlik (cuid/uuid) benzeri
+ *   diziler maskelenir.
+ * - Lead'in ülke/dil/kanal alanları elle girilebildiği için (`POST /api/leads` serbest metin kabul eder) beyaz listeyle
+ *   kalıba indirgenir; kalıba uymayan değer anahtar ya da değer olarak gönderilmez, `OTHER` altında sayılır.
+ * - Bağlantı etiketi (personel adı, hesap kimliği) gömen uyarı başlıkları türe özgü sabit başlıkla değiştirilir.
  * - Listeler en çok `LIST_LIMIT` öğe taşır; toplam ayrıca bildirilir.
  *
  * Saf modül; girdi tipleri gevşektir (yanıt biçimi değişirse alan düşer, sızmaz).
@@ -50,23 +54,93 @@ function ratio(v: unknown): number | null {
 
 const EMAIL = /[^\s@<>()[\],;:"]+@[^\s@<>()[\],;:"]+\.[A-Za-z]{2,}/g;
 const PHONE = /\+?\d[\d\s().-]{5,}\d/g;
+/** Veritabanı kimlikleri: uuid ve cuid (`c` + 20+ harf/rakam). Telefon maskesinden önce uygulanır. */
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const CUID = /\bc[a-z0-9]{20,}\b/gi;
 
-/** Serbest metin: e-posta ve 7+ haneli telefon benzeri diziler maskelenir, uzunluk sınırlanır. */
+/** Serbest metin: e-posta, 7+ haneli telefon ve kimlik (cuid/uuid) benzeri diziler maskelenir, uzunluk sınırlanır. */
 export function scrubText(v: unknown, limit = TEXT_LIMIT): string | null {
   const s = str(v);
   if (!s) return null;
   const masked = s
     .replace(EMAIL, "[e-posta]")
+    .replace(UUID, "[kimlik]")
+    .replace(CUID, "[kimlik]")
     .replace(PHONE, (m) => (m.replace(/\D/g, "").length >= 7 ? "[telefon]" : m))
     .replace(/\s+/g, " ")
     .trim();
   return masked.length > limit ? `${masked.slice(0, limit - 1)}…` : masked;
 }
 
-function countBy(rows: Raw[], key: string): Record<string, number> {
+// ---------------------------------------------------------------- Lead boyutları (beyaz liste)
+
+/** Beyaz listeye uymayan ülke/dil/kanal değeri bu anahtarla toplanır (ham değer gönderilmez). */
+export const OTHER = "OTHER";
+
+/** `Lead.channel` için bilinen değerler (`schema.prisma` yorumu, `labels.ts` CHANNEL_LABEL, `webhook-ingest.ts`). */
+export const LEAD_CHANNELS: ReadonlySet<string> = new Set(["LEAD_AD", "WHATSAPP", "INSTAGRAM", "MESSENGER", "SMS"]);
+
+/** ISO 3166-1 alpha-2 (büyük harfe çevrilir). Boş → null; kalıba uymayan → `OTHER`. */
+export function leadCountry(v: unknown): string | null {
+  const s = str(v)?.trim().toUpperCase();
+  if (!s) return null;
+  return /^[A-Z]{2}$/.test(s) ? s : OTHER;
+}
+
+/**
+ * ISO 639-1 dil kodu (iki harf, küçük harfe çevrilir). Bölge/yazı alt etiketi (`pt-BR`, `zh_Hant`) kabul edilir ama
+ * **atılır**: ajan için temel dil yeterli, bölge bilgisi ülke alanında zaten var ve kırılım kardinalitesi düşük kalır.
+ * Üç harfli kodlar kabul edilmez: elle girilen `language` alanına yazılmış "Ali", "Ece" gibi kısa adlar dil kodu
+ * gibi görünüp ajana gitmesin. Alt etiket BCP 47 biçimine (2–8 harf/rakam) uymuyorsa değer `OTHER` olur. Boş → null.
+ */
+export function leadLanguage(v: unknown): string | null {
+  const s = str(v)?.trim().toLowerCase().replace(/_/g, "-");
+  if (!s) return null;
+  const m = /^([a-z]{2})(?:-[a-z0-9]{2,8})*$/.exec(s);
+  return m ? m[1] : OTHER;
+}
+
+/** Kanal: yalnızca `LEAD_CHANNELS` (büyük harfe çevrilir). Boş → null; bilinmeyen → `OTHER`. */
+export function leadChannel(v: unknown): string | null {
+  const s = str(v)?.trim().toUpperCase();
+  if (!s) return null;
+  return LEAD_CHANNELS.has(s) ? s : OTHER;
+}
+
+// ---------------------------------------------------------------- Uyarı başlığı
+
+/**
+ * Başlığına bağlantı etiketi (`conn.name` = bağlayan personelin Facebook adı, `metaAccountId` ya da ham `conn.id`)
+ * gömülen uyarı türleri (`workers/meta-sync/src/scheduler.ts` ensureDisconnectAlert/ensureExpiringAlert,
+ * `web/app/api/meta/connections/[id]/route.ts`): başlık yerine türe özgü sabit metin gönderilir.
+ */
+const FIXED_ALERT_TITLES: Record<string, string> = {
+  META_DISCONNECTED: "Meta bağlantısı kesildi",
+  TOKEN_EXPIRING: "Meta bağlantısının erişim anahtarının süresi dolmak üzere",
+};
+/** Türü taşımayan bildirimler (`/api/shell`) için aynı başlıkların önekleri. */
+const FIXED_TITLE_PREFIXES: [RegExp, string][] = [
+  [/^\s*Meta bağlantısı\s/i, "META_DISCONNECTED"],
+  [/^\s*Meta token/i, "TOKEN_EXPIRING"],
+];
+/** Yayımlanan reklam/form adına eklenen kimlik parçası (`campaign-publish.ts`: `#${id.slice(-6)}`), AD_DISAPPROVED başlığına geçer. */
+const ID_FRAGMENT = /\s*#[A-Za-z0-9]{6,}\b/g;
+
+/**
+ * Uyarı/bildirim başlığı: etiket gömen türlerde sabit başlık; diğerlerinde `#xxxxxx` kimlik parçası atılır ve metin
+ * `scrubText` ile maskelenir. Tür yoksa (bildirim) etiket gömen başlıklar önekinden tanınır.
+ */
+export function alertTitle(type: unknown, title: unknown): string | null {
+  const s = str(title);
+  const t = str(type) ?? FIXED_TITLE_PREFIXES.find(([re]) => re.test(s ?? ""))?.[1] ?? null;
+  if (t && FIXED_ALERT_TITLES[t]) return FIXED_ALERT_TITLES[t];
+  return s ? scrubText(s.replace(ID_FRAGMENT, "")) : null;
+}
+
+function countBy(rows: Raw[], key: string, normalize: (v: unknown) => string | null = str): Record<string, number> {
   const out: Record<string, number> = {};
   for (const row of rows) {
-    const k = str(row[key]) ?? "UNKNOWN";
+    const k = normalize(row[key]) ?? "UNKNOWN";
     out[k] = (out[k] ?? 0) + 1;
   }
   return out;
@@ -163,7 +237,7 @@ export function sanitizeShellSummary(raw: unknown) {
     leadsAwaitingReply: num(counts.leads) ?? 0,
     openAlerts: num(counts.alerts) ?? 0,
     latestNotifications: notifications.slice(0, 5).map((n) => ({
-      title: scrubText(n.title),
+      title: alertTitle(n.type, n.title),
       severity: str(n.severity),
       date: day(n.createdAt),
     })),
@@ -180,7 +254,7 @@ export function sanitizeAlert(raw: unknown, refs: RefMap) {
     type: str(a.type),
     severity: str(a.severity),
     status: str(a.status),
-    title: scrubText(a.title),
+    title: alertTitle(a.type, a.title),
     date: day(a.createdAt),
   };
 }
@@ -247,7 +321,66 @@ export function sanitizeDecisionList(raw: unknown, refs: RefMap) {
   };
 }
 
+// ---------------------------------------------------------------- A/B testleri (Faz 5)
+
+/** Varyant metrikleri (manuel ölçüm): harcama ana birimde (`test-detail.tsx` ile aynı), tıklama ve lead sayı. */
+export function sanitizeExperimentMetrics(raw: unknown): { variant: "A" | "B"; spend: number | null; clicks: number | null; leads: number | null }[] {
+  const rows = Array.isArray(raw) ? raw : [];
+  return (["A", "B"] as const).map((variant, index) => {
+    const m = rec(rows[index]);
+    return { variant, spend: num(m.spend), clicks: num(m.clicks), leads: num(m.leads) };
+  });
+}
+
+/**
+ * `GET /api/experiments` ya da `GET /api/experiments/:id` içindeki A/B testi. Yalnızca ref, taslak adı (maskelenmiş),
+ * durum, gün sayıları ve varyant metrikleri döner; reklam içeriği (anlık görüntü: klinik, başlıklar, metinler) dönmez.
+ */
+export function sanitizeExperiment(raw: unknown, refs: RefMap) {
+  const e = rec(raw);
+  const snapshot = rec(e.snapshot);
+  return {
+    ref: refFor(refs, "experiment", e.id),
+    name: scrubText(rec(e.draft).name, 100),
+    status: str(e.status),
+    elapsedDays: num(e.elapsedDays),
+    plannedDays: num(snapshot.duration),
+    variants: sanitizeExperimentMetrics(e.metrics),
+    updatedAt: day(e.updatedAt),
+  };
+}
+
+export function sanitizeExperimentList(raw: unknown, refs: RefMap, filter?: { status?: string }) {
+  const all = list(rec(raw).experiments);
+  const rows = filter?.status ? all.filter((e) => e.status === filter.status) : all;
+  return {
+    total: rows.length,
+    shown: Math.min(rows.length, LIST_LIMIT),
+    byStatus: countBy(all, "status"),
+    experiments: rows.slice(0, LIST_LIMIT).map((e) => sanitizeExperiment(e, refs)),
+  };
+}
+
 // ---------------------------------------------------------------- Performans ve rapor
+
+/**
+ * İçgörü kırılımı (ülke/dil): anahtar beyaz listeyle normalize edilir, aynı anahtara düşen gruplar (ör. birden çok
+ * `OTHER`) birleştirilir; lead sayısına göre ilk 5.
+ */
+function mergeGroups(rows: Raw[], key: string, normalize: (v: unknown) => string | null) {
+  const add = (a: number | null, b: number | null) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
+  const merged = new Map<string | null, { key: string | null; leads: number | null; qualified: number | null }>();
+  for (const g of rows) {
+    const k = normalize(g[key]);
+    const prev = merged.get(k);
+    if (!prev) merged.set(k, { key: k, leads: num(g.leads), qualified: num(g.qualified) });
+    else {
+      prev.leads = add(prev.leads, num(g.leads));
+      prev.qualified = add(prev.qualified, num(g.qualified));
+    }
+  }
+  return [...merged.values()].sort((a, b) => (b.leads ?? 0) - (a.leads ?? 0)).slice(0, 5);
+}
 
 /** `GET /api/insights`: özet metrikler + kırılımlar; öneri açıklamaları ve gerekçeleri dönmez. */
 export function sanitizeInsights(raw: unknown, refs: RefMap) {
@@ -285,8 +418,8 @@ export function sanitizeInsights(raw: unknown, refs: RefMap) {
           ctr: ratio(c.ctr),
         })),
     },
-    byCountry: list(insights.byCountry).slice(0, 5).map((g) => ({ country: str(g.country), leads: num(g.leads), qualified: num(g.qualified) })),
-    byLanguage: list(insights.byLanguage).slice(0, 5).map((g) => ({ language: str(g.language), leads: num(g.leads), qualified: num(g.qualified) })),
+    byCountry: mergeGroups(list(insights.byCountry), "country", leadCountry).map(({ key, leads, qualified }) => ({ country: key, leads, qualified })),
+    byLanguage: mergeGroups(list(insights.byLanguage), "language", leadLanguage).map(({ key, leads, qualified }) => ({ language: key, leads, qualified })),
     openAlerts: list(r.alerts).length,
     pendingRecommendations: list(r.pendingRecommendations).length,
   };
@@ -319,7 +452,7 @@ export function sanitizeWeeklyReport(raw: unknown, refs: RefMap) {
     },
     unreadAlerts: {
       total: alerts.length,
-      items: alerts.slice(0, 5).map((a) => ({ severity: str(a.severity), title: scrubText(a.title) })),
+      items: alerts.slice(0, 5).map((a) => ({ severity: str(a.severity), title: alertTitle(a.type, a.title) })),
     },
   };
 }
@@ -368,14 +501,14 @@ export function sanitizeLeadStats(raw: unknown, refs: RefMap) {
     awaitingReply: rows.filter((l) => inbox(l).needsReply === true).length,
     handedOffUnclaimed: rows.filter((l) => inbox(l).handedOff === true).length,
     byStatus: countBy(rows, "status"),
-    byChannel: countBy(rows, "channel"),
-    byCountry: topCounts(countBy(rows, "country")),
-    byLanguage: topCounts(countBy(rows, "language")),
+    byChannel: countBy(rows, "channel", leadChannel),
+    byCountry: topCounts(countBy(rows, "country", leadCountry)),
+    byLanguage: topCounts(countBy(rows, "language", leadLanguage)),
     recent: rows.slice(0, LIST_LIMIT).map((l) => ({
       ref: refFor(refs, "lead", l.id),
       status: str(l.status),
-      channel: str(l.channel),
-      language: str(l.language),
+      channel: leadChannel(l.channel),
+      language: leadLanguage(l.language),
       date: day(l.createdAt),
       awaitingReply: inbox(l).needsReply === true,
     })),
@@ -403,5 +536,136 @@ export function sanitizeSubscription(raw: unknown) {
         }
       : null,
     demoMode: bool(r.mock),
+  };
+}
+
+// ---------------------------------------------------------------- İç yazma (R1) sonuçları
+
+/** `POST /api/campaigns`: yeni taslağın ref'i ve durumu. Politika bulgu metni (`policyWarning`) dönmez. */
+export function sanitizeCreatedCampaign(raw: unknown, refs: RefMap) {
+  const c = rec(rec(raw).campaign);
+  return {
+    ref: refFor(refs, "campaign", c.id),
+    workflowStatus: str(c.workflowStatus) ?? "DRAFT",
+    status: str(c.status),
+    dailyBudget: major(c.budgetCents),
+    currency: str(c.currency),
+    policyRisk: str(c.policyRisk),
+    adSets: num(c.adSets),
+  };
+}
+
+/** `POST /api/campaigns/:id/submit`: yeni iş akışı durumu ve politika riski (bulgu metni dönmez). */
+export function sanitizeSubmittedCampaign(raw: unknown, refs: RefMap) {
+  const c = rec(rec(raw).campaign);
+  return {
+    ref: refFor(refs, "campaign", c.id),
+    workflowStatus: str(c.workflowStatus),
+    policyRisk: str(c.policyRisk),
+  };
+}
+
+/** `PATCH /api/alerts/:id`: uyarının yeni durumu (gövde metni dönmez). */
+export function sanitizeUpdatedAlert(raw: unknown, refs: RefMap) {
+  const a = rec(rec(raw).alert);
+  return { ref: refFor(refs, "alert", a.id), status: str(a.status) };
+}
+
+/**
+ * `POST /api/studio/generate`: üretilen reklam metni (başlık, gövde, eylem çağrısı) ve politika riski. Reklam metni
+ * kişisel veri değildir; yine de maskelenir ve kısaltılır. Klinik profili, form soruları ve WhatsApp karşılaması dönmez
+ * (yalnızca var olup olmadıkları).
+ */
+export function sanitizeGeneratedCopy(raw: unknown) {
+  const r = rec(raw);
+  const content = rec(r.content);
+  const questions = rec(content.instantForm).questions;
+  return {
+    variants: list(content.variants)
+      .slice(0, 4)
+      .map((v) => ({ headline: scrubText(v.headline, 150), text: scrubText(v.text, 400), cta: str(v.cta) })),
+    instantFormQuestions: Array.isArray(questions) ? questions.length : 0,
+    whatsappWelcome: Boolean(str(rec(content.whatsapp).welcome)),
+    policyRisk: str(rec(r.policy).risk),
+  };
+}
+
+/** `POST /api/studio` ve `PATCH /api/studio/:id`: taslağın ref'i, durumu ve politika riski. */
+export function sanitizeStudioDraft(raw: unknown, refs: RefMap) {
+  const r = rec(raw);
+  const d = isRecord(r.draft) ? r.draft : r;
+  return {
+    ref: refFor(refs, "studio", d.id),
+    status: str(d.status),
+    policyRisk: str(rec(d.policy).risk),
+  };
+}
+
+/** `POST /api/leads/refetch`: yalnızca sayılar; lead başına sonuç (`results`) dönmez. */
+export function sanitizeRefetchSummary(raw: unknown) {
+  const r = rec(raw);
+  return {
+    attempted: num(r.attempted) ?? 0,
+    recovered: num(r.recovered) ?? 0,
+    failed: num(r.failed) ?? 0,
+    skipped: num(r.skipped) ?? 0,
+    remaining: num(r.remaining) ?? 0,
+  };
+}
+
+// ---------------------------------------------------------------- Dış etki ve harcama (R2/R3) sonuçları
+
+/**
+ * `POST /api/campaigns/:id/publish` (PUBLISH/PAUSE/ARCHIVE/ACTIVATE): yeni durum ve yükleme ilerlemesi. Politika bulgu
+ * metni, Meta kimliği ve yükleme uyarıları dönmez.
+ */
+export function sanitizeCampaignAction(raw: unknown, refs: RefMap) {
+  const r = rec(raw);
+  const c = rec(r.campaign);
+  const publish = isRecord(r.publish) ? r.publish : null;
+  return {
+    ref: refFor(refs, "campaign", c.id),
+    action: str(c.action),
+    workflowStatus: str(c.workflowStatus),
+    status: str(c.status),
+    publishStatus: publish ? str(publish.status) : null,
+    policyWarning: c.policyWarning ? true : null,
+    adsActivated: num(c.adsActivated),
+  };
+}
+
+/** `PATCH /api/campaigns/:id/budget`: yeni günlük bütçe (ana birim). Ad set payları dönmez. */
+export function sanitizeBudgetChange(raw: unknown, refs: RefMap, currency: string | null) {
+  const c = rec(rec(raw).campaign);
+  return { ref: refFor(refs, "campaign", c.id), dailyBudget: major(c.dailyBudgetCents), currency };
+}
+
+/** `POST /api/meta/review-sync`: sayılar ve kampanya başına durum; kampanya ve reklam adları, hata metni dönmez. */
+export function sanitizeReviewSync(raw: unknown, refs: RefMap) {
+  const r = rec(raw);
+  const rows = list(r.campaigns);
+  return {
+    synced: num(r.synced) ?? rows.length,
+    byStatus: countBy(rows, "status"),
+    newlyDisapproved: rows.reduce((sum, row) => sum + (num(row.newlyDisapproved) ?? 0), 0),
+    campaigns: rows.slice(0, LIST_LIMIT).map((row) => ({
+      ref: refFor(refs, "campaign", row.campaignId),
+      status: str(row.status),
+      ads: num(row.ads),
+      newlyDisapproved: num(row.newlyDisapproved),
+    })),
+  };
+}
+
+/** `POST /api/recommendations/:id/apply`: uygulanan kampanyanın ref'i ve bütçe eski → yeni (ana birim). */
+export function sanitizeAppliedRecommendation(raw: unknown, refs: RefMap, recommendationId: string) {
+  const r = rec(raw);
+  return {
+    ref: refs.ref("recommendation", recommendationId),
+    status: str(r.status) ?? "APPLIED",
+    campaignRef: refFor(refs, "campaign", r.appliedCampaignId ?? r.campaignId),
+    previousDailyBudget: major(r.previousDailyBudgetCents),
+    dailyBudget: major(r.dailyBudgetCents),
+    metaSynced: bool(r.metaSynced),
   };
 }

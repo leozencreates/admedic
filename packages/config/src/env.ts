@@ -155,6 +155,18 @@ export const EnvSchema = z.object({
   ASSISTANT_NAME: optionalString(),
   /** İsteğe bağlı ses geçersiz kılması; asıl ses ajan yapılandırmasında seçilir. */
   ELEVENLABS_ASSISTANT_VOICE_ID: optionalString(),
+  /**
+   * Bir asistan oturumunun en uzun süresi (sn). Ajana `conversation.max_duration_seconds` olarak eşitlenir
+   * (assistant:sync-agent); tarayıcı da aynı sürede oturumu kibarca kapatır. 60–1800, varsayılan 300.
+   */
+  VOICE_ASSISTANT_MAX_SESSION_SECONDS: z.preprocess(blankToUndefined, z.coerce.number().int().min(60).max(1800).default(300)),
+  /** Kuruluş başına günlük (UTC) en çok asistan oturumu; 0 = sınırsız. Varsayılan 200. */
+  VOICE_ASSISTANT_DAILY_SESSIONS_PER_ORG: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(100_000).default(200)),
+  /**
+   * Kuruluş başına aylık (UTC takvim ayı) asistan dakika bütçesi; boş ya da 0 = sınırsız. Tarayıcının bildirdiği oturum
+   * süreleri (VOICE_SESSION_ENDED) toplanır; asıl fatura ElevenLabs panelindedir (docs/runbook.md "Maliyet izleme").
+   */
+  VOICE_ASSISTANT_MONTHLY_MINUTES_PER_ORG: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(1_000_000).default(0)),
 
   RESEND_API_KEY: optionalString(),
   /** Gönderen adresi; boşsa APP_NAME ile türetilir. */

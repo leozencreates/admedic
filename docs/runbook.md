@@ -155,6 +155,89 @@ pnpm assistant:sync-agent --llm <model>
 | "yanıttaki tool_ids/llm beklenenle aynı değil" | Ajanın sürümleme/dal ayarı ya da PATCH davranışı; ajanı panelde açıp araç listesini denetleyin |
 | ElevenLabs 401/403 | Anahtar yanlış ya da `ELEVENLABS_API_BASE` başka bölgeyi gösteriyor (AB hesabı ayrıdır) |
 
+**Araç ya da prompt değişikliğinden sonra yeniden eşitleme.** `registry.ts`'te bir araç eklendiğinde, kaldırıldığında,
+risk seviyesi, açıklaması ya da parametreleri değiştiğinde veya prompt dosyası değiştiğinde:
+
+```bash
+pnpm --filter @admedic/web test -- tests/assistant-sync-agent.test.ts   # kayıt ↔ prompt tutarlılığı
+pnpm assistant:sync-agent --llm <seçili model> --dry-run              # araç sayısını ve adları denetleyin
+pnpm assistant:sync-agent --llm <seçili model>
+```
+
+- Kayıttan kaldırılan araç ajandan çıkarılır (`tool_ids` yeniden yazılır) ama ElevenLabs'teki araç kaynağı silinmez;
+  gerekirse panelden silin.
+- Panel yeni sürüme geçip ajan eşitlenmezse ajan eski araç tanımlarıyla çalışır; tarayıcıda işleyicisi olmayan
+  araç çalışmaz, yeni araçlar ajanda görünmez. Bu yüzden dağıtımdan hemen sonra eşitleyin.
+- Faz 4 (2026-10-01): R2/R3 araçları yalnızca ekrandaki onay penceresinden çalışır; prompt v3 bunu ajana söyler.
+  Eşitleme yapılmadan R2/R3 araçları ajanda görünmez.
+
+**Maliyet izleme ve sınırlar** (ADR-0028 §9, "Faz 5"; 2026-10-01). Gerçek hesapla denenmedi.
+
+- **Asıl kaynak ElevenLabs panelidir.** Dakika ve kredi kullanımı panelin abonelik/kullanım sayfasında (menü adı
+  DOĞRULANMADI); konuşma başına süre ve LLM maliyeti ajanın konuşma geçmişinde ("Detailed costs" düğmesi,
+  `docs/elevenlabs-constraints.md`). Ek dakika ücreti, burst
+  (çift ücret) ve LLM'in ayrı faturalanması: `docs/elevenlabs-constraints.md` "Ücret ve eşzamanlılık". Telefon ajanı
+  ile asistan aynı çalışma alanı eşzamanlılık havuzunu ve aynı faturayı paylaşır; ayırmak için konuşmaları ajan
+  kimliğine göre süzün.
+- **Panelin kendi kayıtları** (konuşma metni yok), `AuditLog`'da kuruluş ve tarihe göre (`@@index([orgId, createdAt])`):
+
+  ```sql
+  -- Bu ay kuruluş başına oturum sayısı ve bildirilen dakika
+  SELECT "orgId",
+         count(*) FILTER (WHERE action = 'VOICE_SESSION_STARTED')                         AS oturum,
+         round(sum((after->>'durationSeconds')::int) FILTER (WHERE action = 'VOICE_SESSION_ENDED') / 60.0, 1) AS dakika
+  FROM "AuditLog"
+  WHERE "createdAt" >= date_trunc('month', now() AT TIME ZONE 'UTC')
+    AND action IN ('VOICE_SESSION_STARTED', 'VOICE_SESSION_ENDED')
+  GROUP BY "orgId" ORDER BY dakika DESC NULLS LAST;
+  ```
+
+  - `VOICE_SESSION_STARTED`: oturum ucu belirteç verdi (`after.connection`, `serverLocation`, `mock`, sunucunun
+    ürettiği `sessionRef`). `mock: true` satırları deneme modudur, ücret oluşturmaz.
+  - `VOICE_SESSION_ENDED`: tarayıcının bildirdiği süre (`after.durationSeconds`, `after.sessionRef`; `entityId` =
+    WebRTC konuşma kimliği, varsa). Sunucu yalnızca aynı kullanıcının son `en uzun süre + 1 saat` içinde açtığı ve
+    henüz kapanmamış oturumu kabul eder (bilinmeyen 404, ikinci bildirim 409); süre en çok `en uzun süre + 30 sn` ve
+    açılıştan geçen duvar saati süresi kadar sayılır. Sekme çöker ya da ağ koparsa satır yazılmaz; bu yüzden toplam
+    ElevenLabs faturasından **düşük** olabilir. STARTED sayısı ENDED sayısından belirgin fazlaysa ElevenLabs panelindeki
+    süreye bakın.
+  - `VOICE_TOOL_CALL`: araç adı, risk, sonuç; `VOICE_CONSENT_GIVEN`: aydınlatma onayı.
+- **Sınırlar (ortam değişkenleri; değişiklikten sonra hizmetleri yeniden başlatın):**
+
+  | Değişken | Varsayılan | Etki |
+  |---|---|---|
+  | `VOICE_ASSISTANT_MAX_SESSION_SECONDS` | 300 (60–1800) | Tarayıcı oturumu bu sürede kibarca kapatır, son 30 sn'de kalan süreyi gösterir. Ajandaki `conversation.max_duration_seconds` aynı değere **eşitleme betiğiyle** ayarlanır: değiştirdikten sonra `pnpm assistant:sync-agent --llm <model>` çalıştırın. |
+  | `VOICE_ASSISTANT_DAILY_SESSIONS_PER_ORG` | 200 (0 = sınırsız) | Kuruluş başına UTC günü başına yeni oturum (`RequestQuota` anahtarı `voice-org:<orgId>:<gün>`). Aşılınca 429 ve "bugünkü oturum sınırı doldu". Belirteç alınamasa da deneme bir hak tüketir. |
+  | `VOICE_ASSISTANT_MONTHLY_MINUTES_PER_ORG` | boş/0 = sınırsız | Bu UTC ayında kaydedilen süre (`RequestQuota` sayacı `voice-minutes:<orgId>:<YYYY-MM>`, saniye) bütçeye ulaşınca yeni oturum 429 ("bu ayki dakika bütçesi doldu"). Açık oturum kesilmez; en geç en uzun sürede kapanır. |
+
+  Kullanıcı başına saatte 20 oturum (`voice:<userId>`), dakikada 30 olay kaydı (`voice-event:<userId>`) ve ayrıca
+  dakikada 10 oturum sonu kaydı (`voice-session-end:<userId>`) sabittir. Oturum sonu ayrı sayılır: araç olaylarıyla
+  dolan sınır oturum sonu kaydını düşürüp bütçeyi eksik saydırmasın. Kalan açık: tarayıcı oturum sonunu yeniden
+  denemez; ağ hatasında ya da sekme çökünce süre yine sayılmaz (ElevenLabs paneli asıl kaynaktır).
+  Araç çağrıları istemcide oturum başına dakikada 30 ile sınırlıdır; yazan her uç kendi rol, tenant, harcama yetkisi ve
+  kota denetimini yapar (sunucuda ayrıca genel bir araç hız sınırı yoktur, bilinçli).
+- **ElevenLabs panelinde ayrıca (betik göndermez):** ajanın `call_limits` ayarları: `bursting_enabled` kapalı (burst
+  çift ücret), düşük bir `agent_concurrency_limit` (ör. 2–3) ve gerekirse `daily_limit`. Betik `platform_settings`
+  göndermez: kısmi gövdenin geçersiz kılma ve gizlilik ayarlarını sıfırlayıp sıfırlamadığı doğrulanmadı.
+- **Aylık bütçe sayacı:** sınır > 0 iken her oturum başında tek bir `RequestQuota` satırı okunur
+  (`voice-minutes:<orgId>:<YYYY-MM>`); denetim kaydı taranmaz. Sayaç `VOICE_SESSION_ENDED` satırıyla aynı işlemde
+  artar. Bir ayın sayacını elle düzeltmek gerekirse (ör. hatalı bildirim) yukarıdaki SQL'le denetim kaydından yeniden
+  hesaplayıp `count` alanına yazın. Oturum sonu işaretleri `voice-session-ended:<orgId>:<sessionRef>` anahtarıyla
+  tutulur (tek kullanımlık; `expiresAt` geçince silinebilir).
+
+**Acil kapatma.** Asistan beklenmedik bir işlem yapıyorsa ya da ElevenLabs tarafında bir sorun varsa:
+
+1. Sunucunun `.env` dosyasında `VOICE_ASSISTANT_ENABLED=false` yazın (ya da `ELEVENLABS_ASSISTANT_AGENT_ID`'yi
+   boşaltın) ve hizmetleri yeniden başlatın (`cd deploy && docker compose -f docker-compose.prod.yml up -d`).
+2. Sonuç: `/api/assistant/session` ve `/api/assistant/events` 404 döner, mikrofon düğmesi görünmez; açık oturumlar
+   yeni token alamaz. Panelin geri kalanı etkilenmez.
+3. Gerekirse ElevenLabs panelinde ajanı da devre dışı bırakın; açık bir konuşma sürüyorsa en geç ajanın oturum süre
+   sınırında kapanır.
+4. Sesle yapılan değişiklikleri denetim kaydında `VOICE_TOOL_CALL` (araç, risk, sonuç) ve ilgili ucun kendi kaydıyla
+   inceleyin. Kampanyayı durdurmak gerekirse paneldeki Duraklat düğmesini kullanın.
+5. **Yalnızca maliyet sorunuysa** (asistan doğru çalışıyor): kapatmak yerine `VOICE_ASSISTANT_DAILY_SESSIONS_PER_ORG`
+   ya da `VOICE_ASSISTANT_MONTHLY_MINUTES_PER_ORG`'u düşürüp hizmetleri yeniden başlatın; yeni oturumlar 429 alır.
+   ElevenLabs panelinde ajanın eşzamanlılık sınırını düşürmek ve burst'ü kapatmak harcamayı hemen sınırlar.
+
 ## Güncelleme
 
 ```

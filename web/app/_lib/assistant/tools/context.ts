@@ -21,6 +21,15 @@ export interface ToolContext {
   openLeadSearch?: () => void;
   /** Asistan oturumunu kapatır (`stop_assistant`). */
   stop?: () => void;
+  /** Açık sayfanın yolu (`get_current_context`); verilmezse `window.location`. */
+  location?: () => { pathname: string; search: string } | null;
+  /** Konuşma boyunca tarayıcı belleğinde tutulan araç durumu (ajana gönderilmez). */
+  memory: ToolMemory;
+}
+
+export interface ToolMemory {
+  /** Son `generate_ad_copy` çıktısının tam içeriği (`save_studio_draft` bunu kaydeder); dondurulmuştur. */
+  generatedCopy: Readonly<Record<string, unknown>> | null;
 }
 
 /**
@@ -37,4 +46,12 @@ export type ToolHandler = (params: Record<string, unknown>, ctx: ToolContext) =>
 /** Okuma sonuçları tek satır JSON olarak döner (boş alanlar atlanır; ajan için daha kısa). */
 export function json(value: unknown): string {
   return JSON.stringify(value, (_key, v) => (v === null || v === undefined ? undefined : v));
+}
+
+/** Aracın kendi doğrulaması (ör. kayıp nedeni eksik); ileti ajana olduğu gibi gider (Türkçe, kimlik içermez). */
+export class ToolInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolInputError";
+  }
 }

@@ -1274,11 +1274,14 @@
     background: var(--color-brand-50);
     border-color: var(--color-brand-100);
   }
+  /* Satır sahibi (Siz / asistan adı) renkli balon zemininde durur (--color-brand-50 / --color-subtle): --color-ink-3
+     orada 4,5:1'in altına düşer (4,46:1). --color-ink-2 açık temada 6,9:1 / 7,3:1; koyu temada da bu iki zemin
+     token'ı ile --color-ink-2 arasındaki çift ≥4,5:1 kalmalıdır. */
   .va-line__who {
     font-size: 12px;
     line-height: 16px;
     font-weight: 500;
-    color: var(--color-ink-3);
+    color: var(--color-ink-2);
   }
   .va-line__text {
     font-size: 14px;
@@ -1301,6 +1304,10 @@
     color: var(--color-info);
     font-size: 13px;
     line-height: 18px;
+  }
+  /* Oturumun kalan süresi (son 30 sn): sayı genişliği sabit, satır titremez. */
+  .va-panel__timer {
+    font-variant-numeric: tabular-nums;
   }
   .va-panel__error {
     display: flex;
@@ -1417,6 +1424,196 @@
     .va-orb:not([data-state="idle"]):not([data-state="disabled"]) .va-orb__halo {
       opacity: 0.45;
       transform: scale(1.12);
+    }
+  }
+
+  /* Onay kartı (Faz 3, R1): bekleyen eylemin özeti, geri sayım ve 44 px dokunma hedefli iki düğme. */
+  .va-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 12px 8px;
+    padding: 10px 12px 12px;
+    border: 1px solid var(--color-brand-200);
+    border-radius: var(--radius-card);
+    background: var(--color-brand-50);
+    color: var(--color-ink);
+  }
+  .va-confirm__title {
+    margin: 0;
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 600;
+    color: var(--color-brand-700);
+  }
+  .va-confirm__summary {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+  .va-confirm__expires {
+    margin: 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .va-confirm__bar {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--color-brand-100);
+  }
+  .va-confirm__bar > span {
+    display: block;
+    height: 100%;
+    background: var(--color-brand-600);
+    transition: width 1s linear;
+  }
+  .va-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .va-confirm__actions > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .va-confirm__actions > button[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: progress;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .va-confirm__bar > span {
+      transition: none;
+    }
+  }
+
+  /* Ekran onay penceresi (Faz 4, R2/R3; `voice-assistant/screen-confirm-dialog.tsx`): risk rozeti metinlidir (yalnızca
+   * renk değil), alanlar eski → yeni, R3'te harcama uyarısı; düğmeler 44 px dokunma hedefli. */
+  .va-screen {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .va-screen__risk {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 2px 10px;
+    border: 1px solid var(--color-info-line);
+    border-radius: 999px;
+    background: var(--color-info-bg);
+    color: var(--color-info);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .va-screen__risk[data-risk="R3"] {
+    border-color: var(--color-bad-line);
+    background: var(--color-bad-bg);
+    color: var(--color-bad);
+  }
+  .va-screen__fields {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    background: var(--color-subtle);
+  }
+  .va-screen__row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 8px 12px;
+  }
+  .va-screen__row + .va-screen__row {
+    border-top: 1px solid var(--color-line-soft);
+  }
+  .va-screen__row > dt {
+    color: var(--color-ink-2);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .va-screen__row > dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    text-align: right;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+  .va-screen__before {
+    color: var(--color-ink-3);
+    text-decoration: line-through;
+  }
+  .va-screen__arrow {
+    color: var(--color-ink-3);
+  }
+  .va-screen__warning {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-warn-line);
+    border-radius: var(--radius-card);
+    background: var(--color-warn-bg);
+    color: var(--color-warn);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .va-screen__warning > svg {
+    flex: none;
+    margin-top: 2px;
+  }
+  .va-screen__note,
+  .va-screen__hint {
+    margin: 0;
+    color: var(--color-ink-2);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .va-screen__hint {
+    color: var(--color-ink-3);
+  }
+  .va-screen__expires {
+    margin: 0;
+    color: var(--color-ink-2);
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .va-screen__bar {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--color-brand-100);
+  }
+  .va-screen__bar > span {
+    display: block;
+    height: 100%;
+    background: var(--color-brand-600);
+    transition: width 1s linear;
+  }
+  .va-screen[data-risk="R3"] .va-screen__bar > span {
+    background: var(--color-bad-fill);
+  }
+  .va-screen__button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .va-screen__button[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .va-screen__bar > span {
+      transition: none;
     }
   }
 }

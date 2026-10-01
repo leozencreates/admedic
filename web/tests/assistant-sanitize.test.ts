@@ -12,6 +12,12 @@ import {
   sanitizeShellSummary,
   sanitizeSubscription,
   sanitizeWeeklyReport,
+  sanitizeCreatedCampaign,
+  sanitizeGeneratedCopy,
+  sanitizeRefetchSummary,
+  sanitizeStudioDraft,
+  sanitizeSubmittedCampaign,
+  sanitizeUpdatedAlert,
 } from "../app/_lib/assistant/sanitize";
 
 // Araç sonuçları ElevenLabs'e (üçüncü taraf) gider (ADR-0028 §4). Veriler bilerek sahtedir; gerçek kişi yoktur.
@@ -80,12 +86,117 @@ describe("sanitize: lead", () => {
   });
 });
 
+describe("sanitize: lead ülke/dil/kanal beyaz listesi", () => {
+  // Elle lead girişi (`POST /api/leads`) bu alanlara serbest metin kabul eder: ad + telefon yazılabilir.
+  const FREE = `${PII.firstName} ${PII.lastName} ${PII.phone}`;
+
+  it("ülke/dil/kanal normalize edilir; kalıba uymayan değer ne anahtar ne değer olarak gider, OTHER altında sayılır", () => {
+    const leads = [
+      { ...fakeLead(0), country: FREE, language: FREE, channel: FREE },
+      { ...fakeLead(1), country: " de ", language: "DE", channel: "whatsapp" },
+      { ...fakeLead(2), country: "Germany", language: "pt-BR", channel: "MANUAL" },
+      { ...fakeLead(3), country: null, language: "zh_Hant", channel: null },
+    ];
+    const out = sanitizeLeadStats({ leads }, new RefMap());
+    expectNoPii(out);
+    expect(JSON.stringify(out)).not.toContain(PII.firstName);
+    expect(out.byCountry).toEqual({ OTHER: 2, DE: 1, UNKNOWN: 1 });
+    expect(out.byLanguage).toEqual({ OTHER: 1, de: 1, pt: 1, zh: 1 });
+    expect(out.byChannel).toEqual({ OTHER: 2, WHATSAPP: 1, UNKNOWN: 1 });
+    // Üç harfli kısa adlar ("Ali", "Ece") dil kodu sayılmaz.
+    const named = sanitizeLeadStats({ leads: [{ ...fakeLead(4), language: "Ali" }, { ...fakeLead(5), language: "ece-tr" }] }, new RefMap());
+    expect(named.byLanguage).toEqual({ OTHER: 2 });
+    expect(out.recent.map((l) => [l.channel, l.language])).toEqual([
+      ["OTHER", "OTHER"],
+      ["WHATSAPP", "de"],
+      ["OTHER", "pt"],
+      [null, "zh"],
+    ]);
+  });
+
+  it("içgörü ülke/dil kırılımı: serbest metin OTHER'a düşer, aynı anahtarlar birleşir", () => {
+    const out = sanitizeInsights(
+      {
+        insights: {
+          byCountry: [
+            { country: "TR", leads: 4, qualified: 1 },
+            { country: FREE, leads: 2, qualified: 1 },
+            { country: `${PII.lastName} ${PII.email}`, leads: 3, qualified: 0 },
+            { country: "de", leads: 1, qualified: 1 },
+          ],
+          byLanguage: [{ language: FREE, leads: 1, qualified: 0 }, { language: "ar", leads: 2, qualified: 2 }],
+        },
+      },
+      new RefMap(),
+    );
+    expectNoPii(out);
+    expect(out.byCountry).toEqual([
+      { country: "OTHER", leads: 5, qualified: 1 },
+      { country: "TR", leads: 4, qualified: 1 },
+      { country: "DE", leads: 1, qualified: 1 },
+    ]);
+    expect(out.byLanguage).toEqual([
+      { language: "ar", leads: 2, qualified: 2 },
+      { language: "OTHER", leads: 1, qualified: 0 },
+    ]);
+  });
+});
+
+describe("sanitize: uyarı başlıkları", () => {
+  const CONN_CUID = "cm1abc2def3ghi4jkl5mno6pq";
+  const PERSON = "Sahte Personeladı";
+
+  it("bağlantı etiketi gömen türler sabit başlık alır; AD_DISAPPROVED kimlik parçası atılır", () => {
+    const refs = new RefMap();
+    const alerts = [
+      { id: "a_1", type: "META_DISCONNECTED", severity: "CRITICAL", status: "OPEN", title: `Meta bağlantısı REVOKED: ${PERSON}` },
+      { id: "a_2", type: "META_DISCONNECTED", severity: "CRITICAL", status: "OPEN", title: `Meta bağlantısı EXPIRED: ${CONN_CUID}` },
+      { id: "a_3", type: "TOKEN_EXPIRING", severity: "WARNING", status: "OPEN", title: `Meta token'ı süresi dolmak üzere: ${PERSON}` },
+      { id: "a_4", type: "AD_DISAPPROVED", severity: "WARNING", status: "OPEN", title: "Meta reklamı reddetti: Saç ekimi — Taslak (de) #a1b2c3" },
+    ];
+    const list = sanitizeAlertList({ alerts }, refs);
+    const weekly = sanitizeWeeklyReport({ report: { unreadAlerts: alerts } }, refs);
+    // Kabuk bildirimleri tür taşımaz: başlık önekinden tanınır.
+    const shell = sanitizeShellSummary({ notifications: alerts.map((a) => ({ id: a.id, severity: a.severity, title: a.title })) });
+    for (const out of [list, weekly, shell]) {
+      const text = JSON.stringify(out);
+      expect(text).not.toContain(PERSON);
+      expect(text).not.toContain("Personeladı");
+      expect(text).not.toContain(CONN_CUID);
+      expect(text).not.toContain("a1b2c3");
+    }
+    const titles = list.alerts.map((a) => a.title);
+    expect(titles).toEqual([
+      "Meta bağlantısı kesildi",
+      "Meta bağlantısı kesildi",
+      "Meta bağlantısının erişim anahtarının süresi dolmak üzere",
+      "Meta reklamı reddetti: Saç ekimi — Taslak (de)",
+    ]);
+    expect(weekly.unreadAlerts.items.map((a) => a.title)).toEqual(titles.slice(0, 4));
+    expect(shell.latestNotifications.map((n) => n.title)).toEqual(titles.slice(0, 4));
+  });
+
+  it("türü bilinmeyen başlıklarda kimlik (cuid/uuid) ve telefon maskelenir", () => {
+    const shell = sanitizeShellSummary({
+      notifications: [{ title: `Bağlantı ${CONN_CUID} için ${PII.phone}`, severity: "INFO" }],
+    });
+    expect(shell.latestNotifications[0].title).toBe("Bağlantı [kimlik] için [telefon]");
+  });
+});
+
 describe("sanitize: serbest metin", () => {
   it("e-posta ve telefon maskelenir, metin kısaltılır", () => {
     expect(scrubText(`Ara ${PII.phone} ya da yaz ${PII.email}`)).toBe("Ara [telefon] ya da yaz [e-posta]");
     expect(scrubText("Bütçe 1200 arttı")).toBe("Bütçe 1200 arttı");
     expect(scrubText("x".repeat(500))!.length).toBeLessThanOrEqual(160);
     expect(scrubText(null)).toBeNull();
+  });
+
+  it("cuid ve uuid benzeri kimlikler maskelenir; kısa kelimeler ve ref'ler korunur", () => {
+    expect(scrubText("Kayıt cm1abc2def3ghi4jkl5mno6pq açık")).toBe("Kayıt [kimlik] açık");
+    expect(scrubText("Kayıt CM1ABC2DEF3GHI4JKL5MNO6PQ")).toBe("Kayıt [kimlik]");
+    expect(scrubText("id 123e4567-e89b-12d3-a456-426614174000 bitti")).toBe("id [kimlik] bitti");
+    expect(scrubText("Kampanya c1 kontrol edildi")).toBe("Kampanya c1 kontrol edildi");
   });
 });
 
@@ -187,5 +298,54 @@ describe("sanitize: diğer uçlar", () => {
     expect(sanitizeLeadStats({ leads: "x" }, refs).total).toBe(0);
     expect(sanitizeCampaignList(undefined, refs).total).toBe(0);
     expect(sanitizeShellSummary("oops").pendingApprovals).toBe(0);
+  });
+});
+
+describe("R1 sonuçları (Faz 3)", () => {
+  it("kampanya oluşturma ve onaya gönderme: ref ve durum; politika bulgu metni dönmez", () => {
+    const refs = new RefMap();
+    const created = sanitizeCreatedCampaign(
+      { campaign: { id: "cmp_secret_1", name: PII.firstName, workflowStatus: "DRAFT", status: "PAUSED", budgetCents: 2500, currency: "EUR", policyRisk: "MEDIUM", policyWarning: PII.message, adSets: 2 } },
+      refs,
+    );
+    expect(created).toEqual({ ref: "c1", workflowStatus: "DRAFT", status: "PAUSED", dailyBudget: 25, currency: "EUR", policyRisk: "MEDIUM", adSets: 2 });
+    const submitted = sanitizeSubmittedCampaign({ campaign: { id: "cmp_secret_1", workflowStatus: "IN_REVIEW", policyRisk: "LOW", policyWarning: PII.message } }, refs);
+    expect(submitted).toEqual({ ref: "c1", workflowStatus: "IN_REVIEW", policyRisk: "LOW" });
+    expectNoPii([created, submitted]);
+    expect(JSON.stringify([created, submitted])).not.toContain("cmp_secret_1");
+  });
+
+  it("uyarı güncellemesi: yalnızca ref ve durum (gövde metni yok)", () => {
+    const out = sanitizeUpdatedAlert({ ok: true, alert: { id: "alert_secret", status: "RESOLVED", title: "x", message: `${PII.email} ${PII.message}` } }, new RefMap());
+    expect(out).toEqual({ ref: "a1", status: "RESOLVED" });
+    expectNoPii(out);
+  });
+
+  it("üretilen reklam metni: başlık/gövde/CTA maskelenir; profil, form soruları ve WhatsApp metni dönmez", () => {
+    const out = sanitizeGeneratedCopy({
+      content: {
+        clinic: "Deneme Klinik",
+        variants: [
+          { headline: "Başlık", text: `Bize yazın: ${PII.email} / ${PII.phone}`, cta: "LEARN_MORE" },
+          { headline: "Başlık 2", text: "Metin", cta: "LEARN_MORE" },
+        ],
+        instantForm: { questions: [PII.message, "Soru"] },
+        whatsapp: { welcome: PII.message },
+        profile: { brandTone: PII.staff, bannedPhrases: [PII.coordinator] },
+      },
+      policy: { risk: "LOW", findings: [{ reason: PII.message }] },
+    });
+    expect(out.variants[0]).toEqual({ headline: "Başlık", text: "Bize yazın: [e-posta] / [telefon]", cta: "LEARN_MORE" });
+    expect(out).toMatchObject({ instantFormQuestions: 2, whatsappWelcome: true, policyRisk: "LOW" });
+    expectNoPii(out);
+  });
+
+  it("stüdyo taslağı ve yeniden çekme: ref/durum ve sayılar", () => {
+    const draft = sanitizeStudioDraft({ draft: { id: "draft_secret", status: "DRAFT", version: 2, content: { clinic: PII.staff }, policy: { risk: "LOW", reason: PII.message } } }, new RefMap());
+    expect(draft).toEqual({ ref: "s1", status: "DRAFT", policyRisk: "LOW" });
+    const refetch = sanitizeRefetchSummary({ attempted: 1, recovered: 1, failed: 0, skipped: 0, remaining: 0, results: [{ leadId: LEAD_ID, name: PII.firstName }] });
+    expect(refetch).toEqual({ attempted: 1, recovered: 1, failed: 0, skipped: 0, remaining: 0 });
+    expectNoPii([draft, refetch]);
+    expect(JSON.stringify(refetch)).not.toContain(LEAD_ID);
   });
 });

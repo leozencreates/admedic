@@ -161,7 +161,8 @@ test.describe("erişilebilirlik kapısı", () => {
     });
   }
 
-  // Sesli asistan: aydınlatma diyaloğu ve açık panel (deneme modu, metin kipi) her iki boyutta taranır.
+  // Sesli asistan: aydınlatma diyaloğu, açık panel ve ekrandaki modal onay penceresi (deneme modu, metin kipi) her iki
+  // boyutta taranır.
   for (const vp of VIEWPORTS) {
     test(`sesli asistan · ${vp.name}`, async ({ browser, baseURL }) => {
       test.setTimeout(5 * 60_000);
@@ -203,6 +204,21 @@ test.describe("erişilebilirlik kapısı", () => {
       await input.press("Enter");
       await expect(page.locator('.va-panel .va-line[data-role="agent"]')).toHaveCount(2, { timeout: 15_000 });
       await check("konuşmalı panel");
+
+      // Ekrandaki modal onay penceresi (ADR-0028 Faz 4): R3 bütçe artışı en dolu hâlidir (alanlar eski → yeni, risk
+      // rozeti, harcama uyarısı, geri sayım, "Harcamayı onayla"). Etkinleşmeden önce ve sonra taranır; Vazgeç ile
+      // kapatılır, hiçbir yazma isteği gitmez. Kampanya ref'i (c1) yukarıdaki listeden gelir.
+      await input.fill("bütçeyi 80 artır");
+      await input.press("Enter");
+      const screen = page.getByRole("dialog", { name: "Günlük bütçeyi artır" });
+      await expect(screen).toBeVisible({ timeout: 15_000 });
+      const confirmSpend = screen.getByRole("button", { name: "Harcamayı onayla" });
+      await expect(confirmSpend).toHaveAttribute("aria-disabled", "true");
+      await check("onay penceresi (R3, etkinleşmeden)");
+      await expect(confirmSpend).not.toHaveAttribute("aria-disabled", "true");
+      await check("onay penceresi (R3, etkin)");
+      await screen.getByRole("button", { name: "Vazgeç" }).click();
+      await expect(screen).toHaveCount(0);
 
       for (const e of errors) failures.push(`sayfa hatası ${e.slice(0, 160)}`);
       await context.close();

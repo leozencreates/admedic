@@ -39,6 +39,24 @@ function requirePage(ctx: ToolContext, key: string): { href: string; label: stri
   return page;
 }
 
+function currentLocation(ctx: ToolContext): { pathname: string; search: string } | null {
+  if (ctx.location) return ctx.location();
+  if (typeof window === "undefined") return null;
+  return { pathname: window.location.pathname, search: window.location.search };
+}
+
+/** Yoldaki kayıt kimliği: yalnızca kısa, güvenli karakterler (serbest metin ref'e dönüşmez). */
+function safeRecordId(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let value: string;
+  try {
+    value = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  return /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
+}
+
 export const navigationHandlers: Record<string, ToolHandler> = {
   async navigate_to(params, ctx) {
     const page = requirePage(ctx, String(params.pageKey));
@@ -86,6 +104,32 @@ export const navigationHandlers: Record<string, ToolHandler> = {
     const page = requirePage(ctx, "approvals");
     go(ctx, page.href);
     return { result: `${page.label} sayfası açıldı. Onay ve ret sesle yapılmaz; kullanıcı ekrandan karar verir.` };
+  },
+
+  /**
+   * Açık sayfanın kaydı (R0): "bu lead'i …" gibi komutlar için yalnızca ref döner (ad, durum ya da içerik dönmez).
+   * Yol: `/campaigns/:id` → kampanya, `/leads/:id` → lead, `/tests/:id` → A/B testi (Faz 5), `/studio?id=` → reklam
+   * taslağı. Kayıt türü rolün menüsünde
+   * yoksa ref verilmez.
+   */
+  async get_current_context(_params, ctx) {
+    const loc = currentLocation(ctx);
+    if (!loc) return { result: json({ page: null }) };
+    const pages = allowedPages(ctx);
+    const segments = loc.pathname.split("/").filter(Boolean);
+    const first = segments[0] ?? "";
+    const pageKey = first === "" ? "overview" : first;
+    const out: Record<string, string | null> = { page: pages.has(pageKey) ? pageKey : null };
+    let entityId: string | undefined;
+    const id = segments.length === 2 ? safeRecordId(segments[1]) : null;
+    if (first === "campaigns" && id && pages.has("campaigns")) out.campaignRef = ctx.refs.ref("campaign", (entityId = id));
+    else if (first === "leads" && id && pages.has("leads")) out.leadRef = ctx.refs.ref("lead", (entityId = id));
+    else if (first === "tests" && id && pages.has("tests")) out.experimentRef = ctx.refs.ref("experiment", (entityId = id));
+    else if (first === "studio" && segments.length === 1) {
+      const draftId = safeRecordId(new URLSearchParams(loc.search).get("id"));
+      if (draftId && pages.has("studio")) out.studioDraftRef = ctx.refs.ref("studio", (entityId = draftId));
+    }
+    return { result: json(out), entityId };
   },
 
   async stop_assistant(_params, ctx) {

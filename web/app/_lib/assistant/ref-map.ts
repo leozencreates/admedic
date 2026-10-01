@@ -6,7 +6,7 @@
  * Saf modül; eşleme yalnızca tarayıcı belleğinde, tek konuşma boyunca yaşar.
  */
 
-export type RefKind = "campaign" | "lead" | "alert" | "recommendation" | "decision";
+export type RefKind = "campaign" | "lead" | "alert" | "recommendation" | "decision" | "studio" | "experiment";
 
 const PREFIX: Record<RefKind, string> = {
   campaign: "c",
@@ -14,6 +14,8 @@ const PREFIX: Record<RefKind, string> = {
   alert: "a",
   recommendation: "r",
   decision: "d",
+  studio: "s",
+  experiment: "e",
 };
 
 const KIND_LABEL: Record<RefKind, string> = {
@@ -22,6 +24,8 @@ const KIND_LABEL: Record<RefKind, string> = {
   alert: "uyarı",
   recommendation: "öneri",
   decision: "karar",
+  studio: "reklam taslağı",
+  experiment: "A/B testi",
 };
 
 /** Ref biçimi: tür harfi + sayı. Serbest metin taşıyamaz. */
@@ -41,7 +45,7 @@ export class RefError extends Error {
 export class RefMap {
   private readonly byRef = new Map<string, { kind: RefKind; id: string }>();
   private readonly byId = new Map<string, string>();
-  private readonly counters: Record<RefKind, number> = { campaign: 0, lead: 0, alert: 0, recommendation: 0, decision: 0 };
+  private readonly counters: Record<RefKind, number> = { campaign: 0, lead: 0, alert: 0, recommendation: 0, decision: 0, studio: 0, experiment: 0 };
 
   /** Kaydın ref'i; aynı kayıt için hep aynı ref döner. */
   ref(kind: RefKind, id: string): string {

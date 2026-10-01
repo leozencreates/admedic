@@ -261,6 +261,30 @@ SDK kaynağından (`@elevenlabs/client@1.26.0`, `dist/utils/location.js`), `serv
   `turn.silence_end_call_timeout` (varsayılan `-1` = kapalı); `turn.turn_timeout` 7 sn.
   - Uygulama (maliyet tavanı): asistan ajanında `bursting_enabled=false`, düşük bir `agent_concurrency_limit`,
     `max_duration_seconds` ≈ 300 ve bir sessizlik zaman aşımı ayarlanır.
+- **2026-10-01 yeniden doğrulama (OpenAPI `https://api.elevenlabs.io/openapi.json`, Faz 5):**
+  - `ConversationConfig.max_duration_seconds`: `integer`, varsayılan 600, "The maximum duration of a conversation in
+    seconds". Şemada alt ya da üst sınır yok. İstemci geçersiz kılması olarak işaretli
+    (`x-convai-client-override`) ama ajanda bu geçersiz kılma açılmaz; değer eşitleme betiğiyle ajana yazılır.
+  - `AgentConfig.max_conversation_duration_message`: `string`, varsayılan boş; "If non-empty, the message the agent will
+    send when max conversation duration is reached." Dil geçersiz kılması alabilir (`x-convai-language-override`).
+  - `TurnConfig.silence_end_call_timeout`: `number`, varsayılan `-1`; "Maximum wait time since the user last spoke
+    before terminating the call". `TurnConfig.turn_timeout`: `number`, varsayılan 7; "Maximum wait time for the user's
+    reply before re-engaging the user". `initial_wait_time` boşsa `turn_timeout` kullanılır.
+  - `AgentCallLimits` `platform_settings.call_limits` altındadır (`AgentPlatformSettingsRequestModel`).
+  - Agent PATCH gövdesinde `conversation_config` serbest nesnedir (`additionalProperties: true`, "Patches an Agent
+    settings").
+  - Uygulama: `web/scripts/elevenlabs-sync-agent.ts` `conversation.max_duration_seconds`
+    (`VOICE_ASSISTANT_MAX_SESSION_SECONDS`, 60–1800, varsayılan 300), `turn.silence_end_call_timeout = 30` ve Türkçe
+    `agent.max_conversation_duration_message` gönderir; `turn_timeout` değiştirilmez. Yanıt `max_duration_seconds`
+    taşıyorsa gönderilenle karşılaştırılır.
+  - ❗ **DOĞRULANMADI (canlı):** kısmi `conversation` / `turn` nesnelerinin mevcut ayarlarla birleştirildiği (ör.
+    `text_only`, `client_events`, `turn_eagerness` sıfırlanmıyor); kısmi `platform_settings` gövdesinin `overrides`,
+    `privacy` ve `auth` ayarlarını sıfırlayıp sıfırlamadığı (bu yüzden betik `call_limits` göndermez, panelden
+    ayarlanır); süre sınırında ajanın iletiyi söyleyip söylemediği ve kapanmanın istemciye `disconnected` olarak
+    gelip gelmediği; `max_duration_seconds` için sunucunun kabul ettiği gerçek aralık; İngilizce oturumda
+    süre sonu iletisinin dili (ileti Türkçe yazılır).
+  - Tarayıcı ayrıca aynı süreyi uygular (sınırdan 3 sn sonra kapatır) ve oturum süresini panelin olay ucuna bildirir
+    (ADR-0028 "Faz 5"); bu bildirim fatura yerine geçmez.
 - Fiyat sayfası eşzamanlılık sınırını çalışma alanı düzeyinde tanımlar: telefon ajanı ile asistan aynı havuzu
   paylaşır.
 

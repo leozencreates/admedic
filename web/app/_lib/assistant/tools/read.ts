@@ -8,6 +8,7 @@ import {
   sanitizeCampaignDetail,
   sanitizeCampaignList,
   sanitizeDecisionList,
+  sanitizeExperimentList,
   sanitizeInsights,
   sanitizeLeadStats,
   sanitizePendingLeads,
@@ -76,5 +77,11 @@ export const readHandlers: Record<string, ToolHandler> = {
 
   async get_subscription(_params, ctx) {
     return { result: json(sanitizeSubscription(await ctx.api("/api/billing/subscription"))) };
+  },
+
+  // Faz 5: A/B testleri (yalnızca durum, gün ve varyant metrikleri; reklam içeriği dönmez).
+  async list_experiments(params, ctx) {
+    const data = await ctx.api("/api/experiments");
+    return { result: json(sanitizeExperimentList(data, ctx.refs, { status: optional(params.status) })) };
   },
 };

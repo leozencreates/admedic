@@ -433,3 +433,19 @@ developers.facebook.com/documentation/ads-commerce/marketing-api/guides/lead-ads
   uçlarda da. Planlanan kural: asistan başarısız bir Meta çağrısını kendiliğinden yeniden denemez; hatayı söyler,
   yeniden denemeyi kullanıcı ister. O zamana kadar korunma, bu uçların mevcut davranışıdır.
 
+## 2026-10-01 — Sesli komut asistanı Faz 4: sesle tetiklenen yayın, duraklatma, bütçe, etkinleştirme (ADR-0028)
+- Yeni Meta dokümanı okunmadı; Meta tarafında yeni davranış yok. R2/R3 sesli araçları (`publish_campaign_paused`,
+  `pause_campaign`, `archive_campaign`, `activate_campaign`, `decrease_budget`, `increase_budget`,
+  `apply_recommendation`, `sync_meta_review`, `update_lead_status`) **panelin aynı uçlarını** kullanıcının oturumuyla
+  çağırır: `POST /api/campaigns/:id/publish {action}`, `PATCH /api/campaigns/:id/budget`,
+  `POST /api/recommendations/:id/apply`, `POST /api/meta/review-sync`, `PATCH /api/leads/:id`. Graph çağrıları,
+  `appsecret_proof`, hata eşlemesi, harcama yetkisi ve aylık tavan denetimi bu uçlardakiyle birebir aynıdır.
+- PUBLISH hâlâ kampanya, reklam seti ve reklamları **PAUSED** oluşturur (2026-09-27, ADR-0014). Sesle yayın harcama
+  başlatmaz; harcama yalnızca ayrı `activate_campaign` (R3) ile başlar.
+- **Otomatik yeniden deneme yok:** asistan başarısız ya da yarım kalan bir Meta çağrısını kendiliğinden yeniden
+  denemez. Yayın `IN_PROGRESS` dönerse araç bunu söyler ve kampanyanın Yükleme sekmesini önerir; yayını sürdürmez.
+  613/80004 hız sınırı hataları da kullanıcıya aktarılır; yeniden deneme kullanıcının yeni bir isteğidir ve yine
+  ekranda onay ister.
+- Lead durumu değişikliği, rıza denetiminden geçerse `sendLeadStatusConversion` ile CAPI dönüşümü gönderir; bu nedenle
+  `update_lead_status` R2'dir (ekranda tıklama). CAPI'nin kendisinde değişiklik yok.
+- Sesli araç çağrısı için Meta'ya özgü ayrı kota hâlâ yok; araç çağrısı sınırı istemcide (oturum başına dakikada 30).

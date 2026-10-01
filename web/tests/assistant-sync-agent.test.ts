@@ -12,6 +12,8 @@ import {
   SyncUsageError,
   syncAgent,
   toolMatches,
+  TOOL_TIMEOUT_RANGE,
+  validateToolConfigs,
 } from "../scripts/elevenlabs-sync-agent";
 
 const PROMPT_FILE = fileURLToPath(new URL("../../packages/voice/agent/assistant.prompt.tr.md", import.meta.url));
@@ -142,6 +144,45 @@ describe("elevenlabs-sync-agent: canlı akış (sahte fetch)", () => {
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("zaman aşımı aralık dışındaysa ya da ad geçersizse ağa çıkmadan durur", async () => {
+    const [first] = toElevenLabsToolConfigs();
+    const fakeFetch = vi.fn(async () => jsonResponse({}));
+    const base = { llm: "m", prompt: "p", assistantName: "A", dryRun: false, apiBase: "https://x.test", apiKey: "k", agentId: "g", fetch: fakeFetch, log: () => {} };
+    for (const bad of [0, 121, 7.5]) {
+      await expect(syncAgent({ ...base, tools: [{ ...first, response_timeout_secs: bad }] })).rejects.toThrow(/response_timeout_secs/);
+      await expect(syncAgent({ ...base, dryRun: true, tools: [{ ...first, response_timeout_secs: bad }] })).rejects.toThrow(
+        /response_timeout_secs/,
+      );
+    }
+    await expect(syncAgent({ ...base, tools: [{ ...first, name: "Navigate-To" }] })).rejects.toThrow(/Geçersiz araç adı/);
+    expect(fakeFetch).not.toHaveBeenCalled();
+  });
+
+  it("kayıttaki her araç ElevenLabs sınırları içinde; uzun süren araçlar varsayılandan uzun bekler", () => {
+    const configs = toElevenLabsToolConfigs();
+    expect(() => validateToolConfigs(configs)).not.toThrow();
+    const byName = new Map(configs.map((c) => [c.name, c]));
+    // Onaylanan işlem yapay zekâ metin üretimi olabilir (studio/generate en çok 60 sn).
+    expect(byName.get("confirm_pending_action")!.response_timeout_secs).toBeGreaterThan(60);
+    expect(byName.get("confirm_pending_action")!.response_timeout_secs).toBeLessThanOrEqual(TOOL_TIMEOUT_RANGE.max);
+    // R1 aracı yalnızca bekleyen eylem hazırlar; uzun işlem onay aracında çalışır.
+    expect(byName.get("generate_ad_copy")!.expects_response).toBe(true);
+    for (const c of configs) expect(c.expects_response || c.name === "stop_assistant").toBe(true);
+  });
+
+  it("ekranda onaylanan (R2/R3) araçların ElevenLabs açıklaması sesle onaylanamadığını söyler", () => {
+    const configs = new Map(toElevenLabsToolConfigs().map((c) => [c.name, c]));
+    const screenOnly = ASSISTANT_TOOLS.filter((t) => "screenOnly" in t && t.screenOnly);
+    expect(screenOnly.length).toBe(9);
+    for (const t of screenOnly) {
+      const c = configs.get(t.name)!;
+      expect(c.description, t.name).toContain("sesle onaylanamaz");
+      expect(c.description, t.name).toContain("confirm_pending_action çağırma");
+      // İç bayrak ElevenLabs'e gönderilmez.
+      expect(c, t.name).not.toHaveProperty("screenOnly");
+    }
+  });
+
   it("toolMatches parametre kaldırılmasını fark eder", () => {
     const noParams = toElevenLabsToolConfigs().find((c) => !c.parameters)!;
     expect(toolMatches({ ...noParams }, noParams)).toBe(true);
@@ -169,6 +210,54 @@ describe("ajan yapılandırması", () => {
     expect(mentioned.length).toBeGreaterThan(0);
     for (const name of mentioned) expect(registryNames).toContain(name);
     expect(readFileSync(PROMPT_FILE, "utf8")).toContain("{{assistant_name}}");
+  });
+
+  it("prompt her R1–R3 aracını, onay/iptal araçlarını ve onay sorusunu anar; R2/R3 için ekranda onay ister", () => {
+    const prompt = readPrompt(PROMPT_FILE);
+    const mentioned = new Set([...prompt.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]));
+    const writes = ASSISTANT_TOOLS.filter((t) => t.risk !== "R0").map((t) => t.name);
+    expect(writes.length).toBeGreaterThan(0);
+    for (const name of [...writes, "confirm_pending_action", "cancel_pending_action", "get_current_context"])
+      expect(mentioned).toContain(name);
+    expect(prompt).toContain("Onaylıyor musunuz?");
+    expect(prompt).toContain("Ekrandaki onay penceresinden onaylayabilirsiniz; bu işlem sesle onaylanamaz.");
+    expect(prompt).toContain("awaiting_screen_confirmation");
+  });
+
+  it("R2/R3 araçları yalnızca ekranda onay bölümünde; sesle onay bölümünde yalnızca R1 araçları var", () => {
+    const prompt = readPrompt(PROMPT_FILE);
+    const section = (heading: string) => {
+      const start = prompt.indexOf(`# ${heading}`);
+      expect(start, heading).toBeGreaterThanOrEqual(0);
+      const next = prompt.indexOf("\n# ", start + 1);
+      return prompt.slice(start, next < 0 ? undefined : next);
+    };
+    const names = (text: string) => new Set([...text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]));
+    const voice = names(section("Değişiklik yapan işlemler: sesle onay"));
+    const screen = names(section("Ekranda onay gereken işlemler"));
+    for (const t of ASSISTANT_TOOLS) {
+      if (t.risk === "R1") expect(voice, t.name).toContain(t.name);
+      if (t.risk === "R2" || t.risk === "R3") {
+        expect(t.screenOnly, t.name).toBe(true);
+        expect(screen, t.name).toContain(t.name);
+        expect(voice, t.name).not.toContain(t.name);
+      }
+    }
+    expect(section("Ekranda onay gereken işlemler")).toContain("`confirm_pending_action` **asla çağırma**");
+    // Sesle yapılamayan işlemler bölümü yalnızca gezinme araçlarını anar.
+    for (const name of names(section("Sesle yapılamayan işlemler")))
+      expect(ASSISTANT_TOOLS.find((t) => t.name === name)?.risk, name).toBe("R0");
+  });
+
+  it("R4 işlemleri için araç yok: kayıt ve ElevenLabs yapılandırması yasak adlar içermez", () => {
+    // Onay/ret, silme/gizlilik, platform bağlantısı, harcama yetkisi/üst sınır, faturalama, politika kuralları,
+    // canlıya geçiş, oturum, hastaya mesaj, CAPI (ADR-0028 §2 R4).
+    // Fiiller hiçbir araç adında geçmez; alan adları (policy, billing …) yalnızca okuma/gezinme (R0) araçlarında olabilir.
+    const forbiddenVerbs =
+      /(^|_)(approve|reject|delete|erase|oauth|connect|disconnect|checkout|login|logout|send|message|sms|whatsapp|call|go_live)(_|$)/;
+    const forbiddenAreas = /(^|_)(approval|approvals|privacy|authority|cap|billing|subscription|plan|policy|live|capi)(_|$)/;
+    for (const c of toElevenLabsToolConfigs()) expect(c.name, c.name).not.toMatch(forbiddenVerbs);
+    for (const t of ASSISTANT_TOOLS) if (forbiddenAreas.test(t.name)) expect(t.risk, t.name).toBe("R0");
   });
 });
 

@@ -88,6 +88,19 @@ ve (mock kapalıysa) `META_API_VERSION` zorunludur; `loadEnv()` eksikse başlatm
   direktör verir, öneriler **Onaylar**'da insan onayını bekler. Onay kampanya oluşturmaz (ADR-0029).
 - **Lead saklama süresi** düzeltildi: iş daha önce hiçbir normal lead'i seçmiyordu; artık süresi dolan lead'leri
   gerçekten anonimleştirir (geri alınamaz). Canlı veride önce deneme sayımı: `docs/remaining-work.md` §0 madde 13.
+- **Sesli komut asistanı** (panelin her sayfasında düğme; kısayol **Ctrl+Shift+Boşluk**, kapatmak için Esc): Türkçe
+  konuşarak sayfa açma, özet okuma ve iç kayıtları güncelleme. Varsayılan kapalı; açmak için
+  `VOICE_ASSISTANT_ENABLED=true`, `ELEVENLABS_API_KEY` ve `ELEVENLABS_ASSISTANT_AGENT_ID` ayarlanır (veri konumu
+  `ELEVENLABS_SERVER_LOCATION`, varsayılan `us`; `ELEVENLABS_API_BASE` aynı bölgeyi göstermeli), ajan
+  `pnpm --filter @admedic/web assistant:sync-agent -- --llm <model>` ile eşitlenir; ad `ASSISTANT_NAME` (yoksa
+  `APP_NAME`). Süre ve maliyet sınırları: `VOICE_ASSISTANT_MAX_SESSION_SECONDS`, `VOICE_ASSISTANT_DAILY_SESSIONS_PER_ORG`,
+  `VOICE_ASSISTANT_MONTHLY_MINUTES_PER_ORG` (`.env.example`). **Güvenlik:** asistan yalnızca sizin rolünüzün
+  yapabildiğini, aynı sunucu denetimlerinden geçerek yapar. Okuma ve gezinme hemen çalışır; iç kayıt değişikliği
+  asistan tekrar ettikten sonra sesli "evet" ya da ekranda "Onayla" ister; Meta'ya etki eden ya da harcama başlatan
+  veya artıran işlemler yalnızca ekrandaki onay penceresine tıklayınca çalışır; onay/ret, silme ve gizlilik, Meta
+  bağlantısı, harcama yetkisi ve tavan, faturalandırma, politika kuralları, canlıya geçiş, giriş/çıkış ve hastaya
+  mesaj sesle hiç yapılamaz. Lead kişisel verisi ajana gönderilmez. Windows uygulamasında mikrofon yalnızca bağlanılan sunucuya
+  verilir. Kurulum: `docs/runbook.md` "Sesli komut asistanı"; karar ve sınırlar: ADR-0028.
 - Yeni göçler ve yeniden başlatma: `docs/remaining-work.md` §0 madde 12.
 
 ## Önceki tur (2026-09-27, ikinci tur) — panelde nereye bakmalı
@@ -165,6 +178,8 @@ Boş bırakılan alanlar `undefined` sayılır.
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID` | Sesli arama | ElevenLabs anahtarı, ajan ve numara kimliği; üçü de yoksa sesli arama kapalı (ADR-0026) |
 | `ELEVENLABS_WEBHOOK_SECRET` | Sesli arama | Arama sonu webhook'unun HMAC gizli anahtarı; yoksa webhook 401 döner |
 | `ELEVENLABS_TELEPHONY`, `ELEVENLABS_API_BASE` | — | `twilio` (varsayılan) ya da `sip_trunk`; API kökü (varsayılan `https://api.elevenlabs.io`) |
+| `VOICE_ASSISTANT_ENABLED`, `ELEVENLABS_ASSISTANT_AGENT_ID`, `ELEVENLABS_ASSISTANT_CONNECTION`, `ELEVENLABS_SERVER_LOCATION`, `ASSISTANT_NAME`, `ELEVENLABS_ASSISTANT_VOICE_ID` | Sesli komut asistanı | Varsayılan kapalı; telefon ajanından ayrı ajan, `webrtc`/`websocket`, veri konumu (varsayılan `us`), görünen ad (yoksa `APP_NAME`), ses (ADR-0028) |
+| `VOICE_ASSISTANT_MAX_SESSION_SECONDS`, `VOICE_ASSISTANT_DAILY_SESSIONS_PER_ORG`, `VOICE_ASSISTANT_MONTHLY_MINUTES_PER_ORG` | — | En uzun oturum (60–1800, varsayılan 300), kuruluş başına günlük oturum (varsayılan 200, 0 = sınırsız), aylık dakika bütçesi (boş/0 = sınırsız) |
 | `API_URL`, `API_TOKEN` | apps/api | REST adresi ve Bearer belirteci (belirteç yoksa yalnızca mock modda açık) |
 | `PORT`, `API_HOST` | — | apps/api dinleme adresi (varsayılan 127.0.0.1:3001; EnvSchema dışında) |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Faturalandırma | Stripe gizli anahtarı ve webhook imza gizli anahtarı |
@@ -182,6 +197,6 @@ Boş bırakılan alanlar `undefined` sayılır.
 - `docs/meta-constraints.md` — Meta API kısıtları ve tarihli bulgular
 - `docs/elevenlabs-constraints.md` — ElevenLabs Agents kısıtları, şartlar ve tarihli bulgular
 - `docs/decisions/` — ADR'ler (0001 Fastify, 0002 onay kapılı executor, 0003 masaüstü, 0009 kreatif dilleri, 0010 haftalık rapor, 0011 para birimleri, 0012 Stripe akışı, 0013 LLM katmanı, 0014 tam PAUSED yayın + harcama yetkisi, 0025 Windows/iOS ince istemci, 0026 sesli arama,
-  0027 asistana üslup örnekleri, 0029 lead takımı)
+  0027 asistana üslup örnekleri, 0028 sesli komut asistanı, 0029 lead takımı)
 - `desktop/README.md` — Windows/iOS kabuğu kurulum, paketleme ve iOS adımları
 - `docs/remaining-work.md` — kalan işler ve bilinen riskler

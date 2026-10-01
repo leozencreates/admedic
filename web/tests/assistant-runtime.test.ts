@@ -211,14 +211,15 @@ describe("senaryolu (mock) bağdaştırıcı", () => {
     expect(adapter.getStatus()).toBe("disconnected");
   });
 
-  it("yetkisiz rolde yetki yok der; desteklenmeyen komutta uyarır", async () => {
+  it("yetkisiz rolde yetki yok der (R3 dahil)", async () => {
     const { adapter, messages, push } = await started("VIEWER");
     await adapter.sendUserMessage("onaylara git");
     expect(messages.at(-1)?.text).toBe("Bu sayfaya erişiminiz yok.");
     await adapter.sendUserMessage("uyarıları göster");
     expect(messages.at(-1)?.text).toBe(TOOL_MESSAGES.forbidden);
+    // Faz 4: etkinleştirme kayıtta (R3); izleyiciye bağlanmaz.
     await adapter.sendUserMessage("kampanyayı aktifleştir");
-    expect(messages.at(-1)?.text).toBe("Bu komut henüz desteklenmiyor.");
+    expect(messages.at(-1)?.text).toBe(TOOL_MESSAGES.forbidden);
     expect(push).not.toHaveBeenCalled();
   });
 });

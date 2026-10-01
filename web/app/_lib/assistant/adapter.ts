@@ -7,6 +7,7 @@
  *
  * Saf modül (React yok); tarayıcı ve Node testlerinde aynı çalışır.
  */
+import { LOST_REASONS } from "../labels";
 import { NAV_ITEMS } from "../nav-tree";
 import { t } from "../i18n";
 import { findTool, pageKeyForHref } from "./registry";
@@ -27,6 +28,10 @@ export interface AssistantSessionResponse {
   voiceId: string | null;
   role: string;
   canApproveSpend: boolean;
+  /** Oturumun en uzun süresi (sn; Faz 5). Yoksa istemci süre sınırı uygulamaz (ajandaki sınır yine geçerlidir). */
+  maxSessionSeconds?: number;
+  /** Sunucunun verdiği oturum kimliği; oturum sonu olayı (`session_ended`) bunu taşır. Yoksa süre bildirilmez. */
+  sessionRef?: string;
 }
 
 export type SessionCredentials = Pick<
@@ -340,6 +345,25 @@ interface ScriptRule {
   pattern: RegExp;
   tool: string;
   params?: (text: string) => Record<string, unknown>;
+  /** "bu lead/kampanya/taslak": ref önce `get_current_context` ile açık sayfadan alınır. */
+  context?: MockContextRef;
+  /** Son bekleyen eylemin `pendingId` değeri eklenir (evet/hayır). */
+  pending?: true;
+  /**
+   * Bütçe komutu ("bütçeyi 500 yap"): yön bilinmez. Önce `tool` denenir; araç yönün ters olduğunu söylerse (hata
+   * iletisinde bu aracın adı geçer) `alternate` çağrılır. Gerçek ajan bunu get_campaign ile kendisi seçer.
+   */
+  alternate?: string;
+}
+
+export type MockContextRef = "leadRef" | "campaignRef" | "studioDraftRef" | "experimentRef";
+
+export interface MockCommand {
+  tool: string;
+  params: Record<string, unknown>;
+  context?: MockContextRef;
+  pending?: true;
+  alternate?: string;
 }
 
 function normalize(text: string): string {
@@ -364,10 +388,95 @@ function ordinalRef(prefix: string, text: string): string {
   return `${prefix}${word ? ORDINALS[word] : digits ? Number(digits) : 1}`;
 }
 
+/** "ikinci kampanyanın bütçesini 500 yap" → { ref: "c2", dailyBudget: 500 } (tutar ref sayılmaz). */
+function budgetParams(text: string): Record<string, unknown> {
+  const word = Object.keys(ORDINALS).find((w) => text.includes(w));
+  const amount = /(\d+(?:[.,]\d{1,2})?)/.exec(text)?.[1];
+  return { ref: `c${word ? ORDINALS[word] : 1}`, dailyBudget: amount ? Number(amount.replace(",", ".")) : 0 };
+}
+
+function lostReason(text: string): string | undefined {
+  return LOST_REASONS.find((r) => text.includes(r.toLocaleLowerCase("tr")));
+}
+
+/**
+ * "ikinci testin b varyantı harcama 120 tıklama 300 lead 12 (14 gün)" → update_experiment_metrics parametreleri. Ref
+ * yalnızca sıra sözcüğünden gelir (rakamlar metrik sayılır); "bu testin" kalıbında ref açık sayfadan alınır.
+ */
+function experimentParams(text: string): Record<string, unknown> {
+  const word = Object.keys(ORDINALS).find((w) => text.includes(w));
+  const value = (label: string) => {
+    const m = new RegExp(`${label} (\\d+(?:[.,]\\d{1,2})?)`).exec(text);
+    return m ? Number(m[1].replace(",", ".")) : 0;
+  };
+  const days = /(\d{1,3}) gün/.exec(text)?.[1];
+  return {
+    ref: `e${word ? ORDINALS[word] : 1}`,
+    variant: /\bb varyant/.test(text) ? "B" : "A",
+    spend: value("harcama"),
+    clicks: value("tıklama"),
+    leads: value("lead"),
+    ...(days ? { elapsedDays: Number(days) } : {}),
+  };
+}
+
 export const MOCK_SCRIPT: readonly ScriptRule[] = [
-  { pattern: /(kapat|görüşürüz|bu kadar|teşekkürler)/, tool: "stop_assistant" },
-  // Faz 4 araçları (R3/R2): kayıtta yok → "desteklenmiyor" yanıtı; kayda girince aynı kalıp çalışır.
+  // Faz 3 (R1): sözlü onay. Yalnızca kısa, açık yanıtlar onaydır.
+  { pattern: /^(evet|evet onaylıyorum|onaylıyorum|onayla|tamam onaylıyorum)$/, tool: "confirm_pending_action", pending: true },
+  { pattern: /^(hayır|iptal|iptal et|vazgeç|vazgeçtim|hayır iptal)$/, tool: "cancel_pending_action", pending: true },
+  // R1 işlemleri: bekleyen eylem oluşturur, onay ister. ("uyarıyı kapat", oturumu kapatma kalıbından önce gelir.)
+  {
+    pattern: /uyarıy[ıi] (kapat|çöz)|uyarı.*çözüldü/,
+    tool: "update_alert",
+    params: (s) => ({ ref: ordinalRef("a", s), status: "RESOLVED" }),
+  },
+  { pattern: /uyarıy[ıi] gördüm|uyarı.*görüldü/, tool: "update_alert", params: (s) => ({ ref: ordinalRef("a", s), status: "ACKED" }) },
+  {
+    pattern: /bu lead.*(kazanıldı|tedavi tamamlandı)/,
+    tool: "update_lead_status",
+    params: () => ({ status: "TREATED" }),
+    context: "leadRef",
+  },
+  { pattern: /bu lead.*nitelikli/, tool: "update_lead_status", params: () => ({ status: "QUALIFIED" }), context: "leadRef" },
+  { pattern: /bu lead.*görüşül/, tool: "update_lead_status", params: () => ({ status: "CONTACTED" }), context: "leadRef" },
+  {
+    pattern: /bu lead.*kaybedildi/,
+    tool: "update_lead_status",
+    params: (s) => ({ status: "LOST", ...(lostReason(s) ? { lostReason: lostReason(s) } : {}) }),
+    context: "leadRef",
+  },
+  { pattern: /bu kampanyay[ıi] onaya gönder/, tool: "submit_campaign_for_review", context: "campaignRef" },
+  { pattern: /kampanyay[ıi] onaya gönder/, tool: "submit_campaign_for_review", params: (s) => ({ ref: ordinalRef("c", s) }) },
+  { pattern: /bu taslağ[ıi] onaya gönder/, tool: "submit_studio_draft", context: "studioDraftRef" },
+  { pattern: /taslağ[ıi] kaydet/, tool: "save_studio_draft" },
+  { pattern: /(bekleyen )?lead.*(yeniden|tekrar) çek/, tool: "refetch_leads" },
+  // Faz 5: A/B testi ölçümü (R1). "bu testin …" açık sayfadaki testi kullanır.
+  {
+    pattern: /bu (a\/b )?test.*\b[ab] varyant.*harcama/,
+    tool: "update_experiment_metrics",
+    params: experimentParams,
+    context: "experimentRef",
+  },
+  { pattern: /test.*\b[ab] varyant.*harcama/, tool: "update_experiment_metrics", params: experimentParams },
+  // Faz 4 (R2/R3): ekranda onay penceresi açılır; "evet" bunları onaylamaz.
+  { pattern: /bu kampanyay[ıi] duraklat|bu kampanyay[ıi] durdur/, tool: "pause_campaign", context: "campaignRef" },
+  { pattern: /kampanyay[ıi] (duraklat|durdur)/, tool: "pause_campaign", params: (s) => ({ ref: ordinalRef("c", s) }) },
+  { pattern: /bu kampanyay[ıi] (aktifleştir|etkinleştir|başlat)/, tool: "activate_campaign", context: "campaignRef" },
   { pattern: /kampanyay[ıi] (aktifleştir|etkinleştir|başlat)/, tool: "activate_campaign", params: (s) => ({ ref: ordinalRef("c", s) }) },
+  { pattern: /kampanyay[ıi] arşivle/, tool: "archive_campaign", params: (s) => ({ ref: ordinalRef("c", s) }) },
+  { pattern: /bu kampanyay[ıi] yayınla/, tool: "publish_campaign_paused", context: "campaignRef" },
+  { pattern: /kampanyay[ıi] yayınla|^yayınla$/, tool: "publish_campaign_paused", params: (s) => ({ ref: ordinalRef("c", s) }) },
+  { pattern: /meta inceleme(sini| durumunu)? (yenile|eşitle|güncelle)/, tool: "sync_meta_review" },
+  { pattern: /öneriy[ıi] uygula/, tool: "apply_recommendation", params: (s) => ({ ref: ordinalRef("r", s) }) },
+  {
+    pattern: /bütçe(yi|sini)? .*\d+.*(yap|olsun)/,
+    tool: "decrease_budget",
+    params: budgetParams,
+    alternate: "increase_budget",
+  },
+  { pattern: /bütçe(yi|sini)? .*\d+.*(düşür|azalt|indir)/, tool: "decrease_budget", params: budgetParams },
+  { pattern: /bütçe(yi|sini)? .*\d+.*(artır|arttır|yükselt|çıkar)/, tool: "increase_budget", params: budgetParams },
+  { pattern: /(kapat|görüşürüz|bu kadar|teşekkürler)/, tool: "stop_assistant" },
   { pattern: /yeni kampanya/, tool: "open_new_campaign_planner" },
   { pattern: /(lead|hasta).*(ara|bul)|arama kutusu/, tool: "open_lead_search" },
   { pattern: /onay(lar|lara|ları)? ?(git|aç|göster)?$|onaylara/, tool: "open_approvals" },
@@ -386,20 +495,29 @@ export const MOCK_SCRIPT: readonly ScriptRule[] = [
   { pattern: /öneri/, tool: "list_recommendations" },
   { pattern: /karar/, tool: "list_decisions" },
   { pattern: /politika|bütçe sınır/, tool: "get_policy_status" },
+  { pattern: /a\/b test|testler|deneyler/, tool: "list_experiments" },
   { pattern: /abonelik|planım/, tool: "get_subscription" },
   { pattern: /performans|içgörü|harcama/, tool: "get_insights" },
   { pattern: /kampanya/, tool: "list_campaigns" },
 ];
 
 /** Metin → araç çağrısı; "X sayfasına git" menü adlarından çözülür. Eşleşme yoksa `null`. */
-export function matchMockCommand(text: string): { tool: string; params: Record<string, unknown> } | null {
+export function matchMockCommand(text: string): MockCommand | null {
   const s = normalize(text);
   if (!s) return null;
   if (/(sayfa|git|aç|göster)/.test(s)) {
     const page = PAGE_NAMES.find((p) => p.name && s.includes(p.name) && /(sayfa|git)/.test(s));
     if (page) return { tool: "navigate_to", params: { pageKey: page.key } };
   }
-  for (const rule of MOCK_SCRIPT) if (rule.pattern.test(s)) return { tool: rule.tool, params: rule.params?.(s) ?? {} };
+  for (const rule of MOCK_SCRIPT)
+    if (rule.pattern.test(s))
+      return {
+        tool: rule.tool,
+        params: rule.params?.(s) ?? {},
+        ...(rule.context ? { context: rule.context } : {}),
+        ...(rule.pending ? { pending: true as const } : {}),
+        ...(rule.alternate ? { alternate: rule.alternate } : {}),
+      };
   return null;
 }
 
@@ -417,6 +535,8 @@ export function mockReply(tool: string, result: string): string {
   const data = parse(result);
   if (!data) return result;
   if (data.ok === false) return String(data.error ?? TOOL_MESSAGES.failed);
+  if (data.status === "awaiting_confirmation") return `${String(data.summary ?? "")} ${String(data.question ?? "")}`.trim();
+  if (data.status === "awaiting_screen_confirmation") return `${String(data.summary ?? "")} ${MOCK_MESSAGES.screenConfirm}`.trim();
   const n = (v: unknown) => (typeof v === "number" ? v : 0);
   switch (tool) {
     case "get_today_summary":
@@ -431,6 +551,8 @@ export function mockReply(tool: string, result: string): string {
       return n(data.total) ? `${n(data.total)} uyarı var.` : "Uyarı yok.";
     case "list_recommendations":
       return n(data.total) ? `${n(data.total)} öneri var.` : "Öneri yok.";
+    case "list_experiments":
+      return n(data.total) ? `${n(data.total)} A/B testi var. İlk ${n(data.shown)} tanesini listeledim.` : "A/B testi yok.";
     case "list_decisions":
       return n(data.total) ? `${n(data.total)} ajan kararı var; ${n(data.pendingApproval)} tanesi onay bekliyor.` : "Ajan kararı yok.";
     case "get_lead_stats":
@@ -453,6 +575,10 @@ export function mockReply(tool: string, result: string): string {
     }
     case "stop_assistant":
       return "Görüşmek üzere.";
+    case "cancel_pending_action":
+      return String(data.message ?? t("assistant.pending.cancelled"));
+    case "confirm_pending_action":
+      return t("assistant.action.done");
     default:
       return "Tamam.";
   }
@@ -462,6 +588,9 @@ export const MOCK_MESSAGES = {
   greeting: (name?: string) => (name ? `${name} burada. Size nasıl yardımcı olabilirim?` : "Size nasıl yardımcı olabilirim?"),
   unknown: "Bunu anlayamadım. Örneğin \"kampanyaları göster\" ya da \"onaylara git\" diyebilirsiniz.",
   unsupported: "Bu komut henüz desteklenmiyor.",
+  noPending: "Onay bekleyen bir işlem yok.",
+  noContext: "Açık sayfada bu komut için bir kayıt yok. Önce kaydı açın.",
+  screenConfirm: "Lütfen ekrandaki onay penceresinden onaylayın; bu işlem sesle onaylanamaz.",
 } as const;
 
 /**
@@ -474,6 +603,8 @@ export class MockAdapter extends BaseAdapter implements VoiceSessionAdapter {
   private tools: Record<string, ClientToolFn> = {};
   private pending: Promise<void> = Promise.resolve();
   private stopped = false;
+  /** Son R1 aracının döndürdüğü `pendingId` ("evet"/"hayır" için). */
+  private pendingId: string | null = null;
 
   constructor(private readonly options: { delayMs?: number } = {}) {
     super();
@@ -533,8 +664,32 @@ export class MockAdapter extends BaseAdapter implements VoiceSessionAdapter {
     if (!command) return this.say(MOCK_MESSAGES.unknown);
     const fn = this.tools[command.tool];
     if (!fn) return this.say(findTool(command.tool) ? TOOL_MESSAGES.forbidden : MOCK_MESSAGES.unsupported);
+    const params = { ...command.params };
+    if (command.pending) {
+      if (!this.pendingId) return this.say(MOCK_MESSAGES.noPending);
+      params.pendingId = this.pendingId;
+      this.pendingId = null;
+    }
+    if (command.context) {
+      const contextTool = this.tools.get_current_context;
+      const context = contextTool ? parse(await contextTool({})) : null;
+      const ref = context?.[command.context];
+      if (typeof ref !== "string") return this.say(MOCK_MESSAGES.noContext);
+      params.ref = ref;
+    }
     await this.wait();
-    const result = await fn(command.params);
-    this.say(mockReply(command.tool, result));
+    let tool = command.tool;
+    let result = await fn(params);
+    let data = parse(result);
+    const alternate = command.alternate ? this.tools[command.alternate] : undefined;
+    if (data?.ok === false && alternate && String(data.error ?? "").includes(command.alternate!)) {
+      tool = command.alternate!;
+      result = await alternate(params);
+      data = parse(result);
+    }
+    // R2/R3 için de kimlik tutulur: "hayır" iptal eder, "evet" reddedilir (ekranda onay gerekir).
+    if ((data?.status === "awaiting_confirmation" || data?.status === "awaiting_screen_confirmation") && typeof data.pendingId === "string")
+      this.pendingId = data.pendingId;
+    this.say(mockReply(tool, result));
   }
 }

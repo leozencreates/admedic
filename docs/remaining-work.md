@@ -1,6 +1,6 @@
 ﻿# Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-10-01 (Windows/iOS ince istemci, ADR-0025; sesli arama hazırlığı, ADR-0026; asistana üslup
+Son güncelleme: 2026-10-01 (sesli komut asistanı Faz 3, ADR-0028; Windows/iOS ince istemci, ADR-0025; sesli arama hazırlığı, ADR-0026; asistana üslup
 örnekleri, ADR-0027; lead takımı, ADR-0029). Önceki: 2026-09-29 (Faz 7-A canlıya hazırlık: sunucu paketi, webhook kuyruğu, günlük, sayfa aboneliği,
 Canlıya geçiş sayfası, ADR-0023; altı fazın genel incelemesi ve düzeltmeleri, ADR-0022; 2026-09-28: içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
@@ -272,6 +272,48 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 - Onaylanan öneriden kampanya taslağı üretilmiyor; kullanıcı Yeni kampanya sayfasında yeniden giriyor.
 - `/lead-team` erişilebilirlik kapısına (`web/e2e/a11y.pw.ts`) eklenmedi; sayfa metinleri yalnızca Türkçe.
 - Çalıştırma web sürecinde yürür; sunucu yeniden başlarsa yarıda kalır (20 dakika sonra başarısız işaretlenir).
+
+## 10.3 Sesli komut asistanı (ADR-0028) — P1
+
+- **Durum:** Faz 0–2 (altyapı, R0 okuma/gezinme, düğme), Faz 3 (R1 iç yazma, sözlü onay, bekleyen eylem) ve Faz 4
+  (R2/R3 araçları, yalnızca ekrandaki onay penceresinden çalıştırma, risk başına süre, prompt v3) ve **Faz 5 tamam**
+  (2026-10-01, ADR-0028 "Faz 5"):
+  - Windows kabuğunda mikrofon yalnızca bağlanılan sunucu origin'ine; kamera/konum reddi. macOS/iOS'ta mikrofon
+    **kapalı**: wry WKWebView'de her origin'e izin verdiği için yetki ve kullanım metni pakete bağlanmadı
+    (`desktop/src-tauri/apple-mic-disabled/`, `desktop/README.md` "Mikrofon").
+  - En uzun oturum (ajan + tarayıcı), kuruluş başına günlük oturum sınırı ve aylık dakika bütçesi
+    (`VOICE_ASSISTANT_*`; aylık sayaç `RequestQuota` `voice-minutes:<orgId>:<ay>`), sunucu oturum kimliğiyle bir kez
+    kabul edilen oturum sonu kaydı (`VOICE_SESSION_ENDED`), runbook "Maliyet izleme ve sınırlar".
+  - A/B ölçüm araçları (`list_experiments` R0, `update_experiment_metrics` R1).
+  - Faz 4'ten kalan modal ekran onay penceresi bağlandı (`screen-confirm-dialog.tsx`).
+  - Bilinçli olarak yapılmayanlar: sunucuda genel araç hız sınırı (yazan uçlar kendi denetimleriyle korunur),
+    klinik/hizmet düzenleme aracı (hastaya giden kanallara akar; ayrı karar), uzun yayınların sesle sürdürülmesi ve
+    `plan_campaign` (ekrana yönlendirilir).
+- **e2e:** `web/e2e/assistant.pw.ts` ve `a11y.pw.ts` 2026-10-01'de deneme modunda (`VOICE_ASSISTANT_ENABLED=true`,
+  yer tutucu `ELEVENLABS_ASSISTANT_AGENT_ID`, `META_MOCK_MODE=true`, `STUDIO_E2E=1`) 22/22 geçti; süre sınırı,
+  günlük sınır ve A/B ölçüm senaryoları dahil. Gerçek mikrofon ve canlı ElevenLabs ajanı bu testlerin kapsamında değil.
+- **Masaüstü elle deneme:** WebView2'de `desktop/README.md` "Elle deneme (Windows)" adımları 1–6 kimse tarafından
+  denenmedi; macOS/iOS hiç derlenmedi (Mac yok). DOĞRULANMADI: eski profilde kayıtlı "Engelle" kararı, profil
+  klasörü yolu, iOS'ta `NSCameraUsageDescription` eksikliğinin kamera isteyen sayfada uygulamayı kapatması. ADR-0025
+  §3 (kabuk CSP'si, yalnızca `core:default`) yeni duruma göre güncellenmedi.
+- **Apple mikrofonu (açık iş):** macOS/iOS'ta asistanın sesle çalışması için kabuğun WKWebView temsilcisinde origin
+  denetimi gerekir (wry 0.55.1 temsilcisini geçersiz kılmak ya da `with_webview` ile kendi temsilcisini kurmak;
+  `mic_permission::decide()` aynen). Mac olmadan derlenip sınanamaz; yapılana dek `apple-mic-disabled/` bağlanmaz.
+- **Tarayıcı:** geri sayım/otomatik kapanış ve sekme kapanırken `keepalive` oturum sonu kaydı Chrome, WebView2 ve
+  Safari'de denenmedi.
+- **Ajan LLM'i** seçilmedi (ADR-0028 §7); prompt v4 ve 41 istemci aracı (süre/sessizlik ayarlarıyla) ElevenLabs
+  ajanına eşitlenmedi (`pnpm --filter @admedic/web assistant:sync-agent -- --llm <model>`; dry-run 2026-10-01'de 41
+  araçla geçti).
+- **Canlı ElevenLabs testi:** gerçek hesapla hiçbir şey denenmedi (token süresi, `tool_ids` PATCH davranışı, kısmi
+  `conversation`/`turn` PATCH birleştirmesi, süre sonu iletisi ve kapanış, istemci aracı zaman aşımında ajan
+  davranışı; `docs/elevenlabs-constraints.md`). Panelde burst kapatılmalı ve eşzamanlılık sınırı düşük ayarlanmalı
+  (betik `call_limits` göndermez).
+- **Ürün sahibi kararları:** aylık dakika bütçesinin değeri (varsayılan sınırsız); `update_lead_status` CAPI dönüşümü
+  gönderdiği için Faz 4'te R2'ye taşındı, sesli onay yeterli bulunursa R1'e döndürülebilir (ADR-0028 "Faz 4").
+- **KVKK hukuk görüşü:** personel sesinin yurt dışında işlenmesi ve aydınlatma metni (ADR-0028 §4).
+- **Hasta mesajı:** hukuk onayı olmadığı için R4 (sesle erişilemez); açılması ayrı ADR ve ürün sahibi kararı ister.
+- **Seçenek C (yalnızca KVKK gerektirirse):** Scribe → kendi `command-router` → TTS yedek yolu; `packages/llm` için
+  araç çağrısı desteği gerekir, ayrı ADR. Bugün yapılmayacak.
 
 ## 11. i18n (spec §4)
 

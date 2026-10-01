@@ -5,7 +5,8 @@
  * 1. Araç kaydındaki (`app/_lib/assistant/registry.ts`) her istemci aracı ada göre eşlenir:
  *    yoksa `POST /v1/convai/tools`, farklıysa `PATCH /v1/convai/tools/{tool_id}`, aynıysa dokunulmaz.
  * 2. Ajan `PATCH /v1/convai/agents/{agent_id}` ile güncellenir: prompt, LLM, dil `tr`, TTS `eleven_flash_v2_5`,
- *    `prompt.tool_ids` (kullanım dışı `prompt.tools` kullanılmaz).
+ *    `prompt.tool_ids` (kullanım dışı `prompt.tools` kullanılmaz); en uzun oturum
+ *    (`VOICE_ASSISTANT_MAX_SESSION_SECONDS`), sessizlikte kapatma ve süre sonu iletisi (Faz 5).
  *
  * LLM varsayılanı yoktur (ADR-0013 §2, ADR-0028 §7): `--llm` verilmezse betik çalışmaz.
  * `--dry-run` (ya da ELEVENLABS_API_KEY yoksa / META_MOCK_MODE=true ise) ağa çıkmadan gövdeleri yazdırır.
@@ -62,10 +63,36 @@ export interface AgentPatchInput {
   llm: string;
   toolIds: readonly string[];
   assistantName: string;
+  /** `VOICE_ASSISTANT_MAX_SESSION_SECONDS`; verilmezse ortamın varsayılanı (300). */
+  maxSessionSeconds?: number;
 }
 
-/** `PATCH /v1/convai/agents/{agent_id}` gövdesi (OpenAPI `Body_Patches_an_Agent_settings…`, 2026-10-01). */
+/** `VOICE_ASSISTANT_MAX_SESSION_SECONDS` varsayılanı ve aralığı (`packages/config/src/env.ts` ile aynı). */
+export const DEFAULT_MAX_SESSION_SECONDS = 300;
+export const MAX_SESSION_RANGE = { min: 60, max: 1800 } as const;
+/**
+ * Kullanıcı son konuştuktan bu kadar saniye sonra ajan oturumu kapatır (`turn.silence_end_call_timeout`; ElevenLabs
+ * varsayılanı -1 = kapalı). `turn.turn_timeout` (varsayılan 7 sn: kullanıcıyı yeniden çağırma) değiştirilmez.
+ */
+export const ASSISTANT_SILENCE_END_SECONDS = 30;
+/** Süre sınırına ulaşınca ajanın söylediği ileti (`agent.max_conversation_duration_message`; ajan dili Türkçe). */
+export const MAX_DURATION_MESSAGE =
+  "Oturum süre sınırına ulaştı. Devam etmek için asistanı yeniden başlatabilirsiniz. Görüşmek üzere.";
+
+/**
+ * `PATCH /v1/convai/agents/{agent_id}` gövdesi (OpenAPI `Body_Patches_an_Agent_settings…`, 2026-10-01).
+ * Süre ve sessizlik alanları (OpenAPI, 2026-10-01 yeniden okundu): `conversation.max_duration_seconds` (tam sayı,
+ * varsayılan 600, şemada alt/üst sınır yok), `turn.silence_end_call_timeout` (sayı, varsayılan -1),
+ * `agent.max_conversation_duration_message` (boşsa ileti yok). `platform_settings.call_limits` (eşzamanlılık, burst,
+ * günlük sınır) bilerek gönderilmez: kısmi `platform_settings` gövdesinin diğer alanları (overrides, privacy, auth)
+ * sıfırlayıp sıfırlamadığı doğrulanmadı; panelden ayarlanır (docs/runbook.md "Maliyet izleme").
+ */
 export function buildAgentPatch(input: AgentPatchInput) {
+  const maxSessionSeconds = input.maxSessionSeconds ?? DEFAULT_MAX_SESSION_SECONDS;
+  if (!Number.isInteger(maxSessionSeconds) || maxSessionSeconds < MAX_SESSION_RANGE.min || maxSessionSeconds > MAX_SESSION_RANGE.max)
+    throw new Error(
+      `max_duration_seconds ${MAX_SESSION_RANGE.min}–${MAX_SESSION_RANGE.max} arasında bir tam sayı olmalı (${maxSessionSeconds}).`,
+    );
   return {
     conversation_config: {
       agent: {
@@ -75,8 +102,11 @@ export function buildAgentPatch(input: AgentPatchInput) {
           dynamic_variable_placeholders: { assistant_name: input.assistantName, user_role: "VIEWER" },
         },
         prompt: { prompt: input.prompt, llm: input.llm, tool_ids: [...input.toolIds] },
+        max_conversation_duration_message: MAX_DURATION_MESSAGE,
       },
       tts: { model_id: ASSISTANT_TTS_MODEL },
+      conversation: { max_duration_seconds: maxSessionSeconds },
+      turn: { silence_end_call_timeout: ASSISTANT_SILENCE_END_SECONDS },
     },
   };
 }
@@ -92,6 +122,8 @@ export interface SyncOptions {
   llm: string;
   prompt: string;
   assistantName: string;
+  /** `VOICE_ASSISTANT_MAX_SESSION_SECONDS` (ajanda `conversation.max_duration_seconds`). */
+  maxSessionSeconds?: number;
   dryRun: boolean;
   apiBase: string;
   apiKey?: string;
@@ -126,11 +158,29 @@ export function toolMatches(remote: Record<string, unknown>, desired: ElevenLabs
   return Object.entries(desired).every(([key, value]) => isDeepEqual(remote[key], value));
 }
 
+/** ElevenLabs `ClientToolConfig.response_timeout_secs` aralığı (OpenAPI, 2026-10-01; uçlar dahil). */
+export const TOOL_TIMEOUT_RANGE = { min: 1, max: 120 } as const;
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+
+/** Gönderilmeden önce kayıttan üretilen yapılandırmaları denetler (yinelenen ad, ad biçimi, zaman aşımı aralığı). */
+export function validateToolConfigs(tools: readonly ElevenLabsClientToolConfig[]): void {
+  const names = tools.map((t) => t.name);
+  if (new Set(names).size !== names.length) throw new Error("Araç kaydında yinelenen ad var.");
+  for (const tool of tools) {
+    if (!TOOL_NAME_PATTERN.test(tool.name)) throw new Error(`Geçersiz araç adı: ${tool.name}`);
+    const secs = tool.response_timeout_secs;
+    if (!Number.isInteger(secs) || secs < TOOL_TIMEOUT_RANGE.min || secs > TOOL_TIMEOUT_RANGE.max)
+      throw new Error(
+        `${tool.name}: response_timeout_secs ${TOOL_TIMEOUT_RANGE.min}–${TOOL_TIMEOUT_RANGE.max} arasında bir tam sayı olmalı (${secs}).`,
+      );
+  }
+}
+
 export async function syncAgent(options: SyncOptions): Promise<SyncResult> {
   const log = options.log ?? ((line: string) => console.log(line));
   const tools = options.tools ?? toElevenLabsToolConfigs();
+  validateToolConfigs(tools);
   const names = tools.map((t) => t.name);
-  if (new Set(names).size !== names.length) throw new Error("Araç kaydında yinelenen ad var.");
 
   if (options.dryRun) {
     const toolIds = names.map((name) => `<tool_id:${name}>`);
@@ -211,7 +261,12 @@ export async function syncAgent(options: SyncOptions): Promise<SyncResult> {
   }
 
   const agentPatch = buildAgentPatch({ ...options, toolIds });
-  const agent = await call<{ conversation_config?: { agent?: { prompt?: { tool_ids?: string[]; llm?: string } } } }>(
+  const agent = await call<{
+    conversation_config?: {
+      agent?: { prompt?: { tool_ids?: string[]; llm?: string } };
+      conversation?: { max_duration_seconds?: number };
+    };
+  }>(
     "PATCH",
     `/v1/convai/agents/${encodeURIComponent(options.agentId)}`,
     agentPatch,
@@ -223,7 +278,17 @@ export async function syncAgent(options: SyncOptions): Promise<SyncResult> {
     throw new Error(
       "Ajan güncellendi ama yanıttaki tool_ids/llm beklenenle aynı değil; ajanı panelden denetleyin (docs/elevenlabs-constraints.md).",
     );
-  log(`Ajan güncellendi: ${toolIds.length} araç, llm=${options.llm}, dil=${ASSISTANT_LANGUAGE}, tts=${ASSISTANT_TTS_MODEL}.`);
+  // Yanıt süre alanını taşıyorsa (şemada var) gönderilenle aynı olmalı; kısmi PATCH birleştirmesi canlıda doğrulanmadı.
+  const remoteMax = agent.conversation_config?.conversation?.max_duration_seconds;
+  const sentMax = agentPatch.conversation_config.conversation.max_duration_seconds;
+  if (remoteMax !== undefined && remoteMax !== sentMax)
+    throw new Error(
+      `Ajan güncellendi ama yanıttaki max_duration_seconds (${remoteMax}) gönderilenle (${sentMax}) aynı değil; ajanı panelden denetleyin.`,
+    );
+  log(
+    `Ajan güncellendi: ${toolIds.length} araç, llm=${options.llm}, dil=${ASSISTANT_LANGUAGE}, tts=${ASSISTANT_TTS_MODEL}, ` +
+      `en uzun oturum=${agentPatch.conversation_config.conversation.max_duration_seconds} sn.`,
+  );
   return { dryRun: false, created, updated, unchanged, toolIds, agentPatch };
 }
 
@@ -248,6 +313,7 @@ async function main() {
     llm: args.llm,
     prompt: readPrompt(),
     assistantName: env.ASSISTANT_NAME ?? env.APP_NAME,
+    maxSessionSeconds: env.VOICE_ASSISTANT_MAX_SESSION_SECONDS,
     dryRun: args.dryRun || forcedDryRun,
     apiBase: env.ELEVENLABS_API_BASE,
     apiKey: env.ELEVENLABS_API_KEY,
