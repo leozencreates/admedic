@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  BAĞLI DEĞİL (bilinçli): wry 0.55.1 WKWebView'de her origin'e mikrofon/kamera verir; kabuk Apple'da origin süzene
+  dek bu yetki pakete eklenmez (ADR-0028 Faz 5, desktop/README.md "Mikrofon"). Bağlamak için: dosyayı src-tauri/
+  altına taşıyın ve tauri.conf.json → bundle.macOS.entitlements = "./Entitlements.plist" yazın.
+  macOS: imzalı pakette hardened runtime açıktır (Tauri varsayılanı); mikrofon için bu yetki gerekir.
+  Bağlandığında yetkiler yalnızca imzalı derlemede uygulanır.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

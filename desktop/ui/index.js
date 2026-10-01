@@ -96,8 +96,22 @@ function setStatus(message, isError) {
   status.classList.toggle("error", isError);
 }
 
-function openPanel(origin) {
+// Kabuğa (Rust) panelin origin'ini bildirir: mikrofon izni yalnızca bu origin'e verilir (src-tauri/src/mic_permission.rs).
+// `__TAURI_INTERNALS__` yalnızca kabukta vardır; tarayıcıda ya da komut reddedilirse panel yine açılır, mikrofon
+// verilmez ve asistan yazıyla sürer.
+async function registerServerOrigin(origin) {
+  const invoke = window.__TAURI_INTERNALS__?.invoke;
+  if (typeof invoke !== "function") return;
+  try {
+    await invoke("set_server_origin", { origin });
+  } catch {
+    // Bilinçli olarak yutulur; bkz. yukarı.
+  }
+}
+
+async function openPanel(origin) {
   save(origin);
+  await registerServerOrigin(origin);
   window.location.replace(`${origin}/`);
 }
 
@@ -120,7 +134,7 @@ async function connectSaved(origin) {
     new Promise((resolve) => setTimeout(resolve, isMobile ? MOBILE_GRACE_MS : 0)),
   ]);
   if (cancelled) return;
-  if (health === "up") openPanel(origin);
+  if (health === "up") await openPanel(origin);
   else showSetup(origin, health);
 }
 
@@ -136,7 +150,7 @@ async function submit(event) {
   setStatus(text("checking"), false);
   const health = await checkServer(parsed.origin);
   button.disabled = false;
-  if (health === "up") openPanel(parsed.origin);
+  if (health === "up") await openPanel(parsed.origin);
   else setStatus(text(health), true);
 }
 

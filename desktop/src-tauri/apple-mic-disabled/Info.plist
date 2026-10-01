@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  BAĞLI DEĞİL (bilinçli): Tauri yalnızca src-tauri/Info.plist dosyasını birleştirir; bu klasördeki kopya pakete
+  girmez. wry 0.55.1 WKWebView'de her origin'e mikrofon/kamera verir; kabuk Apple'da origin süzene dek mikrofon
+  kullanım metni eklenmez (ADR-0028 Faz 5, desktop/README.md "Mikrofon").
+  src-tauri/ altına taşındığında Tauri bu dosyayı macOS paketinin ve iOS Xcode projesinin Info.plist'iyle birleştirir.
+  Ürün adı burada yazılmaz (ADR-0024): metin genel tutulur; sistem istemi adı zaten başlıkta gösterir.
+  Mikrofonu yalnızca panelin sesli asistanı kullanır (ADR-0028 Faz 5, desktop/README.md "Mikrofon").
+-->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Sesli asistan, söylediklerinizi anlayabilmek için mikrofonu yalnızca siz başlattığınızda kullanır.</string>
+</dict>
+</plist>

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Ana pencere — yalnızca gömülü bağlantı ekranı için çekirdek izinler. `remote` tanımlanmaz: sunucudan açılan panel Tauri IPC'ye erişemez (ADR-0025). Dosya/ağ eklentisi yok.",
+  "description": "Ana pencere — yalnızca gömülü bağlantı ekranı için çekirdek izinler ve sunucu origin'ini bildiren set_server_origin (mikrofon izni o origin'e bağlanır, ADR-0028 Faz 5). `remote` tanımlanmaz: sunucudan açılan panel Tauri IPC'ye erişemez (ADR-0025). Dosya/ağ eklentisi yok.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-set-server-origin"]
 }

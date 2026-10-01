@@ -2,7 +2,8 @@
 
 ADR-0025: uygulama, sunucudaki web panelini kendi penceresinde açan ince bir istemcidir. `desktop/ui` yalnızca
 bağlantı ekranıdır (sunucu adresini sorar, `GET /api/health` ile yoklar, paneli açar). İş mantığı ve veri sunucuda
-kalır; Rust tarafında yalnızca pencere başlığı ve "Bağlantı" menüsü vardır (`src-tauri/src/lib.rs`).
+kalır; Rust tarafında yalnızca pencere başlığı, "Bağlantı" menüsü (`src-tauri/src/lib.rs`) ve Windows'ta mikrofon
+izin işleyicisi (`src-tauri/src/mic_permission.rs`) vardır.
 
 ## Gereksinimler
 
@@ -97,11 +98,62 @@ pnpm --filter @admedic/desktop ios:build    # .ipa
 
 App Store, yalnızca bir web sitesini saran uygulamaları reddedebilir (ADR-0025 "Riskler").
 
+## Mikrofon (sesli asistan)
+
+Paneldeki sesli asistan (ADR-0028) mikrofonu `getUserMedia` ile ister. **Windows** kabuğu bu izni yalnızca bağlanılan
+sunucuya verir. **macOS / iOS** paketlerinde mikrofon şimdilik kapalıdır (aşağıda); asistan orada yazıyla çalışır.
+
+- **HTTPS şart:** `getUserMedia` yalnızca güvenli bağlamda (secure context) çalışır. Uzak sunucu `https://` olmalıdır;
+  `http://` yalnızca `localhost`/`127.0.0.1`/`[::1]` için güvenli sayılır (bağlantı ekranının kuralıyla aynı).
+  Sunucu ayrıca `Permissions-Policy: microphone=(self)` gönderir (`web/next.config.ts`).
+- **Sunucu origin'i nereden gelir:** Bağlantı ekranı paneli açmadan hemen önce origin'i `set_server_origin` komutuyla
+  kabuğa bildirir (`ui/index.js`). Rust adresi aynı kurallarla yeniden doğrular ve bellekte tutar; her açılışta
+  bağlantı ekranı önce çalıştığı için yeniden bildirilir. Komut yalnızca gömülü yerel sayfaya izinlidir
+  (`allow-set-server-origin`, `capabilities/default.json`); uzak panel ve Meta sayfaları çağıramaz. Bunun için kabuk
+  CSP'sinin `connect-src` listesine Tauri IPC adresi (`ipc: http://ipc.localhost`) eklendi.
+- **Windows (WebView2):** `PermissionRequested` olayı karşılanır (`src-tauri/src/mic_permission.rs`):
+
+  | İzin | Karar |
+  | --- | --- |
+  | Mikrofon, istek origin'i = sunucu origin'i (şema + ana makine + kapı) | İzin (sorulmaz) |
+  | Mikrofon, başka her origin (Meta OAuth, iframe, yönlendirme sayfası) ya da adres henüz bildirilmemiş | Ret |
+  | Kamera, konum, diğer sensörler | Ret (panel kullanmaz; sunucu da `camera=()`, `geolocation=()` gönderir) |
+  | Diğerleri (bildirim, pano, otomatik oynatma…) | WebView2 varsayılanı (değişmedi) |
+
+  Kararlar WebView2 profiline kaydedilmez (`SavesInProfile = false`): sunucu adresi değişince eski izin taşınmaz.
+  İşletim sistemi düzeyinde Windows'un "Ayarlar → Gizlilik → Mikrofon → Masaüstü uygulamalarının mikrofona
+  erişmesine izin ver" seçeneği açık olmalıdır; kapalıysa asistan yazıyla sürer.
+- **macOS / iOS (WKWebView): mikrofon kapalı (bilinçli).** wry 0.55.1 medya yakalama isteğini origin, çerçeve ve
+  türe bakmadan her sayfaya verir (kamera dahil); kabuk Apple'da origin süzmez. İşletim sistemi izni bir kez
+  verilince panelden gidilen her sayfa (Meta OAuth, yönlendirmeler, `allow="microphone"` taşıyan yabancı iframe'ler)
+  mikrofonu sessizce açabilirdi. Bu yüzden pakete mikrofon yetkisi ve kullanım metni eklenmez:
+  `bundle.macOS.entitlements` tanımlı değil, `src-tauri/Info.plist` yok. Hazır dosyalar
+  `src-tauri/apple-mic-disabled/` altında bekler (`Entitlements.plist`: `com.apple.security.device.audio-input`;
+  `Info.plist`: `NSMicrophoneUsageDescription`). Bağlamadan önce WKWebView temsilcisinde `decide()` ile aynı origin
+  denetimi (mikrofon yalnızca sunucu origin'i, kamera her yerde ret) yapılmalıdır. Kullanım metni olmayan iOS
+  uygulamasında WKWebView'in isteği çökmeden reddettiği ve panelin yazıya geçtiği varsayılır: **DOĞRULANMADI**
+  (Mac/iPhone'da denenmedi).
+
+### Elle deneme (Windows)
+
+1. `pnpm web:dev` ve `pnpm desktop:dev`; bağlantı ekranına `localhost:3000` yazın, panelde oturum açın.
+2. Asistan düğmesine basın: Windows izin istemi çıkmadan konuşma başlamalı; görev çubuğunda mikrofon simgesi görünür.
+3. Bağlantı → Sunucu adresini değiştir… ile başka (geçerli) bir sunucuya bağlanın; o sunucuda da çalışmalı, eski
+   adres için verilen izin yeni adrese taşınmamalı.
+4. Geliştirici araçları konsolunda (yalnızca `dev`) `location.href = "https://example.com"` ile başka bir origin'e
+   gidin ve `await navigator.mediaDevices.getUserMedia({ audio: true })` çalıştırın: istem çıkmadan
+   `NotAllowedError` beklenir. Menüden bağlantı ekranına dönüp yeniden bağlanın.
+5. Windows mikrofon gizlilik ayarını kapatıp asistanı açın: panel "mikrofon kullanılamıyor" uyarısıyla yazıya geçmeli.
+6. Eski bir derlemede mikrofon istemine "Engelle" denmişse ve izin hâlâ reddediliyorsa WebView2 profilini silin:
+   `%LOCALAPPDATA%\com.admedic.desktop\EBWebView` (oturum ve kayıtlı adres de silinir).
+
 ## Güvenlik
 
-- Yetenekler: yalnızca `core:default` ve yalnızca gömülü bağlantı ekranı için (`src-tauri/capabilities/default.json`).
-  `remote` tanımlı değildir: sunucudan açılan panel Tauri komutlarına erişemez.
+- Yetenekler: yalnızca `core:default` ile `allow-set-server-origin` ve yalnızca gömülü bağlantı ekranı için
+  (`src-tauri/capabilities/default.json`). `remote` tanımlı değildir: sunucudan açılan panel Tauri komutlarına erişemez.
 - Kabuk CSP'si (`tauri.conf.json`) yalnızca bağlantı ekranını kapsar; panelin güvenlik başlıkları sunucudan gelir.
+- Windows'ta mikrofon yalnızca bağlanılan sunucunun origin'ine verilir; kamera ve konum reddedilir. macOS/iOS
+  paketlerinde mikrofon yetkisi yoktur (wry origin süzmediği için; yukarıda "Mikrofon").
 - Bağlantı ekranı kullanıcı girdisini ve sunucu yanıtını `innerHTML` ile yazmaz.
 
 ## Doğrulama
@@ -111,7 +163,7 @@ pnpm --filter @admedic/desktop test:ui         # sunucu adresi doğrulama (Rust 
 pnpm --filter @admedic/desktop test:encoding   # ürün adı aktarımı (Rust gerektirmez)
 pnpm --filter @admedic/desktop typecheck       # cargo check
 pnpm --filter @admedic/desktop lint            # cargo clippy -D warnings
-pnpm --filter @admedic/desktop test            # cargo test
+pnpm --filter @admedic/desktop test            # cargo test (mikrofon izin kararı dahil)
 ```
 
 Rust toolchain olmayan makinelerde `cargo` komutları çalışmaz; kök `turbo` komutlarında
