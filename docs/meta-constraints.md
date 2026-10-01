@@ -1,4 +1,4 @@
-# Meta API Kısıtları / Constraint Kaydı
+﻿# Meta API Kısıtları / Constraint Kaydı
 
 Bu dosya, Meta Marketing API entegrasyonunda karşılaşılan davranış hakkında **tarihli** notları barındırır.
 Kural (spec §6): emin olmadığın her konuda güncel resmi dokümantasyona bak, tahminle entegrasyon yazma.
@@ -419,4 +419,17 @@ developers.facebook.com/documentation/ads-commerce/marketing-api/guides/lead-ads
   `lastError` alanına yazılır. `pages_read_engagement` OAuth izin listesine eklendi. Canlıya geçiş sayfası aboneliği okur.
 - ❗ **DOĞRULANMADI (canlı):** `subscribed_fields` için virgülle ayrılmış biçimin (dizi yerine) kabul edildiği;
   Graph dizi parametrelerini virgüllü metin olarak da kabul eder, ilk canlı bağlantıda Canlıya geçiş sayfasından doğrulanmalı.
+
+## 2026-10-01 — Sesli komut asistanı: Meta tarafında yeni davranış yok (ADR-0028)
+- Sesle tetiklenen işlemler Meta'ya **aynı panel uçlarından** gider (yayın, duraklatma, bütçe, inceleme eşitlemesi);
+  asistanın Meta'ya doğrudan çağrısı, ayrı anahtarı ya da yeni bir Graph ucu yoktur. Bu nedenle bu tarihte yeni bir Meta
+  dokümanı okunmadı; geçerli kısıtlar bu dosyadaki önceki bölümlerdir.
+- PUBLISH hâlâ her şeyi PAUSED oluşturur (2026-09-27, ADR-0014). Sesle etkinleştirme (R3) ve PAUSED yayın (R2) ekranda
+  tıklama ister; onay ve ret sesle yapılamaz (R4).
+- Meta'nın reklam hesabı düzeyindeki hız sınırları (613, 80004; 2026-09-16): sesli araç çağrıları için ayrı bir kota
+  **bugün yoktur.** Faz 1'deki tek kota `POST /api/assistant/events` üzerindedir (kullanıcı başına dakikada 30,
+  `voice-event:<userId>`) ve yalnızca denetim kaydını sınırlar; Meta'ya giden uçları yavaşlatmaz. Sesli araç çağrısı
+  sınırı (oturum başına dakikada 30) **Faz 2'de planlanır**: istemcideki araç dağıtıcısında, gerekirse Meta'ya giden
+  uçlarda da. Planlanan kural: asistan başarısız bir Meta çağrısını kendiliğinden yeniden denemez; hatayı söyler,
+  yeniden denemeyi kullanıcı ister. O zamana kadar korunma, bu uçların mevcut davranışıdır.
 

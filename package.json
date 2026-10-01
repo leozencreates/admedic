@@ -20,6 +20,7 @@
     "web:dev": "pnpm --filter @admedic/web dev",
     "desktop:dev": "pnpm --filter @admedic/desktop dev",
     "worker:sync": "pnpm --filter @admedic/meta-sync start",
+    "assistant:sync-agent": "pnpm --filter @admedic/web assistant:sync-agent",
     "format:check": "prettier --check ."
   },
   "devDependencies": {

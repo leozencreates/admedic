@@ -50,6 +50,9 @@ export default async function RootLayout({
           appName={env.APP_NAME}
           lang={lang}
           initialRole={actor?.role ?? null}
+          initialUserId={actor?.userId ?? null}
+          /* Sesli asistan kapalıysa (varsayılan) düğme hiç çizilmez; koşul `/api/assistant/session` ile aynıdır (ADR-0028 §9). */
+          assistantEnabled={env.VOICE_ASSISTANT_ENABLED && Boolean(env.ELEVENLABS_ASSISTANT_AGENT_ID)}
           isDemo={env.META_MOCK_MODE}
           metaLines={[
             `${t("layout.metaGraph", lang)}: ${env.metaGraphApiVersion ?? "—"}`,

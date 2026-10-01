@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { api } from "../../_lib/client-api";
+import { ASSISTANT_CAMPAIGN_TAB_EVENT, type AssistantCampaignTabDetail } from "../../_lib/assistant/page-events";
 import { formatNumber } from "../../_lib/format";
 import { PageHeader } from "../../_components/ui";
 import { StageBar } from "../../_components/stage-bar";
@@ -180,6 +181,18 @@ export default function CampaignPage() {
       setLoading(false);
     })();
     // `load` her çizimde yeniden oluşur; yalnızca kampanya değişince yüklenir.
+  }, [id]);
+
+  // Sesli asistan bu kampanyayı belirli bir sekmeyle açtıysa (sayfa zaten açıkken URL değişimi yeniden yüklemez).
+  useEffect(() => {
+    function onAssistantTab(e: Event) {
+      const detail = (e as CustomEvent<AssistantCampaignTabDetail>).detail;
+      if (!detail || detail.campaignId !== id) return;
+      const next = detail.tab ?? null;
+      setTab(isTab(next) ? next : "overview");
+    }
+    window.addEventListener(ASSISTANT_CAMPAIGN_TAB_EVENT, onAssistantTab);
+    return () => window.removeEventListener(ASSISTANT_CAMPAIGN_TAB_EVENT, onAssistantTab);
   }, [id]);
 
   // Dar ekranda sekme şeridi yatay kayar; seçili sekme görünür alana getirilir (ör. `?tab=performance`).

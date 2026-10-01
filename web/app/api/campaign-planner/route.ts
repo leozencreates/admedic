@@ -1,6 +1,6 @@
 import { prisma } from "@admedic/database";
 import { z } from "zod";
-import { requireActor } from "../../_lib/auth";
+import { EDIT_ROLES, requireActor, requireRole } from "../../_lib/auth";
 import { body, respond, sameOrigin } from "../../_lib/http";
 import {
   buildCampaignPlan,
@@ -35,6 +35,8 @@ export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
     const actor = await requireActor();
+    // Planlayıcı düzenleme ekranıdır (menüde EDIT); plan, kuruluşun aylık tavanından kalan payı da ortaya koyar.
+    requireRole(actor, EDIT_ROLES);
     const input = await body(request, PlannerSchema);
     const [org, adAccount, clinic] = await Promise.all([
       prisma.organization.findUnique({

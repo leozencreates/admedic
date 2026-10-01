@@ -1,3 +1,4 @@
+export * from "./assistant-session";
 export * from "./client";
 export * from "./disclosure";
 export * from "./eligibility";

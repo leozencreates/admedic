@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { prisma } from "@admedic/database";
@@ -33,6 +33,18 @@ async function audit(page: Page) {
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     };
   }, TAGS);
+}
+
+/**
+ * Sesli asistan (ADR-0028) sunucuda açık mı? Çerezsiz, Origin'siz istek: kapalıysa 404, açıksa kaynak denetimi 403.
+ * Kayıt yazılmaz. Açıksa düğme her panel sayfasında taranır; panel ve diyalog ayrıca açılıp taranır (deneme modu).
+ */
+async function assistantEnabled(request: APIRequestContext, baseURL: string | undefined): Promise<boolean> {
+  const res = await request.post(new URL("/api/assistant/events", baseURL ?? "http://localhost:3000").href, {
+    data: {},
+    headers: { "content-type": "application/json" },
+  });
+  return res.status() !== 404;
 }
 
 test.describe("erişilebilirlik kapısı", () => {
@@ -78,7 +90,13 @@ test.describe("erişilebilirlik kapısı", () => {
 
   test.afterAll(async () => {
     if (orgId) await prisma.organization.delete({ where: { id: orgId } });
-    if (userId) await prisma.user.delete({ where: { id: userId } });
+    if (userId) {
+      // Sesli asistan oturum/olay kotaları (yalnızca asistan açıkken oluşur).
+      await prisma.requestQuota.deleteMany({
+        where: { OR: [{ key: { startsWith: `voice:${userId}:` } }, { key: { startsWith: `voice-event:${userId}:` } }] },
+      });
+      await prisma.user.delete({ where: { id: userId } });
+    }
     await prisma.$disconnect();
   });
 
@@ -119,6 +137,7 @@ test.describe("erişilebilirlik kapısı", () => {
       });
       await context.addCookies([{ name: SESSION_COOKIE, value: token, url: baseURL ?? "http://localhost:3000" }]);
       const failures: string[] = [];
+      const assistant = await assistantEnabled(context.request, baseURL);
       for (const route of [...routes(), "/login"]) {
         const page = await context.newPage();
         const errors: string[] = [];
@@ -129,9 +148,63 @@ test.describe("erişilebilirlik kapısı", () => {
         const { violations, overflow } = await audit(page);
         for (const v of violations) failures.push(`${route}: ${v}`);
         if (overflow) failures.push(`${route}: yatay taşma`);
+        // Asistan düğmesi taramaya dahil: açıksa her panel sayfasında tam bir tane; kapalıyken ve giriş sayfasında hiç
+        // (özellik bayrağı sunucudan gelir, düğme 404 beklenmeden gizlenir).
+        const fabs = await page.locator(".va-fab").count();
+        const expectedFabs = assistant && route !== "/login" ? 1 : 0;
+        if (fabs !== expectedFabs) failures.push(`${route}: asistan düğmesi ${fabs} (beklenen ${expectedFabs})`);
         for (const e of errors) failures.push(`${route}: sayfa hatası ${e.slice(0, 160)}`);
         await page.close();
       }
+      await context.close();
+      expect(failures, failures.join("\n")).toEqual([]);
+    });
+  }
+
+  // Sesli asistan: aydınlatma diyaloğu ve açık panel (deneme modu, metin kipi) her iki boyutta taranır.
+  for (const vp of VIEWPORTS) {
+    test(`sesli asistan · ${vp.name}`, async ({ browser, baseURL }) => {
+      test.setTimeout(5 * 60_000);
+      const context = await browser.newContext({
+        viewport: { width: vp.width, height: vp.height },
+        isMobile: vp.isMobile,
+        hasTouch: vp.isMobile,
+      });
+      const enabled = await assistantEnabled(context.request, baseURL);
+      if (!enabled) await context.close();
+      test.skip(
+        !enabled,
+        "Sunucuda sesli asistan kapalı: VOICE_ASSISTANT_ENABLED=true, ELEVENLABS_ASSISTANT_AGENT_ID ve META_MOCK_MODE=true gerekir",
+      );
+      await context.addCookies([{ name: SESSION_COOKIE, value: token, url: baseURL ?? "http://localhost:3000" }]);
+      const page = await context.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      await page.goto("/", { waitUntil: "networkidle", timeout: 120_000 });
+      const failures: string[] = [];
+      const check = async (label: string) => {
+        const { violations, overflow } = await audit(page);
+        for (const v of violations) failures.push(`${label}: ${v}`);
+        if (overflow) failures.push(`${label}: yatay taşma`);
+      };
+
+      await page.getByRole("button", { name: /sesli asistan:/ }).click();
+      const dialog = page.getByRole("dialog", { name: "Sesli asistan hakkında" });
+      await expect(dialog).toBeVisible();
+      await check("izin diyaloğu");
+
+      await dialog.getByRole("button", { name: "Kabul ediyorum, başlat" }).click();
+      const input = page.getByLabel("Asistana yazın");
+      await expect(input).toBeEnabled({ timeout: 15_000 });
+      await check("açık panel");
+
+      // Konuşma satırları ve durum metni dolu panel.
+      await input.fill("kampanyaları göster");
+      await input.press("Enter");
+      await expect(page.locator('.va-panel .va-line[data-role="agent"]')).toHaveCount(2, { timeout: 15_000 });
+      await check("konuşmalı panel");
+
+      for (const e of errors) failures.push(`sayfa hatası ${e.slice(0, 160)}`);
       await context.close();
       expect(failures, failures.join("\n")).toEqual([]);
     });

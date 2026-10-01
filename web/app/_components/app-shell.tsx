@@ -12,6 +12,8 @@ import { Nav, type BadgeCounts } from "./nav";
 import { NavGlyph } from "./nav-icons";
 import { LanguageSwitcher } from "./language-switcher";
 import { BrandMark } from "./brand-mark";
+import { VoiceAssistant, ASSISTANT_TOGGLE_EVENT } from "./voice-assistant";
+import { isToggleShortcut } from "./voice-assistant/state";
 
 /** `/api/shell` yanıtı: rozet sayıları, bildirimler ve hesap bilgisi (ADR-0017). */
 interface ShellSummary {
@@ -38,6 +40,8 @@ export function AppShell({
   appName,
   lang,
   initialRole,
+  initialUserId,
+  assistantEnabled,
   isDemo,
   metaLines,
 }: {
@@ -46,6 +50,10 @@ export function AppShell({
   lang: Language;
   /** Sunucudan gelen rol (ilk çizimde menünün doğru süzülmesi için); özet gelince güncellenir. */
   initialRole: string | null;
+  /** Oturumdaki kullanıcının kimliği (sesli asistan izninin kullanıcı başına tutulması için); oturum yoksa null. */
+  initialUserId: string | null;
+  /** Sesli asistan sunucuda açık mı (VOICE_ASSISTANT_ENABLED + ajan kimliği). */
+  assistantEnabled: boolean;
   isDemo: boolean;
   metaLines: string[];
 }) {
@@ -103,7 +111,11 @@ export function AppShell({
   // Ctrl+K / ⌘K arama kutusuna odaklanır; Esc açık paneli kapatır.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && canSearchLeads) {
+      // Ctrl+Shift+Boşluk sesli asistanı açar/kapatır (Esc'i asistan kendisi ele alır).
+      if (isToggleShortcut(e)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent(ASSISTANT_TOGGLE_EVENT));
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && canSearchLeads) {
         e.preventDefault();
         setSearchOpen(true);
         window.setTimeout(() => searchRef.current?.focus(), 0);
@@ -491,6 +503,23 @@ export function AppShell({
           <span className="app-tab__label">{t("layout.menu", lang)}</span>
         </button>
       </nav>
+
+      <VoiceAssistant
+        enabled={assistantEnabled}
+        role={role}
+        lang={lang}
+        appName={appName}
+        userKey={initialUserId}
+        covered={typing || inConversation}
+        onOpenLeadSearch={
+          canSearchLeads
+            ? () => {
+                setSearchOpen(true);
+                window.setTimeout(() => searchRef.current?.focus(), 0);
+              }
+            : undefined
+        }
+      />
     </>
   );
 }

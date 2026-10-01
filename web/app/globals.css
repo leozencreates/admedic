@@ -1075,3 +1075,348 @@
     mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
   }
 }
+
+/* ── Sesli asistan (ADR-0028 §4): yüzen düğme, panel, küre ─────────────────
+ * z-index 45: alt sekme çubuğu (40) ile açılır paneller (50) arasında. Durum renkle tek başına anlatılmaz; simge ve
+ * görünür metin ayrıca vardır. Hareket azaltma tercihinde küre statiktir. */
+@layer components {
+  .va-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 45;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 56px;
+    min-height: 56px;
+    padding: 6px 16px 6px 6px;
+    border: 1px solid var(--color-nav-line);
+    border-radius: 999px;
+    background: var(--color-nav);
+    color: #ffffff;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    box-shadow: var(--shadow-dialog), 0 2px 8px rgb(16 24 40 / 0.18);
+    cursor: pointer;
+  }
+  .va-fab:hover {
+    background: var(--color-nav-active);
+  }
+  .va-fab:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 2px var(--focus-ring-on-dark) inset;
+  }
+  .va-fab[aria-disabled="true"] {
+    cursor: wait;
+  }
+  .va-fab[aria-pressed="true"] {
+    background: var(--color-nav-active);
+    border-color: var(--color-brand-200);
+  }
+  .va-fab__state {
+    white-space: nowrap;
+  }
+
+  .va-orb {
+    --va-level: 0;
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+  }
+  .va-orb__halo {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: var(--color-brand-200);
+    opacity: calc(0.2 + var(--va-level) * 0.6);
+    transform: scale(calc(1 + var(--va-level) * 0.35));
+    transition: transform 90ms linear, opacity 90ms linear;
+  }
+  .va-orb__core {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: radial-gradient(circle at 35% 30%, var(--color-brand-200), var(--color-brand-600) 55%, var(--color-brand-700));
+    color: #ffffff;
+    transform: scale(calc(1 + var(--va-level) * 0.12));
+    transition: transform 90ms linear;
+  }
+  .va-orb[data-state="idle"] .va-orb__halo,
+  .va-orb[data-state="disabled"] .va-orb__halo {
+    opacity: 0;
+  }
+  .va-orb[data-state="listening"] .va-orb__halo {
+    animation: va-breathe 2.4s ease-in-out infinite;
+  }
+  .va-orb[data-state="error"] .va-orb__core {
+    background: var(--color-bad-fill);
+  }
+  .va-orb[data-state="disabled"] .va-orb__core {
+    background: var(--color-neutral);
+  }
+  .va-orb__spin {
+    animation: va-spin 1.2s linear infinite;
+  }
+  @keyframes va-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes va-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(91 69 208 / 0.35);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgb(91 69 208 / 0);
+    }
+  }
+
+  .va-panel {
+    position: fixed;
+    right: 24px;
+    bottom: calc(24px + 56px + 12px);
+    z-index: 45;
+    display: flex;
+    flex-direction: column;
+    width: min(380px, calc(100vw - 32px));
+    max-height: min(480px, calc(100dvh - var(--topbar-h) - 120px));
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-dialog);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-dialog), 0 8px 24px rgb(16 24 40 / 0.12);
+  }
+  .va-panel__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 8px 12px 12px;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .va-panel .va-orb {
+    width: 32px;
+    height: 32px;
+  }
+  .va-panel__title {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .va-panel__state {
+    margin: 0;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-ink-2);
+  }
+  .va-panel__state[data-state="error"] {
+    color: var(--color-bad);
+  }
+  .va-panel__close,
+  .va-panel__send {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-ink-2);
+    cursor: pointer;
+  }
+  .va-panel__close:hover,
+  .va-panel__send:hover:not(:disabled) {
+    background: var(--color-line-soft);
+    color: var(--color-ink);
+  }
+  .va-panel__send:not(:disabled) {
+    color: var(--color-brand-600);
+  }
+  .va-panel__lines {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 12px;
+    list-style: none;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .va-line {
+    display: flex;
+    flex-direction: column;
+    max-width: 88%;
+    padding: 8px 10px;
+    border-radius: var(--radius-card);
+    background: var(--color-subtle);
+    border: 1px solid var(--color-line-soft);
+  }
+  .va-line[data-role="user"] {
+    align-self: flex-end;
+    background: var(--color-brand-50);
+    border-color: var(--color-brand-100);
+  }
+  .va-line__who {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--color-ink-3);
+  }
+  .va-line__text {
+    font-size: 14px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+  .va-panel__hint {
+    margin: 0;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-ink-2);
+  }
+  .va-panel__notice {
+    margin: 0 12px 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-info-line);
+    border-radius: var(--radius-card);
+    background: var(--color-info-bg);
+    color: var(--color-info);
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .va-panel__error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 12px 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-bad-line);
+    border-radius: var(--radius-card);
+    background: var(--color-bad-bg);
+    color: var(--color-bad);
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .va-panel__error p {
+    margin: 0;
+  }
+  .va-panel__form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 8px 8px 12px;
+    border-top: 1px solid var(--color-line);
+  }
+  .va-panel__form input {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--color-input);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+  .va-consent__list {
+    margin: 0;
+    padding-left: 20px;
+    list-style: disc;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-ink-2);
+  }
+  .va-consent__list li + li {
+    margin-top: 6px;
+  }
+
+  /* Telefon/tablet: alt sekme çubuğunun üstünde, güvenli alan payıyla. */
+  @media (max-width: 1023px) {
+    .va-fab {
+      right: 16px;
+      bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
+    }
+    .va-panel {
+      left: 8px;
+      right: 8px;
+      width: auto;
+      bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px + 56px + 8px);
+      max-height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom) - 96px);
+    }
+    /* Yazma alanı ya da açık lead konuşması altta: boştaki düğme gizlenir, açık oturum yazma alanının üstüne çıkar. */
+    .va-root[data-covered="true"][data-open="false"] .va-fab {
+      display: none;
+    }
+    .va-root[data-covered="true"][data-open="true"] .va-fab {
+      bottom: calc(env(safe-area-inset-bottom) + 96px);
+    }
+    .va-root[data-covered="true"][data-open="true"] .va-panel {
+      bottom: calc(env(safe-area-inset-bottom) + 96px + 56px + 8px);
+      max-height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-bottom) - 180px);
+    }
+    /* Tam ekran menü açıkken düğme menünün son satırını (çıkış) örtmez: boştaki düğme gizlenir, açık oturum altta kalır. */
+    body:has(.app-sheet[data-open="true"]) .va-root[data-open="false"] .va-fab {
+      display: none;
+    }
+    body:has(.app-sheet[data-open="true"]) .va-root[data-open="true"] .va-fab,
+    body:has(.app-sheet[data-open="true"]) .va-root[data-open="true"] .va-panel {
+      z-index: 30;
+    }
+  }
+  /* Masaüstü: gelen kutusu ekranın altına kadar uzanır; sağ alttaki yazma alanının (Gönder) üstüne düğme binmesin diye
+   * düğme varken kutunun altında düğme yüksekliği kadar şerit bırakılır (24 + 56 px düğme, 8 px pay). */
+  @media (min-width: 1024px) {
+    body:has(.va-fab) .inbox {
+      height: calc(100dvh - var(--topbar-h) - 48px - 64px);
+    }
+  }
+  /* Dar telefonda boştaki düğme yalnızca küredir (durum metni aria-label içinde ve panelde görünür). */
+  @media (max-width: 640px) {
+    .va-fab[data-state="idle"] {
+      padding: 6px;
+    }
+    .va-fab[data-state="idle"] .va-fab__state {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .va-orb__halo,
+    .va-orb__core {
+      transform: none;
+      transition: none;
+    }
+    .va-orb[data-state="listening"] .va-orb__halo,
+    .va-orb__spin {
+      animation: none;
+    }
+    .va-orb:not([data-state="idle"]):not([data-state="disabled"]) .va-orb__halo {
+      opacity: 0.45;
+      transform: scale(1.12);
+    }
+  }
+}
