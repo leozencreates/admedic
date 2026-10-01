@@ -5,7 +5,7 @@ import { anonymizeExpiredLeads, anonymizeLead } from "./privacy";
 const tx = {
   lead: { findFirst: vi.fn(), updateMany: vi.fn() },
   message: { updateMany: vi.fn() }, conversation: { updateMany: vi.fn() },
-  consentRecord: { updateMany: vi.fn() }, auditLog: { create: vi.fn() }, $queryRaw: vi.fn(),
+  consentRecord: { updateMany: vi.fn() }, voiceCall: { updateMany: vi.fn() }, auditLog: { create: vi.fn() }, $queryRaw: vi.fn(),
 };
 const subject = { id: "lead", orgId: "org", workspaceId: "workspace" };
 const asTx = tx as unknown as Prisma.TransactionClient;
@@ -22,6 +22,11 @@ describe("privacy erasure", () => {
       where: { conversation: { leadId: "lead", workspaceId: "workspace" } },
       data: { content: "[anonymized]", sender: null, metadata: {} },
     }));
+    // Sesli arama özeti ve sağlayıcı kimlikleri de silinir (ADR-0026).
+    expect(tx.voiceCall.updateMany).toHaveBeenCalledWith({
+      where: { leadId: "lead", workspaceId: "workspace" },
+      data: { summary: null, conversationId: null, providerCallId: null },
+    });
     expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ after: { anonymized: true } }) }));
   });
   it("does not write when the subject is outside the tenant", async () => {
@@ -36,6 +41,9 @@ describe("privacy erasure", () => {
     const where = db.lead.findMany.mock.calls[0]![0].where;
     expect(where).toMatchObject({ organizationId: "org", workspaceId: "workspace", updatedAt: { lt: new Date("2026-08-27T00:00:00Z") } });
     expect(where.status).toBeUndefined();
+    // Zaten anonimleştirilmiş lead ad yer tutucusuyla dışarıda kalır; JSON yol süzgeci kullanılmaz (privacy.db.test.ts).
+    expect(where.firstName).toEqual({ not: "[anonymized]" });
+    expect(where.NOT).toBeUndefined();
     expect(db.$transaction).not.toHaveBeenCalled();
   });
   it("rechecks retention after locking and skips a newly active lead", async () => {

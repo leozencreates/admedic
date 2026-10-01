@@ -1,5 +1,8 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 
+/** Anonimleştirilen lead'in ad ve soyadına yazılan yer tutucu; "zaten anonimleştirildi" ölçütü de budur. */
+export const ANONYMIZED_NAME = "[anonymized]";
+
 /** Shared by the privacy endpoint and retention jobs; never stores the old PII in audit. */
 export async function anonymizeLead(
   tx: Prisma.TransactionClient,
@@ -23,10 +26,15 @@ export async function anonymizeLead(
     // Kanıt (form/leadgen kimlikleri) Meta'daki kişisel veriye bağ kurar: anonimleştirmede silinir.
     data: { status: "WITHDRAWN", withdrawnAt: now, consentText: "[anonymized]", ip: null, userAgent: null, evidence: Prisma.DbNull },
   });
+  // Sesli arama özeti hasta verisi içerebilir; sağlayıcı kimlikleri de kişiye bağ kurar.
+  await tx.voiceCall.updateMany({
+    where: { leadId: subject.id, workspaceId: subject.workspaceId },
+    data: { summary: null, conversationId: null, providerCallId: null },
+  });
   await tx.lead.updateMany({
     where,
     data: {
-      firstName: "[anonymized]", lastName: "[anonymized]", email: null, phone: null,
+      firstName: ANONYMIZED_NAME, lastName: ANONYMIZED_NAME, email: null, phone: null,
       country: null, language: "und", interestedService: null, lostReason: null,
       duplicateOf: null, lookupHash: null, consentGiven: false,
       campaignId: null, adSetId: null, adId: null, metadata: { anonymized: true },
@@ -52,7 +60,14 @@ export async function anonymizeExpiredLeads(
   const where: Prisma.LeadWhereInput = {
     organizationId: scope.orgId, workspaceId: scope.workspaceId,
     updatedAt: { lt: cutoff },
-    NOT: { metadata: { path: ["anonymized"], equals: true } },
+    // Zaten anonimleştirilmiş lead yeniden işlenmez. Ölçüt, anonimleştirmenin yazdığı ad yer tutucusudur:
+    // `NOT: { metadata: { path: ["anonymized"], equals: true } }` PostgreSQL'de anahtarı hiç olmayan satırı da
+    // dışarıda bırakır (karşılaştırma NULL döner) ve normal lead'ler hiç seçilmezdi.
+    firstName: { not: ANONYMIZED_NAME },
+    // Süre son etkinlikten sayılır: lead kaydı eski olsa da kesim tarihinden sonra mesajı ya da sesli araması
+    // olan lead hâlâ görüşülüyordur (gelen WhatsApp mesajı ve ekibin yanıtı lead satırını güncellemez).
+    conversations: { none: { messages: { some: { createdAt: { gte: cutoff } } } } },
+    voiceCalls: { none: { createdAt: { gte: cutoff } } },
   };
   const leads = await db.lead.findMany({ where, select: { id: true } });
   if (options.dryRun) return leads.length;
