@@ -1,4 +1,4 @@
-# Admedic — AI Sağlık Turizmi Meta Reklam Ajanı (monorepo)
+﻿# Admedic — AI Sağlık Turizmi Meta Reklam Ajanı (monorepo)
 
 Türkiye'deki sağlık turizmi klinikleri ve acenteleri için **insan onaylı** Meta reklam ajanı platformu:
 çok dilli kreatif üretimi, politika uyum kontrolü, onay akışı, lead yakalama/CRM ve performans raporlama.
@@ -15,8 +15,12 @@ web/                 Next.js 16 App Router paneli; API = route handler'lar (web/
 workers/meta-sync    Zamanlanmış worker (5 dk): Meta token yenileme, insight çekimi, anomali uyarıları,
                      bağlantı kopma webhook'u, haftalık PDF/e-posta raporu, lead saklama süresi anonimleştirme
 apps/api             Fastify v5 salt okunur REST (/v1/overview, /v1/campaigns, /v1/decisions, /v1/alerts);
-                     masaüstü kabuğunun veri kaynağı, Bearer API_TOKEN ile korunur (ADR-0001 durum notu)
-desktop/             Tauri v2 masaüstü kabuğu; desktop/ui statik paneli apps/api'yi tüketir (ADR-0003 rev. 2)
+                     Bearer API_TOKEN ile korunur; kabuk artık bunu kullanmaz (ADR-0025)
+desktop/             Tauri v2 Windows/iOS kabuğu: sunucudaki web panelini saran ince istemci; desktop/ui yalnızca
+                     sunucu adresini soran bağlantı ekranıdır (ADR-0025)
+packages/voice       ElevenLabs sesli ajanla giden arama: istemci, deneme modu, webhook imzası, "müsait lead"
+                     kuralı ve arama akışı (ADR-0026)
+packages/lead-team   50 ajanlık lead takımı: kadro, hiyerarşik çalıştırma, çıktı şemaları (ADR-0029)
 packages/config      loadEnv() (Zod ile doğrulanmış ortam), alan seviyesi şifreleme, LLM/Graph sürüm yardımcıları
 packages/database    Prisma şeması, migration'lar, seed, tenant ve gizlilik yardımcıları (PostgreSQL)
 packages/shared      Ortak tipler, enum'lar, hata sınıfları, para/zaman yardımcıları
@@ -68,7 +72,25 @@ pnpm desktop:dev     # Tauri kabuğu (Rust toolchain gerekir; bkz. desktop/READM
 (production dışında) faturalandırma ödeme simülasyonu modundadır. Production'da `AUTH_SECRET`, `ENCRYPTION_KEY`
 ve (mock kapalıysa) `META_API_VERSION` zorunludur; `loadEnv()` eksikse başlatmayı reddeder.
 
-## Bu turda değişenler (2026-09-27, ikinci tur) — panelde nereye bakmalı
+## Bu turda değişenler (2026-10-01) — nereye bakmalı
+
+- **Windows uygulaması** (`desktop/`): sunucudaki panelin tamamını açan kurulabilir uygulama. Derleme:
+  `pnpm --filter @admedic/desktop build:ci`; çıktı `desktop/src-tauri/target/release/bundle/`. İlk açılışta sunucu
+  adresi sorulur (yerelde `localhost:3000`). **iOS:** panel Safari'den ana ekrana eklenebilir; mağaza paketi Mac'te
+  derlenir ve henüz denenmedi (`desktop/README.md` "iOS", ADR-0025).
+- **Sesli asistan araması** (`/leads/[id]` → Lead bilgileri): telefonla aranma rızası kaydı, "Ajan arasın" düğmesi,
+  arama geçmişi. Otomatik arama **Klinik ve marka → Yapay zekâ ayarları**'ndan açılır (yalnızca hesap sahibi;
+  varsayılan kapalı). Kurulum: `docs/runbook.md` "Sesli arama"; canlı aramadan önce `docs/elevenlabs-constraints.md`
+  "Şartlar" (ADR-0026).
+- **Asistana üslup örnekleri** (aynı ayar kartı): randevuya dönüşen Instagram konuşmalarında ekibin yazdığı
+  yanıtlar karşılama asistanına örnek olur; hastanın yazdıkları ve adı girmez (ADR-0027).
+- **Lead takımı** (`/lead-team`): 50 ajan (1 direktör, 7 lider, 42 uzman) lead reklamı planı önerir; nihai kararı
+  direktör verir, öneriler **Onaylar**'da insan onayını bekler. Onay kampanya oluşturmaz (ADR-0029).
+- **Lead saklama süresi** düzeltildi: iş daha önce hiçbir normal lead'i seçmiyordu; artık süresi dolan lead'leri
+  gerçekten anonimleştirir (geri alınamaz). Canlı veride önce deneme sayımı: `docs/remaining-work.md` §0 madde 13.
+- Yeni göçler ve yeniden başlatma: `docs/remaining-work.md` §0 madde 12.
+
+## Önceki tur (2026-09-27, ikinci tur) — panelde nereye bakmalı
 
 - **Lead CRM** (`/leads`, `/leads/[id]`): Instant Form'daki rıza kutusu artık lead ile birlikte **rıza kaydı** olarak
   saklanır (formda gösterilen metin, tarih ve dayanakla; lead detayında "Rıza kayıtları"). Form yanıtları Meta'dan
@@ -140,6 +162,9 @@ Boş bırakılan alanlar `undefined` sayılır.
 | `META_DISCONNECTED_WEBHOOK_URL` | — | Bağlantı koptuğunda bilgilendirilecek dış URL |
 | `WHATSAPP_API_URL`, `WHATSAPP_TOKEN`, `WHATSAPP_GREETING_TEMPLATE` | WhatsApp | Cloud API ve pencere dışı şablon |
 | `ANTHROPIC_API_KEY`, `LLM_MODEL` | AI | LLM sağlayıcı anahtarı ve model kimliği (varsayılan model yok) |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID` | Sesli arama | ElevenLabs anahtarı, ajan ve numara kimliği; üçü de yoksa sesli arama kapalı (ADR-0026) |
+| `ELEVENLABS_WEBHOOK_SECRET` | Sesli arama | Arama sonu webhook'unun HMAC gizli anahtarı; yoksa webhook 401 döner |
+| `ELEVENLABS_TELEPHONY`, `ELEVENLABS_API_BASE` | — | `twilio` (varsayılan) ya da `sip_trunk`; API kökü (varsayılan `https://api.elevenlabs.io`) |
 | `API_URL`, `API_TOKEN` | apps/api | REST adresi ve Bearer belirteci (belirteç yoksa yalnızca mock modda açık) |
 | `PORT`, `API_HOST` | — | apps/api dinleme adresi (varsayılan 127.0.0.1:3001; EnvSchema dışında) |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Faturalandırma | Stripe gizli anahtarı ve webhook imza gizli anahtarı |
@@ -155,6 +180,8 @@ Boş bırakılan alanlar `undefined` sayılır.
 - `docs/spec.md` — ürün spesifikasyonu (zorunlu bağlam)
 - `docs/ad-studio.md` — stüdyo, onay akışı, API tablosu, doğrulama
 - `docs/meta-constraints.md` — Meta API kısıtları ve tarihli bulgular
-- `docs/decisions/` — ADR'ler (0001 Fastify, 0002 onay kapılı executor, 0003 masaüstü, 0009 kreatif dilleri, 0010 haftalık rapor, 0011 para birimleri, 0012 Stripe akışı, 0013 LLM katmanı, 0014 tam PAUSED yayın + harcama yetkisi)
-- `desktop/README.md` — masaüstü kabuğu kurulum/paketleme
+- `docs/elevenlabs-constraints.md` — ElevenLabs Agents kısıtları, şartlar ve tarihli bulgular
+- `docs/decisions/` — ADR'ler (0001 Fastify, 0002 onay kapılı executor, 0003 masaüstü, 0009 kreatif dilleri, 0010 haftalık rapor, 0011 para birimleri, 0012 Stripe akışı, 0013 LLM katmanı, 0014 tam PAUSED yayın + harcama yetkisi, 0025 Windows/iOS ince istemci, 0026 sesli arama,
+  0027 asistana üslup örnekleri, 0029 lead takımı)
+- `desktop/README.md` — Windows/iOS kabuğu kurulum, paketleme ve iOS adımları
 - `docs/remaining-work.md` — kalan işler ve bilinen riskler

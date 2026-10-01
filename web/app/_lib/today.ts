@@ -145,7 +145,7 @@ export async function todayQueue(actor: Actor): Promise<{ items: QueueItem[]; to
     const scoped = scopePendingApprovals(all, actor, { canApproveSpend });
     let approvalRows = 0;
     const canAct = (kind: string) => (kind === "ACTIVATION" ? canApproveSpend : isManager(role));
-    for (const kind of ["ACTIVATION", "CAMPAIGN", "CONTENT", "RECOMMENDATION"] as const) {
+    for (const kind of ["ACTIVATION", "CAMPAIGN", "CONTENT", "RECOMMENDATION", "LEAD_PROPOSAL"] as const) {
       for (const item of scoped.items[kind]) {
         if (!canAct(kind)) continue; // Reklam uzmanının kendi gönderdikleri onun işi değil; Onaylar'da izlenir.
         if (++approvalRows > 10) {

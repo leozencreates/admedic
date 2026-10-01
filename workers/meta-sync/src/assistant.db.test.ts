@@ -223,4 +223,67 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("assistant worker (DB)", () 
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: fresh.id } })).status).toBe("ESCALATED");
     await prisma.organization.deleteMany({ where: { id: org.id } });
   });
+
+  it("ayar açıkken randevuya dönüşen Instagram konuşmasındaki ekip yanıtları isteme örnek olarak girer (ADR-0027)", async () => {
+    const org = await prisma.organization.create({
+      data: { name: "Examples fixture", slug: `assist-examples-${suffix}`, workspaces: { create: { name: "W", slug: "w" } } },
+      include: { workspaces: true },
+    });
+    const ws = org.workspaces[0]!.id;
+    const staff = await prisma.user.create({ data: { email: `staff-${suffix}@example.test`, name: "Koordinatör" } });
+    const lead = (status: "NEW" | "CONSULTATION_BOOKED" | "LOST", firstName: string, language = "de") =>
+      prisma.lead.create({
+        data: { workspaceId: ws, organizationId: org.id, firstName, lastName: "Beispiel", language, channel: "INSTAGRAM", status, metadata: { psid: `ps_${firstName}` } },
+      });
+    async function instagram(leadId: string, messages: Array<[direction: "INCOMING" | "OUTGOING", sender: string, content: string]>) {
+      const c = await prisma.conversation.create({ data: { leadId, workspaceId: ws, channel: "INSTAGRAM", status: "CLOSED", firstResponseAt: past } });
+      let offset = 0;
+      for (const [direction, sender, content] of messages)
+        await prisma.message.create({
+          data: { conversationId: c.id, direction, channel: "INSTAGRAM", content, sender, createdAt: new Date(past.getTime() - 3_600_000 + offset++ * 1000) },
+        });
+    }
+    // Dönüşen konuşma: hastanın yazdığı ve asistanın yanıtı örnek olmaz; yalnızca insan ekip yanıtları.
+    await instagram((await lead("CONSULTATION_BOOKED", "Hildegard")).id, [
+      ["INCOMING", "external", "Ich hatte schon zwei Operationen und nehme Blutverdünner."],
+      ["OUTGOING", "ai", "Automatische Antwort des Assistenten."],
+      ["OUTGOING", staff.id, "Guten Tag Hildegard, vielen Dank für Ihre Nachricht! Erreichbar unter +49 151 1234567."],
+      ["OUTGOING", "system", "Koordinatör devraldı."],
+      ["OUTGOING", staff.id, "Unsere Koordinatorin meldet sich morgen bei Ihnen."],
+    ]);
+    // Dönüşmeyen ve başka dildeki konuşmalar örnek olmaz.
+    await instagram((await lead("LOST", "Verloren")).id, [["OUTGOING", staff.id, "Antwort an verlorenen Lead."]]);
+    await instagram((await lead("CONSULTATION_BOOKED", "Turkish", "tr")).id, [["OUTGOING", staff.id, "Türkçe ekip yanıtı."]]);
+
+    const current = await lead("NEW", "Aktuell");
+    const active = await prisma.conversation.create({
+      data: { leadId: current.id, workspaceId: ws, channel: "INSTAGRAM", status: "ACTIVE", firstResponseAt: past, initiatedBy: "bot" },
+    });
+    const inbound = (content: string) =>
+      prisma.message.create({ data: { conversationId: active.id, direction: "INCOMING", channel: "INSTAGRAM", content, sender: "external" } });
+    await inbound("Hallo, ich interessiere mich für eine Behandlung.");
+    const messenger = vi.fn(async () => ({ id: "mid.mock", error: null }));
+    const run = async () => {
+      const transport = vi.fn<typeof fetch>().mockResolvedValue(llmResponse("Gerne helfe ich Ihnen weiter."));
+      expect(await runAssistant({ llm, transport, senders: { messenger }, workspaceId: ws })).toMatchObject({ replied: 1, failed: 0 });
+      return JSON.parse(String(transport.mock.calls[0]![1]?.body)).system as string;
+    };
+
+    // Ayar kapalı (varsayılan): örnek yok, sürüm değişmez.
+    expect(await run()).not.toContain("Style examples");
+    expect(await prisma.llmCallLog.count({ where: { workspaceId: ws, promptVersion: "lead-assistant-v1" } })).toBe(1);
+
+    await prisma.organization.update({ where: { id: org.id }, data: { assistantExamplesEnabled: true } });
+    await inbound("Wie geht es weiter?");
+    const system = await run();
+    expect(system).toContain("Style examples");
+    expect(system).toContain("- Guten Tag [ad], vielen Dank für Ihre Nachricht! Erreichbar unter [telefon].");
+    expect(system).toContain("- Unsere Koordinatorin meldet sich morgen bei Ihnen.");
+    for (const leaked of ["Hildegard", "Blutverdünner", "Operationen", "1234567", "Automatische Antwort", "devraldı", "verlorenen", "Türkçe"])
+      expect(system).not.toContain(leaked);
+    expect(await prisma.llmCallLog.count({ where: { workspaceId: ws, promptVersion: "lead-assistant-v1-ex1" } })).toBe(1);
+
+    await prisma.organization.deleteMany({ where: { id: org.id } });
+    await prisma.user.deleteMany({ where: { id: staff.id } });
+  });
 });

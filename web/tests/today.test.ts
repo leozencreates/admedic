@@ -7,12 +7,13 @@ const item = (kind: PendingApprovalItem["kind"], id: string, submittedById: stri
   waitingSince: new Date(0), createdAt: new Date(0), updatedAt: new Date(0), actors: "", href: "/", submittedById,
 });
 const data: PendingApprovals = {
-  counts: { total: 6, byKind: { CONTENT: 2, CAMPAIGN: 1, ACTIVATION: 2, RECOMMENDATION: 1 } },
+  counts: { total: 7, byKind: { CONTENT: 2, CAMPAIGN: 1, ACTIVATION: 2, RECOMMENDATION: 1, LEAD_PROPOSAL: 1 } },
   items: {
     CONTENT: [item("CONTENT", "c-me", "me"), item("CONTENT", "c-other", "other")],
     CAMPAIGN: [item("CAMPAIGN", "k-other", "other")],
     ACTIVATION: [item("ACTIVATION", "a-me", "me"), item("ACTIVATION", "a-other", "other")],
     RECOMMENDATION: [item("RECOMMENDATION", "r", null)],
+    LEAD_PROPOSAL: [item("LEAD_PROPOSAL", "l-me", "me")],
   },
 };
 
@@ -27,6 +28,8 @@ describe("Onaylar kapsamı (ADR-0018)", () => {
     expect(scoped.items.CAMPAIGN).toEqual([]);
     expect(scoped.items.ACTIVATION.map((i) => i.id)).toEqual(["a-me"]);
     expect(scoped.items.RECOMMENDATION).toEqual([]);
+    // Lead takımı önerisini yalnızca hesap sahibi ve yönetici onaylar; takımı kendisi çalıştırmış olsa da kutusuna düşmez.
+    expect(scoped.items.LEAD_PROPOSAL).toEqual([]);
     expect(scoped.counts.total).toBe(2);
   });
   it("harcama yetkisi olan reklam uzmanı tüm etkinleştirmeleri görür", () => {

@@ -24,6 +24,13 @@ export {
   creativeSystemPrompt,
 };
 export { leadAssistantSystemPrompt } from "../prompts/lead-assistant-v1";
+export {
+  LEAD_TEAM_PROMPT_VERSION,
+  LEAD_TEAM_RULES,
+  directorSystemPrompt,
+  specialistSystemPrompt,
+  teamLeadSystemPrompt,
+} from "../prompts/lead-team-v1";
 
 /** Klinik profili (spec 3.2): üretim bağlamı — sunucu tarafında DB'den zenginleştirilir. */
 export const BriefProfileSchema = z

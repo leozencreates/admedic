@@ -221,6 +221,10 @@ model Organization {
   privacyNoticeText String? // KVKK aydınlatma metni (md. 10); açık rıza metninden ayrı tutulur (ADR-0016)
   privacyPolicyUrl String? // Instant Form gizlilik politikası bağlantısı (Meta lead formu için zorunlu; spec 3.11)
   reportRecipient String? // haftalık rapor alıcısı (tenant bazlı; boşsa WEEKLY_REPORT_RECIPIENT)
+  /// Sesli ajan müsait lead'leri kendiliğinden arar (ADR-0026); yalnızca hesap sahibi açar. Kapalıyken yalnızca elle arama.
+  voiceAutoCallEnabled Boolean @default(false)
+  /// Randevuya dönüşen Instagram konuşmalarındaki ekip yanıtları asistana örnek olarak verilir (ADR-0027).
+  assistantExamplesEnabled Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -332,6 +336,9 @@ model Workspace {
     leads               Lead[]
     conversations       Conversation[]
     consentRecords      ConsentRecord[]
+    voiceCalls          VoiceCall[]
+    leadTeamRuns        LeadTeamRun[]
+    leadTeamProposals   LeadTeamProposal[]
 
    @@unique([orgId, slug])
   @@index([orgId])
@@ -1067,6 +1074,23 @@ enum ConsentType {
   MARKETING
   DATA_PROCESSING
   HEALTH_QUESTIONNAIRE
+  /// Yapay zekâ destekli sesli asistanla telefonla aranma rızası (ADR-0026).
+  PHONE_CALL
+}
+
+enum VoiceCallStatus {
+  QUEUED
+  INITIATED
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  VOICEMAIL
+  FAILED
+}
+
+enum VoiceCallTrigger {
+  MANUAL
+  AUTO
 }
 
 model Lead {
@@ -1103,6 +1127,7 @@ model Lead {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations Conversation[]
   consentRecords ConsentRecord[]
+  voiceCalls    VoiceCall[]
 
   @@unique([organizationId, phone, email])
   @@unique([organizationId, lookupHash])
@@ -1173,6 +1198,130 @@ model ConsentRecord {
 
   @@index([leadId])
   @@index([workspaceId, type])
+}
+
+enum LeadTeamRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum LeadTeamProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Lead takımı çalıştırması (ADR-0029): 50 ajanlık hiyerarşi (uzmanlar → takım liderleri → direktör) bir kez çalışır.
+/// Ajanlar Meta'ya yazmaz ve harcama yapmaz; çıktıları öneridir.
+model LeadTeamRun {
+  id             String            @id @default(cuid())
+  workspaceId    String
+  organizationId String
+  requestedById  String?
+  status         LeadTeamRunStatus @default(RUNNING)
+  /// true: yapay zekâ çağrılmadı, deneme çıktısı üretildi (deneme modu ve LLM ayarsız).
+  simulated      Boolean           @default(false)
+  agentsTotal    Int
+  agentsCompleted Int              @default(0)
+  agentsFailed   Int               @default(0)
+  /// Direktörün nihai karar özeti.
+  summary        String?
+  error          String?
+  inputTokens    Int               @default(0)
+  outputTokens   Int               @default(0)
+  startedAt      DateTime          @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime          @default(now())
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reports   LeadTeamReport[]
+  proposals LeadTeamProposal[]
+
+  @@index([workspaceId, createdAt])
+}
+
+/// Bir ajanın çalıştırmadaki raporu (yapılandırılmış JSON çıktı; kişisel veri içermez).
+model LeadTeamReport {
+  id        String   @id @default(cuid())
+  runId     String
+  /// Roster anahtarı (ör. "director", "lead:market", "market:germany").
+  agentKey  String
+  /// DIRECTOR | LEAD | SPECIALIST
+  role      String
+  team      String?
+  /// COMPLETED | FAILED
+  status    String
+  output    Json?
+  createdAt DateTime @default(now())
+
+  run LeadTeamRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, agentKey])
+}
+
+/// Direktörün nihai önerisi. İnsan onaylar ya da reddeder; onay hiçbir şeyi yayına almaz ve harcama başlatmaz.
+model LeadTeamProposal {
+  id               String                 @id @default(cuid())
+  runId            String
+  workspaceId      String
+  rank             Int
+  title            String
+  market           String?
+  language         String?
+  service          String?
+  angle            String
+  /// Önerilen günlük bütçe (minor unit); öneridir, kampanya bütçesi değildir.
+  dailyBudgetCents Int?
+  currency         String
+  priority         String                 @default("MEDIUM")
+  rationale        String
+  status           LeadTeamProposalStatus @default(PENDING)
+  decidedById      String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  run       LeadTeamRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([runId])
+}
+
+/// Sesli ajanla (ElevenLabs) yapılan giden arama (ADR-0026). Telefon numarası burada tutulmaz (lead'de şifreli);
+/// arama özeti sağlık bilgisi içerebileceği için şifreli saklanır.
+model VoiceCall {
+  id             String           @id @default(cuid())
+  leadId         String
+  workspaceId    String
+  organizationId String
+  trigger        VoiceCallTrigger
+  /// Elle başlatan kullanıcı; otomatik aramada null.
+  requestedById  String?
+  status         VoiceCallStatus  @default(QUEUED)
+  /// Sağlayıcının konuşma kimliği — arama sonu webhook'u için idempotent anahtar.
+  conversationId String?          @unique
+  /// Twilio `callSid` ya da SIP `sip_call_id`.
+  providerCallId String?
+  failureReason  String?
+  /// Sağlayıcının değerlendirmesi: success | failure | unknown.
+  outcome        String?
+  /// Arama özeti (alan şifrelemesiyle).
+  summary        String?
+  durationSecs   Int?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+  @@index([workspaceId, status])
+  @@index([organizationId, createdAt])
 }
 
 /// Admedic'in Meta'da oluşturduğu Instant Form (lead formu). Formda gösterilen rıza metninin değişmez kopyası

@@ -10,6 +10,7 @@ import { StageBar } from "../../_components/stage-bar";
 import { leadStage } from "../../_lib/stages";
 import { ConfirmDialog, Dialog } from "../../_components/dialog";
 import { toLead, type ApiLead } from "../../_components/lead-table";
+import { CallPanel } from "./call-panel";
 import { formatDate } from "../../_lib/format";
 import {
   LOST_REASONS,
@@ -709,6 +710,8 @@ export default function LeadDetailPage() {
               </div>
             )}
           </section>
+
+          <CallPanel leadId={id} onConsentChanged={() => void load()} />
         </aside>
       </div>
 

@@ -10,6 +10,7 @@
 import { prisma } from "@admedic/database";
 import { getAppAccessToken, getTokenDebug, createMetaClient, MetaGraphError } from "@admedic/meta-api";
 import { getLlmConfig, loadEnv } from "@admedic/config";
+import { missingVoiceConfig } from "@admedic/voice";
 import { decrypt } from "./encrypt";
 import { requiredScopesMissing, scopeLabel } from "./meta-scopes";
 import { readPageSubscription } from "./meta-connection";
@@ -81,6 +82,26 @@ export async function configChecks(): Promise<Check[]> {
       ? ok("llm", "Yapay zekâ", "Anahtar ve model ayarlı; asistan ve metin üretimi çalışır.")
       : warn("llm", "Yapay zekâ", "ANTHROPIC_API_KEY ve LLM_MODEL ayarlı değil: asistan kısa hazır metinle karşılar, metin üretimi kapalı."),
   );
+  // Sesli arama isteğe bağlıdır: yapılandırılmadıysa uyarı, yarım yapılandırıldıysa engel (ADR-0026).
+  const voiceMissing = missingVoiceConfig(env);
+  if (voiceMissing.length === 3 && !env.ELEVENLABS_WEBHOOK_SECRET)
+    checks.push(warn("voice", "Sesli arama", "ElevenLabs ayarlı değil: sesli asistan araması kapalı. Kullanmayacaksanız işlem gerekmez."));
+  else if (voiceMissing.length > 0 || !env.ELEVENLABS_WEBHOOK_SECRET)
+    checks.push(
+      fail(
+        "voice",
+        "Sesli arama",
+        `Eksik: ${[...voiceMissing, ...(env.ELEVENLABS_WEBHOOK_SECRET ? [] : ["ELEVENLABS_WEBHOOK_SECRET"])].join(", ")}. Arama sonucu webhook'u imzasız kabul edilmez.`,
+      ),
+    );
+  else
+    checks.push(
+      ok(
+        "voice",
+        "Sesli arama",
+        "Anahtar, ajan, numara ve webhook gizli anahtarı ayarlı. ElevenLabs ile sağlık verisi için yazılı anlaşma ve ajan ayarları (docs/runbook.md) ayrıca gerekir.",
+      ),
+    );
   const backlog = await deliveryBacklog();
   checks.push(
     backlog.failed > 0

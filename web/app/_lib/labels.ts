@@ -350,6 +350,7 @@ const CONSENT_TYPE_LABEL: Record<string, string> = {
   MARKETING: "Pazarlama iletişimi ve dönüşüm ölçümü",
   DATA_PROCESSING: "Talebe yanıt için veri işleme",
   HEALTH_QUESTIONNAIRE: "Sağlık formu",
+  PHONE_CALL: "Sesli asistanla telefonla aranma",
 };
 export const consentTypeLabel = (key: string | null | undefined) => label(CONSENT_TYPE_LABEL, key);
 

@@ -4,6 +4,8 @@
  * - Kampanya onayı: kampanya IN_REVIEW → planlayıcıda Hesap sahibi veya Yönetici onaylar.
  * - Etkinleştirme: Meta'ya kapalı yüklenmiş kampanya (PUBLISHED_PAUSED) → harcama yetkisi olanlar etkinleştirir.
  * - Bütçe önerisi: öneri PENDING → Öneriler sayfasında Hesap sahibi veya Yönetici onaylar.
+ * - Lead takımı önerisi: direktörün önerisi PENDING → Hesap sahibi veya Yönetici onaylar (ADR-0029). Onay kampanya
+ *   oluşturmaz; yalnızca önerinin uygulanmaya değer bulunduğunu kaydeder.
  * Yetki metinleri API kurallarıyla aynıdır (`studio-service.changeDraft`, `api/campaigns/[id]/approve`,
  * `campaign-publish.activateCampaign` + `spend-authority`, `api/recommendations/[id]/approve`).
  *
@@ -21,7 +23,10 @@ import { policyRiskStyle, priorityLabel, roleLabel } from "./labels";
 import { RECOMMENDATION_KIND_LABEL, recommendationKind } from "./recommendation-kinds";
 import { RECOMMENDATIONS_HREF, campaignHref, studioDraftHref } from "./record-refs";
 
-export const PENDING_APPROVAL_KINDS = ["CONTENT", "CAMPAIGN", "ACTIVATION", "RECOMMENDATION"] as const;
+/** Lead takımı önerilerinin kararının verildiği sayfa. */
+export const LEAD_TEAM_HREF = "/lead-team";
+
+export const PENDING_APPROVAL_KINDS = ["CONTENT", "CAMPAIGN", "ACTIVATION", "RECOMMENDATION", "LEAD_PROPOSAL"] as const;
 export type PendingApprovalKind = (typeof PENDING_APPROVAL_KINDS)[number];
 
 /** Onaylar sayfasındaki bölüm adı ve Genel Bakış kırılımındaki kısa ad. */
@@ -30,6 +35,7 @@ export const PENDING_APPROVAL_LABEL: Record<PendingApprovalKind, { section: stri
   CAMPAIGN: { section: "Kampanya onayı", short: "Kampanya" },
   ACTIVATION: { section: "Etkinleştirme", short: "Etkinleştirme" },
   RECOMMENDATION: { section: "Bütçe önerisi", short: "Öneri" },
+  LEAD_PROPOSAL: { section: "Lead takımı önerisi", short: "Lead önerisi" },
 };
 
 /** İçerik, kampanya ve öneri onayı: yalnızca OWNER/ADMIN. */
@@ -93,18 +99,20 @@ const where = {
   campaign: (workspaceId: string) => ({ workspaceId, workflowStatus: "IN_REVIEW" as const }),
   activation: (workspaceId: string) => ({ workspaceId, workflowStatus: "PUBLISHED_PAUSED" as const }),
   recommendation: (workspaceId: string) => ({ workspaceId, status: "PENDING" as const }),
+  leadProposal: (workspaceId: string) => ({ workspaceId, status: "PENDING" as const }),
 };
 
 export async function countPendingApprovals(workspaceId: string): Promise<PendingApprovalCounts> {
-  const [content, campaign, activation, recommendation] = await Promise.all([
+  const [content, campaign, activation, recommendation, leadProposal] = await Promise.all([
     prisma.studioDraft.count({ where: where.content(workspaceId) }),
     prisma.campaign.count({ where: where.campaign(workspaceId) }),
     prisma.campaign.count({ where: where.activation(workspaceId) }),
     prisma.recommendation.count({ where: where.recommendation(workspaceId) }),
+    prisma.leadTeamProposal.count({ where: where.leadProposal(workspaceId) }),
   ]);
   return {
-    total: content + campaign + activation + recommendation,
-    byKind: { CONTENT: content, CAMPAIGN: campaign, ACTIVATION: activation, RECOMMENDATION: recommendation },
+    total: content + campaign + activation + recommendation + leadProposal,
+    byKind: { CONTENT: content, CAMPAIGN: campaign, ACTIVATION: activation, RECOMMENDATION: recommendation, LEAD_PROPOSAL: leadProposal },
   };
 }
 
@@ -221,7 +229,7 @@ export async function listPendingApprovals(
     updatedAt: true,
     adAccount: { select: { currency: true } },
   } as const;
-  const [counts, drafts, reviewCampaigns, pausedCampaigns, recommendations] = await Promise.all([
+  const [counts, drafts, reviewCampaigns, pausedCampaigns, recommendations, leadProposals] = await Promise.all([
     countPendingApprovals(workspaceId),
     prisma.studioDraft.findMany({
       where: where.content(workspaceId),
@@ -246,6 +254,19 @@ export async function listPendingApprovals(
         updatedAt: true,
       },
     }),
+    prisma.leadTeamProposal.findMany({
+      where: where.leadProposal(workspaceId),
+      orderBy: { createdAt: "asc" },
+      take,
+      select: {
+        id: true,
+        title: true,
+        priority: true,
+        createdAt: true,
+        updatedAt: true,
+        run: { select: { requestedById: true } },
+      },
+    }),
   ]);
 
   const audits = await latestAudits(workspaceId, {
@@ -259,6 +280,7 @@ export async function listPendingApprovals(
     ...[...audits.byEntity.values()].map((a) => a.userId),
     ...[...audits.recSubmitted.values()].map((a) => a.userId),
     ...[...audits.recGenerated.values()].map((a) => a.userId),
+    ...leadProposals.map((p) => p.run.requestedById),
   ]);
   const nameOf = (hit: AuditHit | undefined) => (hit?.userId ? (names.get(hit.userId) ?? null) : null);
 
@@ -351,6 +373,21 @@ export async function listPendingApprovals(
     };
   });
 
+  const leadProposal = leadProposals.map((p): PendingApprovalItem => ({
+    kind: "LEAD_PROPOSAL",
+    id: p.id,
+    title: p.title,
+    detail: joinDetail(["Direktörün önerisi", priorityLabel(p.priority)]),
+    submittedBy: p.run.requestedById ? (names.get(p.run.requestedById) ?? null) : null,
+    submittedByLabel: "Takımı çalıştıran",
+    waitingSince: p.createdAt,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    actors: APPROVER_LABEL,
+    href: LEAD_TEAM_HREF,
+    submittedById: p.run.requestedById,
+  }));
+
   return {
     counts,
     items: {
@@ -358,6 +395,7 @@ export async function listPendingApprovals(
       CAMPAIGN: campaign.sort(byWaiting),
       ACTIVATION: activation.sort(byWaiting),
       RECOMMENDATION: recommendation.sort(byWaiting),
+      LEAD_PROPOSAL: leadProposal.sort(byWaiting),
     },
   };
 }
@@ -379,12 +417,14 @@ export function scopePendingApprovals(
     CAMPAIGN: data.items.CAMPAIGN.filter(mine),
     ACTIVATION: options.canApproveSpend ? data.items.ACTIVATION : data.items.ACTIVATION.filter(mine),
     RECOMMENDATION: [],
+    LEAD_PROPOSAL: [],
   };
   const byKind = {
     CONTENT: items.CONTENT.length,
     CAMPAIGN: items.CAMPAIGN.length,
     ACTIVATION: items.ACTIVATION.length,
     RECOMMENDATION: 0,
+    LEAD_PROPOSAL: 0,
   };
   return { counts: { total: Object.values(byKind).reduce((a, b) => a + b, 0), byKind }, items };
 }

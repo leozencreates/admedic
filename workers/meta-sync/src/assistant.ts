@@ -1,4 +1,4 @@
-import { prisma, AlertSeverity, AlertType, Prisma } from "@admedic/database";
+import { prisma, AlertSeverity, AlertType, loadTeamReplyExamples, Prisma } from "@admedic/database";
 import { getLlmConfig, tryDecryptField, type LlmConfig } from "@admedic/config";
 import {
   appSecretProof,
@@ -9,13 +9,14 @@ import {
 } from "@admedic/meta-api";
 import {
   ASSISTANT_HISTORY_LIMIT,
-  LEAD_ASSISTANT_PROMPT_VERSION,
   buildAssistantReply,
   callWithLog,
   detectHandoff,
   handoffNotice,
   leadAlias,
+  leadAssistantPromptVersion,
   normalizeLanguageCode,
+  toStyleExamples,
   type AssistantHistoryItem,
   type HandoffReason,
   type LlmLogSink,
@@ -326,7 +327,7 @@ async function handleConversation(
     return "escalated";
   }
   if (!llm) return "skipped";
-  const [clinic, org, alias] = await Promise.all([
+  const [clinic, org, alias, styleExamples] = await Promise.all([
     prisma.clinicProfile.findFirst({
       where: { workspaceId: conversation.workspaceId, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
@@ -342,14 +343,24 @@ async function handleConversation(
       select: { consentText: true },
     }),
     leadAlias(conversation.lead.organizationId, conversation.lead.id),
+    // Üslup örnekleri (ADR-0027): kuruluş ayarı kapalıysa boş döner.
+    loadTeamReplyExamples(prisma, {
+      workspaceId: conversation.workspaceId,
+      language: conversation.lead.language,
+      excludeLeadId: conversation.lead.id,
+    })
+      .then(toStyleExamples)
+      // Örnekler isteğe bağlı zenginleştirmedir; okunamazsa yanıt örneksiz üretilir.
+      .catch(() => [] as string[][]),
   ]);
   const firstBotMessage = !conversation.messages.some((m) => m.direction === "OUTGOING" && isBotSender(m.sender));
+  const promptVersion = leadAssistantPromptVersion({ styleExamples });
   let text: string;
   try {
     const reply = await callWithLog({
       workspaceId: conversation.workspaceId,
       agent: "lead-assistant",
-      promptVersion: LEAD_ASSISTANT_PROMPT_VERSION,
+      promptVersion,
       model: llm.model,
       sink: llmLogSink,
       run: () =>
@@ -369,6 +380,7 @@ async function handleConversation(
               : null,
             consentText: org?.consentText ?? null,
             firstBotMessage,
+            styleExamples,
           },
           llm,
           options.transport,
@@ -379,7 +391,7 @@ async function handleConversation(
     await recordFailure(conversation, inbound);
     return "failed";
   }
-  const metadata = { autoReply: true, promptVersion: LEAD_ASSISTANT_PROMPT_VERSION, pendingSend: true };
+  const metadata = { autoReply: true, promptVersion, pendingSend: true };
   const messageId = await claimReply(conversation, inbound.id, text, metadata, null);
   if (!messageId) return "skipped";
   await finalizeOutgoing(messageId, metadata, await deliver(conversation, text, options));

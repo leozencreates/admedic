@@ -10,17 +10,21 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "user:create": "tsx scripts/create-user.ts",
-    "retention:run": "tsx scripts/anon-retention.ts"
+    "retention:run": "tsx scripts/anon-retention.ts",
+    "assistant:sync-agent": "tsx scripts/elevenlabs-sync-agent.ts"
   },
   "dependencies": {
     "@admedic/config": "workspace:*",
     "@admedic/database": "workspace:*",
+    "@admedic/lead-team": "workspace:*",
     "@admedic/llm": "workspace:*",
     "@admedic/meta-api": "workspace:*",
     "@admedic/policy": "workspace:*",
     "@admedic/recommendation": "workspace:*",
     "@admedic/reporting": "workspace:*",
     "@admedic/shared": "workspace:*",
+    "@admedic/voice": "workspace:*",
+    "@elevenlabs/react": "1.16.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@fontsource/ibm-plex-sans-arabic": "5.3.0",
     "lucide-react": "1.48.0",

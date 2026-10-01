@@ -9,7 +9,7 @@ import { ConfirmDialog, Dialog } from "../_components/dialog";
 import { IntroPanel } from "../_components/ui";
 import { StageBar } from "../_components/stage-bar";
 
-export type InboxKind = "CONTENT" | "CAMPAIGN" | "ACTIVATION" | "RECOMMENDATION";
+export type InboxKind = "CONTENT" | "CAMPAIGN" | "ACTIVATION" | "RECOMMENDATION" | "LEAD_PROPOSAL";
 
 export interface InboxItem {
   kind: InboxKind;
@@ -42,8 +42,9 @@ const KIND_LABEL: Record<InboxKind, { tab: string; row: string }> = {
   CAMPAIGN: { tab: "Kampanya", row: "Kampanya onayı" },
   ACTIVATION: { tab: "Etkinleştirme", row: "Etkinleştirme" },
   RECOMMENDATION: { tab: "Öneri", row: "Bütçe önerisi" },
+  LEAD_PROPOSAL: { tab: "Lead önerisi", row: "Lead takımı önerisi" },
 };
-const KINDS: InboxKind[] = ["CONTENT", "CAMPAIGN", "ACTIVATION", "RECOMMENDATION"];
+const KINDS: InboxKind[] = ["CONTENT", "CAMPAIGN", "ACTIVATION", "RECOMMENDATION", "LEAD_PROPOSAL"];
 
 type Pending =
   | { type: "reject"; item: InboxItem }
@@ -82,7 +83,7 @@ export function ApprovalsInbox({
   const [reason, setReason] = useState("");
 
   const counts = useMemo(() => {
-    const c: Record<InboxKind, number> = { CONTENT: 0, CAMPAIGN: 0, ACTIVATION: 0, RECOMMENDATION: 0 };
+    const c: Record<InboxKind, number> = { CONTENT: 0, CAMPAIGN: 0, ACTIVATION: 0, RECOMMENDATION: 0, LEAD_PROPOSAL: 0 };
     for (const item of items) c[item.kind] += 1;
     return c;
   }, [items]);
@@ -117,6 +118,13 @@ export function ApprovalsInbox({
       return run(item, () => api(`/api/campaigns/${item.id}/approve`, "POST"), `${name} kampanyası onaylandı; Meta'ya yüklenmeye hazır.`);
     if (item.kind === "RECOMMENDATION")
       return run(item, () => api(`/api/recommendations/${item.id}/approve`, "POST"), `${name} önerisi onaylandı; Öneriler sayfasından uygulanabilir.`);
+    // Lead takımı önerisi (ADR-0029): onay kampanya oluşturmaz; ret gerekçesi Lead takımı sayfasında yazılır.
+    if (item.kind === "LEAD_PROPOSAL")
+      return run(
+        item,
+        () => api(`/api/lead-team/proposals/${item.id}`, "POST", { decision: "APPROVE" }),
+        `${name} önerisi onaylandı. Kampanyayı Yeni kampanya sayfasından kurabilirsiniz.`,
+      );
   }
 
   function openDialog(next: Pending) {
@@ -187,7 +195,7 @@ export function ApprovalsInbox({
         <button type="button" className="primary-button" disabled={busy} aria-describedby={nameRef} onClick={() => void approve(item)}>
           {busy ? "Onaylanıyor…" : "Onayla"}
         </button>
-        {item.kind === "RECOMMENDATION" ? (
+        {item.kind === "LEAD_PROPOSAL" ? null : item.kind === "RECOMMENDATION" ? (
           <button type="button" className="secondary-button" disabled={busy} aria-describedby={nameRef} onClick={() => openDialog({ type: "dismiss", item })}>
             Yok say
           </button>

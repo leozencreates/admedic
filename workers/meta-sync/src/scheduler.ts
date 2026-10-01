@@ -14,6 +14,7 @@ import { AlertSeverity, AlertType } from "@admedic/database";
 import { detectAnomalies, type DailyCampaignRow } from "./anomalies";
 import { toMinorUnits } from "./money";
 import { runAssistant } from "./assistant";
+import { createVoiceClient, reapStaleCalls, runAutoCalls } from "@admedic/voice";
 
 /** Meta token yenileme eşiği: Süresi bu pencerenin altına inen bağlantılar yenilenir. */
 const META_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -164,6 +165,17 @@ async function runScheduled(meta: MetaClientLike) {
     await runAssistant();
   } catch (err) {
     logger.warn(`[meta-sync] asistan turu tamamlanamadı: ${errorSummary(err)}`);
+  }
+  // Sesli arama turu (ADR-0026): sonucu gelmeyen aramalar kapatılır; ayarı açık kuruluşlarda müsait lead'ler aranır.
+  try {
+    const reaped = await reapStaleCalls(prisma);
+    const voice = createVoiceClient();
+    // Yapılandırma yokken tur atlanır (deneme modunda sahte arama kaydı oluşur).
+    const calls = voice.missingConfig.length === 0 ? await runAutoCalls(prisma, voice) : null;
+    if (reaped > 0 || (calls && calls.started + calls.failed > 0))
+      logger.info({ reaped, ...(calls ?? {}) }, "sesli arama turu");
+  } catch (err) {
+    logger.warn(`[meta-sync] sesli arama turu tamamlanamadı: ${errorSummary(err)}`);
   }
   return { insightsSynced, alertsCreated, webhooksDelivered, completed, emailsSent };
 }

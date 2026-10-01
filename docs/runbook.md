@@ -1,4 +1,4 @@
-# Sunucu kurulumu ve işletim kılavuzu
+﻿# Sunucu kurulumu ve işletim kılavuzu
 
 - İlgili karar: ADR-0023 (sunucu merkezli mimari, Türkiye'de barındırma)
 - Hedef: tek Linux sunucu (Ubuntu 24.04 LTS önerilir), Docker ve Docker Compose eklentisi
@@ -54,6 +54,106 @@ Meta Uygulama Panelinde (developers.facebook.com → uygulamanız):
   - Abonelikler: Sayfa → `leadgen`, `messages`; Instagram → `messages`; WhatsApp Business Account → `messages`.
 - **Uygulama gizli anahtarı:** `META_APP_SECRET`. Webhook imzası ve `appsecret_proof` bununla hesaplanır.
 - Başvuru ve izinler: `docs/app-review.md`.
+
+## Sesli arama (ElevenLabs) — isteğe bağlı
+
+İlgili karar: ADR-0026. Dış kısıtlar: `docs/elevenlabs-constraints.md`. Bu kurulum gerçek hesapla denenmedi; ilk
+kurulumda aşağıdaki "Deneme" adımı atlanmamalıdır.
+
+**Canlı aramadan önce (ürün sahibi):**
+- ElevenLabs ile sağlık verisi için yazılı anlaşma. Şartlara göre sağlık bilgisi, yazılı kabul olmadan yasak veridir;
+  anlaşma yalnızca Enterprise planda verilir.
+- Aydınlatma metni, sesin ve transkriptin yurt dışındaki sağlayıcıda işlenmesini kapsamalı (hukuki inceleme).
+
+**ElevenLabs tarafı:**
+1. **Ajan:** ElevenLabs panelinde bir ajan oluşturun. İstemde `{{lead_first_name}}`, `{{clinic_name}}` ve
+   `{{language}}` kullanılabilir. Ajan tıbbi tavsiye, teşhis ve fiyat vermemeli; bunları koordinatöre bırakmalıdır.
+2. **Geçersiz kılmalar:** Ajanın Security sekmesinde **First message** ve **Language** geçersiz kılmalarını açın.
+   Panel açılış cümlesini (yapay zekâ ve kayıt bildirimi) her aramada kendisi gönderir; bunlar kapalıysa arama
+   başlamaz.
+3. **Diller:** Ajanın ek diller listesine kullanacağınız dilleri ekleyin (Türkçe, İngilizce, Almanca, Arapça vb.).
+4. **Saklama:** Ajan ayarında saklama süresini kısaltın; ses kaydını saklamayacaksanız kapatın.
+5. **Numara:** Twilio numaranızı ya da SIP trunk'ınızı ElevenLabs'e aktarın; numaranın kimliğini (`phone_number_id`)
+   not alın.
+6. **Webhook:** Arama sonu webhook'u oluşturun.
+   - Adres: `https://<alan adı>/api/webhooks/elevenlabs`
+   - Kimlik doğrulama: HMAC. Verilen gizli anahtarı not alın.
+   - Olaylar: yalnızca `transcript` ve `call_initiation_failure`. `audio` olayını **seçmeyin**.
+   - Yeniden denemeyi açın.
+
+**Sunucu tarafı (`deploy/.env`):**
+```
+ELEVENLABS_API_KEY=...
+ELEVENLABS_AGENT_ID=...
+ELEVENLABS_PHONE_NUMBER_ID=...
+ELEVENLABS_WEBHOOK_SECRET=...
+ELEVENLABS_TELEPHONY=twilio        # ya da sip_trunk
+```
+Ardından `docker compose -f docker-compose.prod.yml up -d` (web ve worker yeniden başlar). Güncellemeyle gelen göç
+(`20261001090000_voice_calls_and_assistant_examples`) `migrate` hizmetiyle kendiliğinden uygulanır.
+
+**Denetim:** Panelde Ayarlar → Canlıya geçiş → "Sesli arama" satırı yeşil olmalı.
+
+**Deneme (kendi numaranızla):**
+1. Kendi adınıza bir lead oluşturun; telefonu ülke koduyla yazın (`+90…`).
+2. Lead sayfası → Lead bilgileri → Sesli asistan araması → **Arama rızasını kaydet**.
+3. **Ajan arasın.** Telefonunuz çalmalı; asistan klinik adına aradığını, yapay zekâ olduğunu ve görüşmenin
+   kaydedildiğini söylemeli.
+4. Görüşme bitince arama geçmişinde "Görüşüldü" ve özet görünmeli. Görünmüyorsa webhook teslimi başarısızdır:
+   ElevenLabs tarafındaki teslim sonucuna bakın. Yanıt 401 ise gizli anahtar ya da imza biçimi uyuşmuyor
+   (`docs/elevenlabs-constraints.md` "Webhook imzası"); 5xx ise `docker compose -f docker-compose.prod.yml logs web`.
+
+**Otomatik arama:** Varsayılan kapalıdır. Hesap sahibi Klinik ve marka → Yapay zekâ ayarları'ndan açar. Açıkken işçi
+5 dakikada bir müsait lead'leri arar: yalnızca arama rızası kayıtlı, koordinatörün devralmadığı lead'ler; lead'in
+yerel saatiyle 09:00–20:00; lead başına en fazla 3 deneme; aynı anda 3, günde 50 arama.
+
+| Belirti | Neden / çözüm |
+|---|---|
+| "Sesli arama hizmeti isteği reddetti" | Ajanda First message / Language geçersiz kılmaları kapalı ya da dil ajanın listesinde yok |
+| "Sesli ajan ya da telefon numarası bulunamadı" | `ELEVENLABS_AGENT_ID` ya da `ELEVENLABS_PHONE_NUMBER_ID` yanlış |
+| Arama "Aranıyor"da kalıyor, 2 saat sonra "Başlatılamadı" | Webhook ulaşmıyor: adres, gizli anahtar, güvenlik duvarı (ElevenLabs çıkış IP'leri) |
+| "Numaranın ülkesi için arama saatleri tanımlı değil" | Ülke kodu tabloda yok (`packages/voice/src/eligibility.ts`); eklenmesi kod değişikliğidir |
+
+## Sesli komut asistanı (ElevenLabs) — ajanı oluşturma ve eşitleme
+
+İlgili karar: ADR-0028. Dış kısıtlar: `docs/elevenlabs-constraints.md` (2026-10-01, sesli komut asistanı). Gerçek
+hesapla denenmedi; ilk kurulumda ajan panelden geri okunup denetlenmelidir.
+
+**Bir kez, ElevenLabs panelinde:**
+1. Telefon ajanından **ayrı** yeni bir ajan oluşturun; kimliğini `ELEVENLABS_ASSISTANT_AGENT_ID` olarak yazın.
+2. Security: `enable_auth` açık, izinli host listesi **boş** (ikisi birlikte kullanılmaz). Geçersiz kılmalardan yalnızca
+   `agent.language`, `conversation.text_only` ve (ses seçilecekse) `tts.voice_id` açılır. **Prompt geçersiz kılması
+   açılmaz.**
+3. Ek dillere Türkçe eklenir. Gizlilik: `record_voice` kapalı, saklama süresi açıkça kısa (ZRM yoksa `0`), post-call
+   webhook kapalı.
+
+**Prompt ve araçları eşitleme** (prompt, LLM, dil `tr`, TTS `eleven_flash_v2_5`, istemci araçları):
+
+```bash
+# Önce ağa çıkmadan gönderilecek gövdeleri görün
+pnpm assistant:sync-agent --llm <model> --dry-run
+# Sonra gerçek eşitleme (ELEVENLABS_API_KEY, ELEVENLABS_API_BASE, ELEVENLABS_ASSISTANT_AGENT_ID gerekir)
+pnpm assistant:sync-agent --llm <model>
+```
+
+- `--llm` zorunludur; varsayılan yoktur (ADR-0013 §2, ADR-0028 §7). Model panelde Türkçe komutlarla denenip seçilir
+  ve ADR-0028 §7'ye yazılır. Veri konumu kullanılıyorsa model o bölgede bulunmalıdır.
+- `ELEVENLABS_API_KEY` yoksa ya da `META_MOCK_MODE=true` ise betik kendiliğinden dry-run çalışır. Anahtar hiçbir
+  zaman yazdırılmaz.
+- Araçlar `app/_lib/assistant/registry.ts` kaydından üretilir ve ada göre eşlenir: yoksa oluşturulur, farklıysa
+  güncellenir, aynıysa dokunulmaz; ajana `tool_ids` ile bağlanır. Betik tekrar çalıştırılabilir.
+- Prompt dosyası: `packages/voice/agent/assistant.prompt.tr.md`. Asistanın adı koda yazılmaz; `{{assistant_name}}`
+  ve `{{user_role}}` dinamik değişkenleri tarayıcı oturumundan gelir (panelde test için yer tutucu:
+  `ASSISTANT_NAME`, yoksa `APP_NAME`).
+- **Araç kaydı ya da prompt her değiştiğinde** eşitleme yeniden çalıştırılır. Ad uyuşmazlığında (büyük/küçük harf
+  dahil) ajan aracı çağıramaz.
+
+| Belirti | Neden / çözüm |
+|---|---|
+| "--llm zorunludur" | Model seçilmeden eşitleme yapılmaz; `--llm <model>` verin |
+| "… adlı birden fazla istemci aracı var" | Panelde aynı adda iki araç; fazlasını silip yeniden çalıştırın |
+| "yanıttaki tool_ids/llm beklenenle aynı değil" | Ajanın sürümleme/dal ayarı ya da PATCH davranışı; ajanı panelde açıp araç listesini denetleyin |
+| ElevenLabs 401/403 | Anahtar yanlış ya da `ELEVENLABS_API_BASE` başka bölgeyi gösteriyor (AB hesabı ayrıdır) |
 
 ## Güncelleme
 

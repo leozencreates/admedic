@@ -30,6 +30,7 @@ export { isAdmedicError };
 export * from "@prisma/client";
 export { anonymizeLead, anonymizeExpiredLeads } from "./privacy";
 export { uniqueViolationFields } from "./errors";
+export { loadTeamReplyExamples, type TeamReplyExample } from "./assistant-examples";
 export {
   applyAdReviewSync,
   type AdReviewStateValue,

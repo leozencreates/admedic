@@ -1,12 +1,14 @@
 import { anthropicMessages, type AnthropicMessage, type LlmConfigLike, type LlmUsage } from "./anthropic";
 import { BRIEF_LANGUAGES, normalizeLanguageCode, type BriefLanguage } from "./languages";
 import {
+  LEAD_ASSISTANT_EXAMPLES_PROMPT_VERSION,
   LEAD_ASSISTANT_PROMPT_VERSION,
+  leadAssistantPromptVersion,
   leadAssistantSystemPrompt,
   type LeadAssistantContext,
 } from "../prompts/lead-assistant-v1";
 
-export { LEAD_ASSISTANT_PROMPT_VERSION };
+export { LEAD_ASSISTANT_EXAMPLES_PROMPT_VERSION, LEAD_ASSISTANT_PROMPT_VERSION, leadAssistantPromptVersion };
 export type { LeadAssistantContext };
 
 // ------------------------------------------------ Devir (handoff) tespiti ------------------------------------------------
@@ -157,6 +159,45 @@ export function maskContact(text: string): string {
   return text
     .replace(EMAIL_PATTERN, "[e-posta]")
     .replace(PHONE_PATTERN, (match) => (match.replace(/\D/g, "").length >= 7 ? "[telefon]" : match));
+}
+
+/** Üslup örneği sınırları (ADR-0027): istem kısa kalsın, tek bir konuşma baskın olmasın. */
+export const STYLE_EXAMPLE_LIMITS = { conversations: 3, repliesPerConversation: 4, charsPerReply: 400 } as const;
+
+/** Ekibin bir konuşmada yazdığı yanıtlar ve o konuşmadaki hastanın adı/soyadı (maskelemek için). */
+export interface RawTeamExample {
+  replies: string[];
+  names: string[];
+}
+
+function maskNames(text: string, names: string[]): string {
+  let out = text;
+  for (const name of names.flatMap((n) => n.split(/\s+/))) {
+    const token = name.trim();
+    // Çok kısa ya da yer tutucu adlar atlanır (yanlış eşleşme metni bozmasın).
+    if (token.length < 3 || token.startsWith("[")) continue;
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(token)}(?![\\p{L}\\p{N}])`, "giu"), "[ad]");
+  }
+  return out;
+}
+
+/**
+ * Ham ekip yanıtlarını isteme girecek üslup örneklerine çevirir: hastanın adı `[ad]`, e-posta ve telefon
+ * maskelenir; boş yanıtlar atılır, uzun yanıt kısaltılır, sınırlar uygulanır.
+ */
+export function toStyleExamples(raw: RawTeamExample[]): string[][] {
+  return raw
+    .slice(0, STYLE_EXAMPLE_LIMITS.conversations)
+    .map((example) =>
+      example.replies
+        .map((reply) => maskContact(maskNames(reply, example.names)).replace(/\s+/g, " ").trim())
+        .filter((reply) => reply.length > 0)
+        .slice(0, STYLE_EXAMPLE_LIMITS.repliesPerConversation)
+        .map((reply) =>
+          reply.length > STYLE_EXAMPLE_LIMITS.charsPerReply ? `${reply.slice(0, STYLE_EXAMPLE_LIMITS.charsPerReply)}…` : reply,
+        ),
+    )
+    .filter((replies) => replies.length > 0);
 }
 
 /** Takma kimlik: `sha256(orgId:leadId)` ilk 8 hex karakteri — DB anahtarı prompta girmez. */

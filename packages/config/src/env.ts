@@ -6,6 +6,16 @@ import { z } from "zod";
 /** Boş string → undefined (".env.example" boş bırakılan alanlar için). */
 const blankToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
 const optionalString = () => z.preprocess(blankToUndefined, z.string().optional());
+/** "true/1/yes/on" ve "false/0/no/off"; boş → varsayılan, tanınmayan değer doğrulamada reddedilir. */
+const flag = (defaultValue: boolean) =>
+  z.preprocess((v) => {
+    if (typeof v !== "string") return v;
+    const n = v.trim().toLowerCase();
+    if (n === "") return undefined;
+    if (["true", "1", "yes", "on"].includes(n)) return true;
+    if (["false", "0", "no", "off"].includes(n)) return false;
+    return v;
+  }, z.boolean().default(defaultValue));
 const graphVersion = () =>
   z.preprocess(
     blankToUndefined,
@@ -100,6 +110,51 @@ export const EnvSchema = z.object({
   /** LLM sağlayıcı anahtarı ve modeli — ikisi de ortamdan gelir, varsayılan model yoktur (spec §4). */
   ANTHROPIC_API_KEY: optionalString(),
   LLM_MODEL: optionalString(),
+
+  /**
+   * ElevenLabs sesli ajanla giden arama (ADR-0026). Arama için API_KEY, AGENT_ID ve PHONE_NUMBER_ID birlikte
+   * gerekir (`missingVoiceConfig`); WEBHOOK_SECRET yalnızca arama sonu webhook'unu doğrular, TELEPHONY ve
+   * API_BASE varsayılanlıdır. META_MOCK_MODE=true iken gerçek arama yapılmaz.
+   */
+  ELEVENLABS_API_KEY: optionalString(),
+  ELEVENLABS_AGENT_ID: optionalString(),
+  /** ElevenLabs'e aktarılan telefon numarasının kimliği (`phone_number_id`). */
+  ELEVENLABS_PHONE_NUMBER_ID: optionalString(),
+  /** Arama sonu webhook'unun HMAC gizli anahtarı (`ElevenLabs-Signature`). */
+  ELEVENLABS_WEBHOOK_SECRET: optionalString(),
+  /** Numaranın ElevenLabs'e bağlanma biçimi: Twilio ya da SIP trunk. */
+  ELEVENLABS_TELEPHONY: z.preprocess(blankToUndefined, z.enum(["twilio", "sip_trunk"]).default("twilio")),
+  /** API kökü; veri konumu (AB residency) kullanan hesaplarda farklıdır. Yalnızca https. */
+  ELEVENLABS_API_BASE: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .url()
+      .refine((v) => v.toLowerCase().startsWith("https://"), "ELEVENLABS_API_BASE https:// ile başlamalı")
+      .default("https://api.elevenlabs.io"),
+  ),
+
+  /**
+   * Panel içi sesli komut asistanı (ADR-0028). Kapalıyken (varsayılan) buton gösterilmez ve oturum ucu 404 döner.
+   * ELEVENLABS_API_KEY ve ELEVENLABS_API_BASE yeniden kullanılır, yalnızca sunucuda kalır.
+   */
+  VOICE_ASSISTANT_ENABLED: flag(false),
+  /** Asistan ajanı; telefon ajanından (ELEVENLABS_AGENT_ID) ayrıdır. */
+  ELEVENLABS_ASSISTANT_AGENT_ID: optionalString(),
+  /** Tarayıcı bağlantısı: webrtc (konuşma belirteci) ya da websocket (imzalı URL). */
+  ELEVENLABS_ASSISTANT_CONNECTION: z.preprocess(blankToUndefined, z.enum(["webrtc", "websocket"]).default("webrtc")),
+  /**
+   * İstemci SDK'sının `serverLocation` değeri. Residency seçenekleri ayrı hesap ve ayrı anahtar ister;
+   * ELEVENLABS_API_BASE aynı bölgeyi göstermelidir. Türkiye seçeneği yoktur (docs/elevenlabs-constraints.md).
+   */
+  ELEVENLABS_SERVER_LOCATION: z.preprocess(
+    blankToUndefined,
+    z.enum(["us", "eu-residency", "in-residency", "global"]).default("us"),
+  ),
+  /** Asistanın görünen/söylenen adı; boşsa APP_NAME kullanılır. */
+  ASSISTANT_NAME: optionalString(),
+  /** İsteğe bağlı ses geçersiz kılması; asıl ses ajan yapılandırmasında seçilir. */
+  ELEVENLABS_ASSISTANT_VOICE_ID: optionalString(),
 
   RESEND_API_KEY: optionalString(),
   /** Gönderen adresi; boşsa APP_NAME ile türetilir. */

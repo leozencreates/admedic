@@ -4,10 +4,14 @@ import {
   detectHandoff,
   handoffNotice,
   leadAlias,
+  leadAssistantPromptVersion,
   maskContact,
   toChatMessages,
+  toStyleExamples,
   HANDOFF_NOTICE,
+  STYLE_EXAMPLE_LIMITS,
 } from "./assistant";
+import { leadAssistantSystemPrompt } from "../prompts/lead-assistant-v1";
 import { BRIEF_LANGUAGES } from "./languages";
 
 it("detects emergencies in all supported languages with word boundaries", () => {
@@ -116,4 +120,49 @@ it("generates a reply in the lead's language without PII in the prompt and retur
       vi.fn<typeof fetch>().mockResolvedValue(new Response("boom", { status: 500 })),
     ),
   ).rejects.toThrow();
+});
+
+it("turns team replies into style examples without the patient's name or contact details", () => {
+  const examples = toStyleExamples([
+    {
+      names: ["Ayşe", "Yılmaz"],
+      replies: [
+        "Merhaba Ayşe Hanım, talebiniz için teşekkürler!",
+        "   ",
+        "AYŞE Hanım, bizi 0532 123 45 67 numarasından ya da bilgi@klinik.com adresinden arayabilirsiniz.",
+        "x".repeat(STYLE_EXAMPLE_LIMITS.charsPerReply + 50),
+        "dördüncü",
+        "beşinci (sınır dışı)",
+      ],
+    },
+    { names: ["[anonymized]", "Al"], replies: ["Al bunu, yarın görüşelim."] },
+    { names: ["Erika"], replies: [] },
+    { names: [], replies: ["üçüncü konuşma"] },
+    { names: [], replies: ["dördüncü konuşma (sınır dışı)"] },
+  ]);
+  expect(examples).toHaveLength(STYLE_EXAMPLE_LIMITS.conversations - 1);
+  const [first, second] = examples;
+  expect(first).toHaveLength(STYLE_EXAMPLE_LIMITS.repliesPerConversation);
+  expect(first![0]).toBe("Merhaba [ad] Hanım, talebiniz için teşekkürler!");
+  expect(first![1]).toBe("[ad] Hanım, bizi [telefon] numarasından ya da [e-posta] adresinden arayabilirsiniz.");
+  expect(first![2]).toHaveLength(STYLE_EXAMPLE_LIMITS.charsPerReply + 1);
+  expect(first![3]).toBe("dördüncü");
+  // Çok kısa ad ve yer tutucu maskelenmez (yanlış eşleşme metni bozmasın).
+  expect(second).toEqual(["Al bunu, yarın görüşelim."]);
+  expect(JSON.stringify(examples)).not.toMatch(/Ayşe|AYŞE|Yılmaz|0532|klinik\.com/);
+});
+
+it("adds style examples to the system prompt under a separate prompt version", () => {
+  const base = { language: "TR" as const, alias: "ab12cd34" };
+  expect(leadAssistantPromptVersion(base)).toBe("lead-assistant-v1");
+  expect(leadAssistantPromptVersion({ styleExamples: [[]] })).toBe("lead-assistant-v1");
+  expect(leadAssistantSystemPrompt(base)).not.toContain("Style examples");
+
+  const withExamples = { ...base, styleExamples: [["Merhaba [ad] Hanım, memnuniyetle yardımcı olurum."], []] };
+  expect(leadAssistantPromptVersion(withExamples)).toBe("lead-assistant-v1-ex1");
+  const prompt = leadAssistantSystemPrompt(withExamples);
+  expect(prompt).toContain("Style examples");
+  expect(prompt).toContain("ONLY for tone");
+  expect(prompt).toContain("Example 1:\n- Merhaba [ad] Hanım, memnuniyetle yardımcı olurum.");
+  expect(prompt).not.toContain("Example 2");
 });

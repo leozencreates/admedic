@@ -183,7 +183,7 @@ describe.skipIf(process.env.STUDIO_DB_TEST !== "1")("onay işi ve kayıt referan
   it("yalnızca bu çalışma alanının gerçek onay işlerini sayar; ajan kararı sayılmaz", async () => {
     expect(await countPendingApprovals(workspaceId)).toEqual({
       total: 4,
-      byKind: { CONTENT: 1, CAMPAIGN: 1, ACTIVATION: 1, RECOMMENDATION: 1 },
+      byKind: { CONTENT: 1, CAMPAIGN: 1, ACTIVATION: 1, RECOMMENDATION: 1, LEAD_PROPOSAL: 0 },
     });
   });
 

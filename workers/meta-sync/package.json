@@ -17,6 +17,7 @@
     "@admedic/meta-api": "workspace:*",
     "@admedic/reporting": "workspace:*",
     "@admedic/shared": "workspace:*",
+    "@admedic/voice": "workspace:*",
     "@prisma/client": "^6.19.3",
     "pino": "^10.3.1"
   },

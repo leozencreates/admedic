@@ -24,6 +24,7 @@ export type NavIcon =
   | "insights"
   | "recommendations"
   | "decisions"
+  | "team"
   | "alerts"
   | "clinic"
   | "meta"
@@ -106,6 +107,7 @@ export const NAV_TREE: readonly NavGroupDef[] = [
       { href: "/insights", key: "nav.insights", icon: "insights", roles: READ_ADS },
       { href: "/recommendations", key: "nav.recommendations", icon: "recommendations", roles: ANALYZE },
       { href: "/decisions", key: "nav.decisions", icon: "decisions", roles: ANALYZE },
+      { href: "/lead-team", key: "nav.leadTeam", icon: "team", roles: ANALYZE },
       {
         href: "/alerts",
         key: "nav.alerts",

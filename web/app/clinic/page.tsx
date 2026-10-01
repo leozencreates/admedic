@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../_components/dialog";
 import { BRIEF_LANGUAGES } from "../_lib/creative-lang";
 import { countryName, entityStatusStyle, languageName } from "../_lib/labels";
 import { slugify } from "../_lib/slug";
+import { AiSettingsCard } from "./ai-settings";
 
 type Clinic = {
   id: string;
@@ -811,6 +812,8 @@ export default function ClinicPage() {
           </div>
         </form>
       </Card>
+
+      <AiSettingsCard />
 
       <ConfirmDialog
         open={pendingConfirm !== null}

@@ -1,6 +1,7 @@
-# Kalan İşler ve Bilinen Riskler
+﻿# Kalan İşler ve Bilinen Riskler
 
-Son güncelleme: 2026-09-29 (Faz 7-A canlıya hazırlık: sunucu paketi, webhook kuyruğu, günlük, sayfa aboneliği,
+Son güncelleme: 2026-10-01 (Windows/iOS ince istemci, ADR-0025; sesli arama hazırlığı, ADR-0026; asistana üslup
+örnekleri, ADR-0027; lead takımı, ADR-0029). Önceki: 2026-09-29 (Faz 7-A canlıya hazırlık: sunucu paketi, webhook kuyruğu, günlük, sayfa aboneliği,
 Canlıya geçiş sayfası, ADR-0023; altı fazın genel incelemesi ve düzeltmeleri, ADR-0022; 2026-09-28: içerik taraması ve otomatik erişilebilirlik kapısı, ADR-0021; kampanya sayfası ve performans toplama, ADR-0020; lead gelen kutusu ve devralma yetkisi, ADR-0019; "Bugün", Onaylar kutusu ve aşama şeridi, ADR-0018; tasarım temeli ve kabuk, ADR-0017; Faz 1 ve aydınlatma / açık
 rıza ayrımı, ADR-0016).
 Önceki: 2026-09-27 (ADR-0014, ADR-0015). Bu dosya `docs/spec.md` ile kod
@@ -66,6 +67,27 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
     - **Kurulum:** `docs/runbook.md` (Docker Compose; imaj derlemesi bu ortamda denenemedi, ilk kurulumda doğrulanacak).
     - **Denetim:** panelde Ayarlar → Canlıya geçiş; engel kalmayınca uçtan uca deneme ve App Review.
     - Mevcut Meta bağlantıları yeniden kurulmalı: sayfa webhook aboneliği ve `pages_read_engagement` izni bağlanırken alınır.
+
+12. **2026-10-01 (ADR-0025, 0026, 0027, 0029):** iki yeni göç — `20261001090000_voice_calls_and_assistant_examples` ve
+    `20261001100000_lead_team` (toplam 27) — ve yeni paketler (`@admedic/voice`, `@admedic/lead-team`). Depo kökünde
+    `pnpm install`, ardından `scripts\dev-up.cmd` (ya da `pnpm db:generate && pnpm --filter @admedic/database build &&
+    pnpm db:deploy`). Göçten sonra çalışan `pnpm web:dev` yeniden başlatılmalı (eski Prisma istemcisiyle ayarlar
+    sayfası 503 verir).
+    - Yerel `.env` içinde `ENCRYPTION_KEY` boştu; telefonlu ya da e-postalı lead kaydı oluşturulamıyordu. 2026-10-01'de
+      rastgele bir anahtar üretildi (veritabanında şifreli veri yoktu).
+    - Windows paketini derlemek için Rust ve Visual Studio C++ derleme araçları kuruldu; komutlar `desktop/README.md`.
+    - **Ürün sahibi (canlı aramadan önce):** ElevenLabs ile sağlık verisi için yazılı anlaşma, aydınlatma metninin
+      yurt dışı aktarımı ve sesli aramayı kapsaması, arama saatlerinin ülke bazında hukuki doğrulaması (ADR-0026).
+    - **Ürün sahibi:** Windows kurulum dosyası için kod imzalama sertifikası; iOS mağaza yayını isteniyorsa Mac,
+      Apple Developer hesabı ve "yalnızca web sitesi saran uygulama" reddi riskine karşı karar (ADR-0025).
+
+13. **2026-10-01 — saklama süresi işi artık gerçekten siliyor (ADR-0006 güncellemesi):** `anonymizeExpiredLeads`
+    daha önce hiçbir normal lead'i seçmiyordu; düzeltildi. Göç yok. Lead'i olan bir veritabanında işçiyi (`worker`)
+    başlatmadan ya da güncellemeden önce kaç lead'in etkileneceğine bakın:
+    `DRY_RUN=1 pnpm --filter @admedic/web retention:run`. İşlem geri alınamaz. Süre son etkinlikten sayılır (lead
+    güncellemesi, mesaj ya da sesli arama) ve `Organization.retentionDays` ile ayarlanır (varsayılan 365 gün).
+    - **Ürün kararı açık:** tedavi görmüş (`TREATED`) hastalar da aynı süreyle anonimleştirilir. Sağlık kayıtları için
+      ayrı bir saklama süresi gerekiyorsa aşamaya göre kural eklenmeli (hukuki inceleme).
 
 ## 1. Mimari (spec §4) — P1
 
@@ -225,11 +247,31 @@ Bu sırada bulunan ve düzeltilen iki hata: `EnvSchema` varsayılanlı alanlarda
 - Stripe API sürümü `2026-08-26.dahlia` tek yerde (`packages/stripe/src/plans.ts`); `stripe` paket
   sürümleri hizalanmalı.
 
-## 10. Masaüstü (ADR-0003)
+## 10. Masaüstü ve iOS (ADR-0003, ADR-0025)
 
-- Tauri `.exe` üretimi Windows'ta Rust toolchain ister; bu turda yalnızca kabuk kodu (XSS, CSP, belirteç)
-  düzeltildi; build doğrulanmadı. `tauri.conf.json` hedefleri nsis/msi/app/dmg (platform dışı hedefler
-  atlanır); `identifier` sabit `com.admedic.desktop`.
+- Windows paketi derlendi ve yerel panele karşı denendi (2026-10-01). Açık kalanlar: kurulum dosyasının temiz bir
+  makinede kurulup kaldırılması, kod imzalama (imzasız dosyada SmartScreen uyarısı), macOS paketi.
+- **iOS hiç derlenmedi ve denenmedi:** Tauri iOS yalnızca macOS + Xcode ile derlenir. Adımlar ve ilk derleme denetim
+  listesi `desktop/README.md` "iOS". Ana ekrana ekleme (PWA) de gerçek iPhone'da denenmedi.
+- `viewport-fit=cover` eklenmedi: çentikli telefonda üst çubuk yerleşimi gerçek cihazda görülmeden değiştirilmedi.
+  Alt sekme çubuğundaki `env(safe-area-inset-bottom)` bu yüzden şimdilik 0 döner.
+- `apps/api` artık kabuğun veri kaynağı değil (ADR-0025 §1); kaldırılması ayrı karar.
+
+## 10.1 Sesli arama (ADR-0026)
+
+- Gerçek ElevenLabs hesabıyla hiçbir şey denenmedi: giden arama, geçersiz kılmalar, dil kodları, webhook imzası
+  (`docs/elevenlabs-constraints.md` "Doğrulanamayanlar"). İlk kurulumda `docs/runbook.md` "Deneme" adımı zorunlu.
+- Telefonla aranma rızası yalnızca panelden kaydediliyor; Anında Form'a ayrı bir rıza kutusu eklenmedi.
+- Arama saatleri tablosu (`packages/voice/src/eligibility.ts`) 24 ülke kodu içerir; listede olmayan ülke aranmaz.
+- Arama sonucuna göre koordinatöre uyarı açılmıyor; toplu arama (batch) API'si kullanılmıyor.
+- Sesli ajana konuşma örneği verilmiyor (ADR-0027 §5).
+
+## 10.2 Lead takımı (ADR-0029)
+
+- Gerçek LLM ile çalıştırılmadı; öneri kalitesi, süre ve token maliyeti ölçülmedi.
+- Onaylanan öneriden kampanya taslağı üretilmiyor; kullanıcı Yeni kampanya sayfasında yeniden giriyor.
+- `/lead-team` erişilebilirlik kapısına (`web/e2e/a11y.pw.ts`) eklenmedi; sayfa metinleri yalnızca Türkçe.
+- Çalıştırma web sürecinde yürür; sunucu yeniden başlarsa yarıda kalır (20 dakika sonra başarısız işaretlenir).
 
 ## 11. i18n (spec §4)
 

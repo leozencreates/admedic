@@ -1,4 +1,4 @@
-# Proje Spesifikasyonu: AI Sağlık Turizmi Meta Reklam Ajanı
+﻿# Proje Spesifikasyonu: AI Sağlık Turizmi Meta Reklam Ajanı
 
 Çalışma adı: **Admedic** (kesinleşmedi; kod tabanında `APP_NAME` ortam değişkeninden okunmalı, hiçbir yerde sabit yazılmamalı).
 
@@ -195,3 +195,7 @@ Temel veri modelleri: Tenant, User, Membership, MetaConnection, AdAccount, Clini
 ## 9. Eklenen Notlar
 
 - 2026-09-16: Çalışma adı "Admedic"; uygulama adı kodda sabit değil, `APP_NAME` ortam değişkeninden okunur.
+- 2026-10-01: Bu belgede olmayan dört kapsam ürün sahibi isteğiyle eklendi; ayrıntı ADR'lerde: Windows ve iOS
+  uygulaması (ince istemci, ADR-0025), sesli ajanla telefonla arama (ADR-0026), asistana üslup örnekleri (ADR-0027),
+  50 ajanlık lead takımı (ADR-0029). §6'daki insan onayı kuralı değişmedi: lead takımının önerileri onay bekler;
+  otomatik arama yalnızca hesap sahibinin açtığı ayarla ve lead başına rıza kaydıyla çalışır.

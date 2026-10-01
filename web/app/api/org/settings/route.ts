@@ -30,6 +30,10 @@ const OrgSettingsSchema = z
       .refine((v) => v.toLowerCase().startsWith("https://"), "Gizlilik politikası bağlantısı https:// ile başlamalıdır.")
       .nullable()
       .optional(),
+    /** Sesli ajan müsait lead'leri kendiliğinden arar (ADR-0026). Açmak yalnızca hesap sahibine aittir. */
+    voiceAutoCallEnabled: z.boolean().optional(),
+    /** Randevuya dönüşen Instagram konuşmalarındaki ekip yanıtları asistana örnek olur (ADR-0027). */
+    assistantExamplesEnabled: z.boolean().optional(),
   })
   .strict();
 const SELECT = {
@@ -39,6 +43,8 @@ const SELECT = {
   consentText: true,
   privacyNoticeText: true,
   privacyPolicyUrl: true,
+  voiceAutoCallEnabled: true,
+  assistantExamplesEnabled: true,
 } as const;
 type OrgRow = {
   monthlyAdBudgetCap: number | null;
@@ -47,6 +53,8 @@ type OrgRow = {
   consentText: string | null;
   privacyNoticeText: string | null;
   privacyPolicyUrl: string | null;
+  voiceAutoCallEnabled: boolean;
+  assistantExamplesEnabled: boolean;
 };
 function present(org: OrgRow, currency: string, monthlyCommittedCents: number) {
   return {
@@ -60,6 +68,8 @@ function present(org: OrgRow, currency: string, monthlyCommittedCents: number) {
     consentText: org.consentText,
     privacyNoticeText: org.privacyNoticeText,
     privacyPolicyUrl: org.privacyPolicyUrl,
+    voiceAutoCallEnabled: org.voiceAutoCallEnabled,
+    assistantExamplesEnabled: org.assistantExamplesEnabled,
   };
 }
 async function accountCurrency(orgId: string, workspaceId: string) {
@@ -113,6 +123,9 @@ export async function PATCH(request: Request) {
             "Aylık üst sınırı yükseltmek veya kaldırmak yalnızca hesap sahibi tarafından yapılabilir. Hesap sahibinden bu değişikliği yapmasını isteyin.",
           );
       }
+      // Otomatik arama hastayla insan kararı olmadan temas kurar; açma kararı hesap sahibinindir.
+      if (input.voiceAutoCallEnabled === true && !before.voiceAutoCallEnabled && actor.role !== "OWNER")
+        throw new HttpError(403, "Otomatik aramayı yalnızca hesap sahibi açabilir.");
       const after = await tx.organization.update({
         where: { id: actor.orgId },
         data: {
@@ -132,6 +145,10 @@ export async function PATCH(request: Request) {
           ...(input.privacyPolicyUrl !== undefined
             ? { privacyPolicyUrl: input.privacyPolicyUrl }
             : {}),
+          ...(input.voiceAutoCallEnabled !== undefined ? { voiceAutoCallEnabled: input.voiceAutoCallEnabled } : {}),
+          ...(input.assistantExamplesEnabled !== undefined
+            ? { assistantExamplesEnabled: input.assistantExamplesEnabled }
+            : {}),
         },
         select: SELECT,
       });
@@ -147,6 +164,8 @@ export async function PATCH(request: Request) {
           consentText: before.consentText,
           privacyNoticeText: before.privacyNoticeText,
           privacyPolicyUrl: before.privacyPolicyUrl,
+          voiceAutoCallEnabled: before.voiceAutoCallEnabled,
+          assistantExamplesEnabled: before.assistantExamplesEnabled,
         },
         after: {
           monthlyAdBudgetCapCents: after.monthlyAdBudgetCap,
@@ -155,6 +174,8 @@ export async function PATCH(request: Request) {
           consentText: after.consentText,
           privacyNoticeText: after.privacyNoticeText,
           privacyPolicyUrl: after.privacyPolicyUrl,
+          voiceAutoCallEnabled: after.voiceAutoCallEnabled,
+          assistantExamplesEnabled: after.assistantExamplesEnabled,
         },
       }, tx);
       return after;

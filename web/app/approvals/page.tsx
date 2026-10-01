@@ -59,6 +59,7 @@ export default async function ApprovalsPage() {
     ...scoped.items.CAMPAIGN,
     ...scoped.items.ACTIVATION,
     ...scoped.items.RECOMMENDATION,
+    ...scoped.items.LEAD_PROPOSAL,
   ].map((item) => ({
     kind: item.kind,
     id: item.id,

@@ -6,6 +6,7 @@ const db = vi.hoisted(() => ({
   studioDraft: { count: vi.fn(), findMany: vi.fn() },
   campaign: { count: vi.fn(), findMany: vi.fn() },
   recommendation: { count: vi.fn(), findMany: vi.fn() },
+  leadTeamProposal: { count: vi.fn(), findMany: vi.fn() },
   auditLog: { findMany: vi.fn() },
   user: { findMany: vi.fn() },
   adSet: { findMany: vi.fn() },
@@ -39,6 +40,9 @@ const rowsOf = <T extends { id: string; ws?: string }>(rows: T[]) =>
 
 beforeEach(() => {
   for (const model of Object.values(db)) for (const fn of Object.values(model)) fn.mockReset();
+  // Varsayılan: bekleyen lead takımı önerisi yok (ilgili testler üzerine yazar).
+  db.leadTeamProposal.count.mockResolvedValue(0);
+  db.leadTeamProposal.findMany.mockResolvedValue([]);
 });
 
 describe("onay etiketleri", () => {
@@ -55,8 +59,10 @@ describe("countPendingApprovals", () => {
       Promise.resolve(where.workflowStatus === "IN_REVIEW" ? 2 : where.workflowStatus === "PUBLISHED_PAUSED" ? 3 : 99),
     );
     db.recommendation.count.mockResolvedValue(4);
+    db.leadTeamProposal.count.mockResolvedValue(5);
     const counts = await countPendingApprovals(WS);
-    expect(counts).toEqual({ total: 10, byKind: { CONTENT: 1, CAMPAIGN: 2, ACTIVATION: 3, RECOMMENDATION: 4 } });
+    expect(counts).toEqual({ total: 15, byKind: { CONTENT: 1, CAMPAIGN: 2, ACTIVATION: 3, RECOMMENDATION: 4, LEAD_PROPOSAL: 5 } });
+    expect(db.leadTeamProposal.count).toHaveBeenCalledWith({ where: { workspaceId: WS, status: "PENDING" } });
     expect(db.studioDraft.count).toHaveBeenCalledWith({ where: { workspaceId: WS, status: "IN_REVIEW" } });
     expect(db.recommendation.count).toHaveBeenCalledWith({ where: { workspaceId: WS, status: "PENDING" } });
   });
@@ -87,6 +93,10 @@ describe("listPendingApprovals", () => {
       { id: "r1", type: "BUDGET_REALLOCATION", action: {}, title: "Öneri 1", priority: "HIGH", experimentId: "e1", createdAt: at(2), updatedAt: at(2) },
       { id: "r2", type: "EXPERIMENT_END", action: { type: "CONTINUE" }, title: "Öneri 2", priority: "LOW", experimentId: "e1", createdAt: at(1), updatedAt: at(5) },
     ]);
+    db.leadTeamProposal.count.mockResolvedValue(1);
+    db.leadTeamProposal.findMany.mockResolvedValue([
+      { id: "p1", title: "Almanya lead formu", priority: "HIGH", createdAt: at(8), updatedAt: at(8), run: { requestedById: "u1" } },
+    ]);
     // Sorgu yeniden eskiye sıralı döner; her kayıt için en yeni denetim satırı geçerlidir.
     db.auditLog.findMany.mockResolvedValue([
       { action: "DRAFT_SUBMIT", entityType: "STUDIO_DRAFT", entityId: "d1", userId: "u1", after: {}, createdAt: at(6) },
@@ -103,7 +113,7 @@ describe("listPendingApprovals", () => {
     ]);
 
     const { counts, items } = await listPendingApprovals(WS);
-    expect(counts.total).toBe(7);
+    expect(counts.total).toBe(8);
 
     // Denetim sorgusu çalışma alanıyla sınırlı ve yalnızca listelenen kayıtları kapsar.
     const auditArgs = db.auditLog.findMany.mock.calls[0][0] as { where: { workspaceId: string; OR: unknown[] } };
@@ -160,6 +170,19 @@ describe("listPendingApprovals", () => {
       submittedByLabel: "Onaya gönderen",
       waitingSince: at(5),
       detail: "Deneye devam (sonuç belirsiz) · Düşük öncelik",
+    });
+
+    // Lead takımı önerisi (ADR-0029): direktörün önerisi, takımı çalıştıranın adıyla; karar Lead takımı sayfasında.
+    expect(items.LEAD_PROPOSAL).toHaveLength(1);
+    expect(items.LEAD_PROPOSAL[0]).toMatchObject({
+      id: "p1",
+      title: "Almanya lead formu",
+      detail: "Direktörün önerisi · Yüksek öncelik",
+      submittedBy: "Ayşe Yılmaz",
+      submittedByLabel: "Takımı çalıştıran",
+      waitingSince: at(8),
+      actors: "Hesap sahibi veya Yönetici",
+      href: "/lead-team",
     });
   });
 

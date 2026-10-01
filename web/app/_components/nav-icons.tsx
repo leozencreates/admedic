@@ -20,6 +20,7 @@ import {
   ScrollText,
   ShieldCheck,
   Sparkles,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { NavIcon } from "../_lib/nav-tree";
@@ -39,6 +40,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   insights: ChartColumn,
   recommendations: Lightbulb,
   decisions: Bot,
+  team: Users,
   alerts: Bell,
   clinic: Building2,
   meta: Plug,

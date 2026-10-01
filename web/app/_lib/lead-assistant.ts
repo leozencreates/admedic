@@ -1,13 +1,14 @@
-import { prisma, AlertSeverity, AlertType, type Prisma } from "@admedic/database";
+import { prisma, AlertSeverity, AlertType, loadTeamReplyExamples, type Prisma } from "@admedic/database";
 import { getLlmConfig, LLM_NOT_CONFIGURED_MESSAGE } from "@admedic/config";
 import {
   buildAssistantReply,
   detectHandoff,
   handoffNotice,
   leadAlias,
+  leadAssistantPromptVersion,
   normalizeLanguageCode,
+  toStyleExamples,
   ASSISTANT_HISTORY_LIMIT,
-  LEAD_ASSISTANT_PROMPT_VERSION,
   type AssistantHistoryItem,
   type HandoffReason,
 } from "@admedic/llm";
@@ -258,7 +259,7 @@ export async function respondToInbound(conversationId: string, options: RespondO
   const llm = getLlmConfig();
   if (!llm) throw new HttpError(503, LLM_NOT_CONFIGURED_MESSAGE);
   const history = toHistory(conversation.messages);
-  const [clinic, org, alias, botMessages] = await Promise.all([
+  const [clinic, org, alias, botMessages, styleExamples] = await Promise.all([
     prisma.clinicProfile.findFirst({
       where: { workspaceId: conversation.workspaceId, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
@@ -278,12 +279,22 @@ export async function respondToInbound(conversationId: string, options: RespondO
     prisma.message.count({
       where: { conversationId: conversation.id, direction: "OUTGOING", sender: { in: ["bot", "ai"] } },
     }),
+    // Üslup örnekleri (ADR-0027): kuruluş ayarı kapalıysa boş döner.
+    loadTeamReplyExamples(prisma, {
+      workspaceId: conversation.workspaceId,
+      language: conversation.lead.language,
+      excludeLeadId: conversation.lead.id,
+    })
+      .then(toStyleExamples)
+      // Örnekler isteğe bağlı zenginleştirmedir; okunamazsa yanıt örneksiz üretilir.
+      .catch(() => [] as string[][]),
   ]);
   const firstBotMessage = botMessages === 0;
+  const promptVersion = leadAssistantPromptVersion({ styleExamples });
   const reply = await withLlmLog({
     workspaceId: conversation.workspaceId,
     agent: "lead-assistant",
-    promptVersion: LEAD_ASSISTANT_PROMPT_VERSION,
+    promptVersion,
     model: llm.model,
     run: () =>
       buildAssistantReply(
@@ -302,13 +313,14 @@ export async function respondToInbound(conversationId: string, options: RespondO
             : null,
           consentText: org?.consentText ?? null,
           firstBotMessage,
+          styleExamples,
         },
         llm,
       ),
   });
   const disclosure = BOT_DISCLOSURE[language.toLowerCase() as keyof typeof BOT_DISCLOSURE] ?? BOT_DISCLOSURE.tr;
   const text = firstBotMessage ? `${reply.text}\n\n${disclosure}` : reply.text;
-  const metadata = { autoReply: true, promptVersion: LEAD_ASSISTANT_PROMPT_VERSION, pendingSend: true };
+  const metadata = { autoReply: true, promptVersion, pendingSend: true };
 
   // Kısa transaction: koordinatör bu arada devralmış ya da yeni mesaj gelmişse yazma (409).
   const messageId = await prisma.$transaction(async (tx) => {
