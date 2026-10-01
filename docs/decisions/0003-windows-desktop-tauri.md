@@ -1,4 +1,4 @@
-# ADR-0003 — Windows Masaüstü Dağıtımı (Tauri)
+﻿# ADR-0003 — Windows Masaüstü Dağıtımı (Tauri)
 
 - **Durum:** Kabul edildi (2026-09-17)
 - **Karar veren:** Ürün sahibi + mühendislik
@@ -74,4 +74,9 @@ Kararı özetleyen tek cümle: "GitHub yok = repo yerel kalır; ad kuralı deği
 - "Veri lokasyonu PC" kuralı kaldırıldı: canlıda Meta webhook'ları 7/24 erişilebilen bir HTTPS sunucusu gerektirir.
 - Ürünün merkezi Türkiye'de barındırılan tek sunucudur (panel, işçi, PostgreSQL). Masaüstü programı bu sunucuya bağlanan
   bir istemci olarak kalır.
+
+## Revizyon 4 (2026-10-01): İnce istemci — ADR-0025
+- Kabuk artık `apps/api`'yi tüketen ayrı bir panel değildir; sunucudaki web panelinin tamamını kendi penceresinde açar.
+  Bu belgedeki "client-side React paneli + Fastify REST" modeli geçersizdir.
+- Windows paketi (NSIS ve MSI) ilk kez derlendi ve denendi. Aynı proje iOS hedefi için hazırlandı; iOS derlemesi Mac ister.
 

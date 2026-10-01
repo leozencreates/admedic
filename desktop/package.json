@@ -2,16 +2,22 @@
   "name": "@admedic/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Masaüstü kabuğu (Tauri v2, ADR-0003) — salt okunur Fastify REST'i (apps/api) tüketen statik panel; ürün adı build:ci ile APP_NAME'den gelir",
+  "description": "Masaüstü ve iOS kabuğu (Tauri v2, ADR-0025) — sunucudaki web panelini saran ince istemci; ürün adı scripts/build-ci.mjs ile APP_NAME'den gelir",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node scripts/build-ci.mjs dev",
     "typecheck": "cargo check --manifest-path src-tauri/Cargo.toml --all-targets",
     "lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "build:ci": "tauri build --config \"{\\\"productName\\\":\\\"$APP_NAME\\\"}\""
+    "build:ci": "node scripts/build-ci.mjs",
+    "ios:init": "node scripts/build-ci.mjs ios init",
+    "ios:dev": "node scripts/build-ci.mjs ios dev",
+    "ios:build": "node scripts/build-ci.mjs ios build",
+    "test:encoding": "node --test scripts/build-ci.test.mjs",
+    "test:ui": "node --test scripts/server-url.test.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.5.0"
+    "@tauri-apps/cli": "^2.5.0",
+    "dotenv": "^16.4.5"
   }
 }

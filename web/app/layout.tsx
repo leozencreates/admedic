@@ -29,6 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { default: env.APP_NAME, template: `%s · ${env.APP_NAME}` },
     description: t("layout.description", lang),
+    // iPhone/iPad'de "Ana Ekrana Ekle" ile açıldığında Safari çubukları olmadan, ürün adıyla çalışır (ADR-0025).
+    appleWebApp: { capable: true, title: env.APP_NAME, statusBarStyle: "default" },
   };
 }
 

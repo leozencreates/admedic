@@ -15,7 +15,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src http://127.0.0.1:3001; object-src 'none'; base-uri 'self'; form-action 'self'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {
@@ -27,10 +27,11 @@
       }
     },
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.ico"
+      "icons/logo-v2/32x32.png",
+      "icons/logo-v2/128x128.png",
+      "icons/logo-v2/128x128@2x.png",
+      "icons/logo-v2/icon.ico",
+      "icons/logo-v2/icon.icns"
     ]
   }
 }

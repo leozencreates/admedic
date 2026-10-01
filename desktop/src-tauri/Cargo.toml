@@ -3,7 +3,7 @@
 [package]
 name = "admedic-desktop"
 version = "0.1.0"
-description = "Admedic masaüstü — web panelini saran Tauri v2 kabuğu; veri ortak REST'ten (ADR-0003)"
+description = "Masaüstü ve iOS kabuğu (Tauri v2) — sunucudaki web panelini saran ince istemci (ADR-0025)"
 edition = "2021"
 
 [build-dependencies]

@@ -1,176 +1,154 @@
-// ADR-0003: masaüstü kabuğu yalnızca @admedic/api salt okunur REST'ini tüketir.
-// API'den gelen hiçbir dizgi innerHTML ile yazılmaz (XSS); tüm çıktı textContent / DOM API ile üretilir.
-const API_BASE = (globalThis.__API_BASE__ || "http://127.0.0.1:3001").replace(/\/$/, "");
-const TOKEN_KEY = "api-token";
-const DAYS = 7;
+// ADR-0025: kabuk, sunucudaki web panelini saran ince istemcidir.
+// Bu ekran yalnızca sunucu adresini sorar, sağlık ucunu yoklar ve paneli açar; iş mantığı ve veri burada yoktur.
+// Kullanıcı girdisi ya da sunucu yanıtı innerHTML ile yazılmaz; tüm çıktı textContent ile üretilir.
+import { normalizeServerUrl, readHealth } from "./server-url.js";
+
+const SERVER_KEY = "server-url";
+const HEALTH_TIMEOUT_MS = 8000;
+// Telefonda menü çubuğu yoktur; adres değiştirme düğmesi görülebilsin diye bağlantı ekranı kısa süre bekler.
+const MOBILE_GRACE_MS = 1500;
 const $ = (sel) => document.querySelector(sel);
 
-function readToken() {
-  if (globalThis.__API_TOKEN__) return String(globalThis.__API_TOKEN__);
+const TEXT = {
+  tr: {
+    connectingTitle: "Bağlanılıyor",
+    change: "Sunucu adresini değiştir",
+    setupTitle: "Sunucuya bağlan",
+    setupHint: "Panelin çalıştığı sunucunun adresini girin. Adresi yöneticinizden alabilirsiniz.",
+    label: "Sunucu adresi",
+    connect: "Bağlan",
+    checking: "Sunucu yoklanıyor…",
+    empty: "Sunucu adresini yazın.",
+    invalid: "Adres geçerli değil. Örnek: https://panel.ornek.com",
+    insecure: "Uzak sunucu adresi https:// ile başlamalı.",
+    unreachable: "Sunucuya ulaşılamadı. Adresi ve internet bağlantınızı denetleyin.",
+    down: "Sunucu yanıt veriyor ama veritabanına ulaşamıyor. Biraz sonra yeniden deneyin.",
+    unknown: "Bu adreste panel bulunamadı. Adresi denetleyin.",
+  },
+  en: {
+    connectingTitle: "Connecting",
+    change: "Change server address",
+    setupTitle: "Connect to server",
+    setupHint: "Enter the address of the server that runs the panel. Your administrator can give you the address.",
+    label: "Server address",
+    connect: "Connect",
+    checking: "Checking the server…",
+    empty: "Enter the server address.",
+    invalid: "The address is not valid. Example: https://panel.example.com",
+    insecure: "A remote server address must start with https://.",
+    unreachable: "Could not reach the server. Check the address and your internet connection.",
+    down: "The server responds but cannot reach its database. Try again shortly.",
+    unknown: "No panel was found at this address. Check the address.",
+  },
+};
+const lang = /^en\b/i.test(navigator.language || "") ? "en" : "tr";
+const text = (key) => TEXT[lang][key];
+
+function readSaved() {
   try {
-    return localStorage.getItem(TOKEN_KEY) || "";
+    return localStorage.getItem(SERVER_KEY) || "";
   } catch {
     return "";
   }
 }
-function saveToken(value) {
+function save(origin) {
   try {
-    if (value) localStorage.setItem(TOKEN_KEY, value);
-    else localStorage.removeItem(TOKEN_KEY);
+    localStorage.setItem(SERVER_KEY, origin);
   } catch {
-    // localStorage kullanılamıyorsa belirteç yalnızca bu oturumda tutulur.
+    // localStorage kullanılamıyorsa adres bir sonraki açılışta yeniden sorulur.
   }
 }
 
-function money(cents, currency) {
-  const code = /^[A-Za-z]{3}$/.test(currency || "") ? currency.toUpperCase() : "EUR";
-  const value = (Number(cents) || 0) / 100;
+/** @returns {Promise<"up" | "down" | "unknown" | "unreachable">} */
+async function checkServer(origin) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
   try {
-    return new Intl.NumberFormat("tr-TR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(value);
-  } catch {
-    return `${new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value)} ${code}`;
-  }
-}
-function fmtRoas(roas) {
-  return roas === null || roas === undefined ? "—" : `${Number(roas).toFixed(2)}×`;
-}
-function fmtNumber(value) {
-  return value === null || value === undefined ? "—" : new Intl.NumberFormat("tr-TR").format(Number(value));
-}
-
-function el(tag, text, className) {
-  const node = document.createElement(tag);
-  if (text !== undefined && text !== null) node.textContent = String(text);
-  if (className) node.className = className;
-  return node;
-}
-function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
-}
-
-function renderCards(container, rows) {
-  clear(container);
-  for (const [label, value] of rows) {
-    const card = el("div", null, "card");
-    card.appendChild(el("div", label, "label"));
-    card.appendChild(el("div", value ?? "—", "value"));
-    container.appendChild(card);
-  }
-}
-
-function renderTable(table, campaigns, currency) {
-  clear(table);
-  const thead = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  for (const title of ["Kampanya", "Durum", "Günlük bütçe", `${DAYS}g Harcama`, "ROAS"]) headRow.appendChild(el("th", title));
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-  for (const c of campaigns) {
-    const row = document.createElement("tr");
-    const rowCurrency = c.adAccount?.currency || currency;
-    row.appendChild(el("td", c.name ?? "—"));
-    row.appendChild(el("td", c.status ?? "—"));
-    row.appendChild(el("td", money(c.dailyBudgetCents, rowCurrency)));
-    row.appendChild(el("td", money(c.lastNDays?.spendCents, rowCurrency)));
-    row.appendChild(el("td", fmtRoas(c.lastNDays?.roas)));
-    tbody.appendChild(row);
-  }
-  if (campaigns.length === 0) {
-    const row = document.createElement("tr");
-    const cell = el("td", "Kampanya yok.", "muted");
-    cell.colSpan = 5;
-    row.appendChild(cell);
-    tbody.appendChild(row);
-  }
-  table.appendChild(tbody);
-}
-
-function renderAlerts(container, alerts, summary) {
-  clear(container);
-  container.appendChild(el("h2", `Uyarılar (${fmtNumber(summary?.open ?? alerts.length)} açık)`));
-  const list = document.createElement("ul");
-  for (const a of alerts.slice(0, 10)) {
-    const item = el("li", `${a.severity ?? "INFO"} · ${a.title ?? a.message ?? a.type ?? "—"}`, `sev-${a.severity ?? "INFO"}`);
-    list.appendChild(item);
-  }
-  if (alerts.length === 0) list.appendChild(el("li", "Açık uyarı yok.", "muted"));
-  container.appendChild(list);
-}
-
-async function apiGet(path) {
-  const headers = { accept: "application/json" };
-  const token = readToken();
-  if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { headers });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
+    const res = await fetch(`${origin}/api/health`, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
     try {
-      const body = await res.json();
-      if (body && typeof body.error === "string") detail = `${res.status}: ${body.error}`;
+      return readHealth(await res.json());
     } catch {
-      // gövde JSON değil
+      return "unknown";
     }
-    const err = new Error(detail);
-    err.status = res.status;
-    throw err;
+  } catch {
+    return "unreachable";
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
-function setTitle(appName) {
-  const name = appName && String(appName).trim() ? String(appName) : "Panel";
-  document.title = `${name} — Masaüstü`;
-  $("h1").textContent = name;
+function showSetup(value, messageKey) {
+  $("#connecting").hidden = true;
+  $("#setup").hidden = false;
+  if (value !== undefined) $("#server-input").value = value;
+  setStatus(messageKey ? text(messageKey) : "", Boolean(messageKey));
+  $("#server-input").focus();
 }
 
-async function load() {
+function setStatus(message, isError) {
   const status = $("#status");
-  const tokenForm = $("#token-form");
-  status.textContent = "bağlanıyor…";
-  status.classList.remove("error");
-  let data;
-  try {
-    data = await apiGet(`/v1/overview?days=${DAYS}`);
-  } catch (e) {
-    status.textContent =
-      e.status === 401 || e.status === 503
-        ? `API belirteci gerekli (${e.message}).`
-        : `API yok (${API_BASE}: ${e.message}) — önce 'pnpm api:dev' çalıştırın.`;
-    status.classList.add("error");
-    tokenForm.classList.toggle("visible", e.status === 401 || e.status === 503);
+  status.textContent = message;
+  status.classList.toggle("error", isError);
+}
+
+function openPanel(origin) {
+  save(origin);
+  window.location.replace(`${origin}/`);
+}
+
+async function connectSaved(origin) {
+  let cancelled = false;
+  $("#setup").hidden = true;
+  $("#connecting").hidden = false;
+  $("#connecting-host").textContent = new URL(origin).host;
+  $("#change").addEventListener(
+    "click",
+    () => {
+      cancelled = true;
+      showSetup(origin);
+    },
+    { once: true },
+  );
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const [health] = await Promise.all([
+    checkServer(origin),
+    new Promise((resolve) => setTimeout(resolve, isMobile ? MOBILE_GRACE_MS : 0)),
+  ]);
+  if (cancelled) return;
+  if (health === "up") openPanel(origin);
+  else showSetup(origin, health);
+}
+
+async function submit(event) {
+  event.preventDefault();
+  const parsed = normalizeServerUrl($("#server-input").value);
+  if (!parsed.ok) {
+    setStatus(text(parsed.reason), true);
     return;
   }
-  tokenForm.classList.remove("visible");
-  setTitle(data.appName);
-  const currency = data.workspace?.currency || "EUR";
-  $("#ws").textContent = data.workspace?.name ?? "";
-  $("#meta").textContent = `${currency} · ${DAYS} gün · ROAS ${fmtRoas(data.lastNDays?.roas)}`;
-  renderCards($("#cards"), [
-    ["Kampanya", fmtNumber(data.counts?.campaigns)],
-    ["Ad Set", fmtNumber(data.counts?.adsets)],
-    ["Reklam", fmtNumber(data.counts?.ads)],
-    [`${DAYS}g Harcama`, money(data.lastNDays?.spendCents, currency)],
-    [`${DAYS}g Gelir`, money(data.lastNDays?.revenueCents, currency)],
-    ["Bekleyen onay", fmtNumber(data.approvals?.pending)],
-  ]);
-  renderTable($("#table"), Array.isArray(data.campaigns) ? data.campaigns : [], currency);
-  try {
-    const alerts = await apiGet("/v1/alerts");
-    renderAlerts($("#alerts"), Array.isArray(alerts.alerts) ? alerts.alerts : [], alerts.summary);
-  } catch {
-    renderAlerts($("#alerts"), [], { open: data.alerts?.open ?? 0 });
-  }
-  status.textContent = `canlı — ${API_BASE}`;
+  const button = $("#submit");
+  button.disabled = true;
+  setStatus(text("checking"), false);
+  const health = await checkServer(parsed.origin);
+  button.disabled = false;
+  if (health === "up") openPanel(parsed.origin);
+  else setStatus(text(health), true);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  setTitle(null);
-  $("#token-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveToken($("#token-input").value.trim());
-    $("#token-input").value = "";
-    void load();
-  });
-  void load();
+  document.documentElement.lang = lang;
+  document.title = text("setupTitle");
+  for (const node of document.querySelectorAll("[data-text]")) node.textContent = text(node.dataset.text);
+  $("#server-form").addEventListener("submit", (event) => void submit(event));
+
+  // `?change=1`: masaüstü menüsündeki "Sunucu adresini değiştir" bu ekrana böyle döner.
+  const forceSetup = new URLSearchParams(window.location.search).has("change");
+  const saved = normalizeServerUrl(readSaved());
+  if (saved.ok && !forceSetup) void connectSaved(saved.origin);
+  else showSetup(saved.ok ? saved.origin : undefined);
 });

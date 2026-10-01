@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
 const STALE_MS = 15 * 60_000;
 
 export async function GET() {
-  const headers = { "Cache-Control": "no-store" };
+  // Masaüstü/iOS kabuğunun bağlantı ekranı bu ucu başka bir origin'den yoklar (ADR-0025); yanıt oturumsuz ve
+  // yalnızca sayı içerdiği için her origin okuyabilir.
+  const headers = { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" };
   try {
     await prisma.$queryRaw`SELECT 1`;
   } catch {

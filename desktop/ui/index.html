@@ -3,26 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Başlık ve h1 çalışma zamanında /v1/overview yanıtındaki appName (APP_NAME) ile doldurulur; sabit ad yazılmaz. -->
-  <title>Panel</title>
+  <!-- Ürün adı buraya yazılmaz: pencere başlığı derlemede APP_NAME'den gelir (scripts/build-ci.mjs). -->
+  <title>Sunucuya bağlan</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+  <link rel="icon" type="image/png" href="./brand-mark-adm.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
 </head>
 <body>
-  <header>
-    <h1>Panel</h1>
-    <span class="muted" id="ws"></span>
-    <span id="status" class="muted"></span>
-    <form id="token-form" autocomplete="off">
-      <label for="token-input">API belirteci</label>
-      <input id="token-input" type="password" placeholder="API_TOKEN" />
-      <button type="submit">Bağlan</button>
-    </form>
-  </header>
   <main>
-    <div id="meta" class="muted"></div>
-    <div id="cards" class="cards"></div>
-    <table id="table"></table>
-    <div id="alerts"></div>
+    <img class="mark" src="./brand-mark-adm.png" width="56" height="56" alt="" aria-hidden="true" />
+
+    <!-- Kayıtlı adres varken: bağlantı denenir; kullanıcı vazgeçip adresi değiştirebilir. -->
+    <section id="connecting" hidden>
+      <h1 data-text="connectingTitle">Bağlanılıyor</h1>
+      <p class="muted" id="connecting-host"></p>
+      <button type="button" class="link-button" id="change" data-text="change">Sunucu adresini değiştir</button>
+    </section>
+
+    <section id="setup" hidden>
+      <h1 data-text="setupTitle">Sunucuya bağlan</h1>
+      <p class="muted" data-text="setupHint">Panelin çalıştığı sunucunun adresini girin. Adresi yöneticinizden alabilirsiniz.</p>
+      <form id="server-form" autocomplete="off" novalidate>
+        <label for="server-input" data-text="label">Sunucu adresi</label>
+        <input id="server-input" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+          placeholder="https://panel.ornek.com" aria-describedby="status" />
+        <button type="submit" id="submit" data-text="connect">Bağlan</button>
+      </form>
+      <p id="status" role="alert"></p>
+    </section>
   </main>
   <script type="module" src="./index.js"></script>
 </body>

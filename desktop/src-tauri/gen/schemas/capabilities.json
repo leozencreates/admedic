@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Admedic masaüstü ana pencere — web paneli (REST 3001) izinleri; veri REST'ten, dosya/network yok","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Ana pencere — yalnızca gömülü bağlantı ekranı için çekirdek izinler. `remote` tanımlanmaz: sunucudan açılan panel Tauri IPC'ye erişemez (ADR-0025). Dosya/ağ eklentisi yok.","local":true,"windows":["main"],"permissions":["core:default"]}}
