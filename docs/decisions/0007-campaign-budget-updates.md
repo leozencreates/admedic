@@ -1,4 +1,4 @@
-# ADR-0007: Campaign budget updates
+﻿# ADR-0007: Campaign budget updates
 
 Date: 2026-09-24
 Status: Accepted

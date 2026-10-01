@@ -1,4 +1,4 @@
-# 0020 — Kampanya sayfası, tek kampanya listesi ve kampanya performansı toplama (Faz 5)
+﻿# 0020 — Kampanya sayfası, tek kampanya listesi ve kampanya performansı toplama (Faz 5)
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, Faz 5 planı)

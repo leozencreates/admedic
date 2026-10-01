@@ -1,4 +1,4 @@
-# 0009 — Çok Dilli Kreatif Genişletmesi: FR/NL/PL + RTL Önizleme
+﻿# 0009 — Çok Dilli Kreatif Genişletmesi: FR/NL/PL + RTL Önizleme
 
 - Tarih: 2026-09-26
 - Durum: Kabul

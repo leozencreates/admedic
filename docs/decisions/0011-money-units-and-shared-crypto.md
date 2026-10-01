@@ -1,4 +1,4 @@
-# ADR-0011: Para birimi birimleri (minor units) ve ortak şifreleme modülü
+﻿# ADR-0011: Para birimi birimleri (minor units) ve ortak şifreleme modülü
 
 - **Durum:** Kabul edildi
 - **Tarih:** 2026-09-26

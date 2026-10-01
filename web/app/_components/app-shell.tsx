@@ -11,6 +11,7 @@ import { navContext, navTreeFor, newActionsFor, tabItemsFor, type NavBadge } fro
 import { Nav, type BadgeCounts } from "./nav";
 import { NavGlyph } from "./nav-icons";
 import { LanguageSwitcher } from "./language-switcher";
+import { BrandMark } from "./brand-mark";
 
 /** `/api/shell` yanıtı: rozet sayıları, bildirimler ve hesap bilgisi (ADR-0017). */
 interface ShellSummary {
@@ -206,7 +207,7 @@ export function AppShell({
         <aside className="app-sidebar" aria-label={appName}>
           <div className="app-brand">
             <span className="app-brand__mark" aria-hidden="true">
-              {appName.charAt(0).toLocaleUpperCase("tr")}
+              <BrandMark />
             </span>
             <span className="min-w-0">
               <span className="app-brand__name">{appName}</span>
@@ -231,6 +232,9 @@ export function AppShell({
 
         <div className="app-column">
           <header className="app-topbar" ref={topbarRef}>
+            <span className="app-topbar__mark mobile-only" aria-hidden="true">
+              <BrandMark size={24} />
+            </span>
             <p className="app-topbar__title">{context.page ?? appName}</p>
 
             {canSearchLeads ? (
@@ -415,6 +419,15 @@ export function AppShell({
 
       {/* Telefon/tablet: tam ekran menü (gruplu ağaç + hesap + dil) */}
       <div className="app-sheet" data-open={sheetOpen ? "true" : "false"} id="tam-menu" hidden={!sheetOpen}>
+        <div className="app-brand">
+          <span className="app-brand__mark" aria-hidden="true">
+            <BrandMark />
+          </span>
+          <span className="min-w-0">
+            <span className="app-brand__name">{appName}</span>
+            <span className="app-brand__sub">{user?.workspaceName ?? t("layout.tagline", lang)}</span>
+          </span>
+        </div>
         <Nav id="mobil-menu" groups={groups} label={t("layout.mainNav", lang)} counts={counts} badgeLabels={badgeLabels} />
         <div className="app-sheet__account">
           {user ? (

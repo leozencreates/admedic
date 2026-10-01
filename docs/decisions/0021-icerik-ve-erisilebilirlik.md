@@ -1,4 +1,4 @@
-# 0021 — İçerik taraması, boş durum anlatımları ve otomatik erişilebilirlik kapısı (Faz 6)
+﻿# 0021 — İçerik taraması, boş durum anlatımları ve otomatik erişilebilirlik kapısı (Faz 6)
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, Faz 6 planı)

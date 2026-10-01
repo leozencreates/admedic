@@ -98,6 +98,22 @@ describe("api caps (read-only REST, ADR-0001/0003 sözleşmesi)", () => {
     expect(root.json().endpoints).toContain("/v1/overview");
   });
 
+  it("masaüstüne APP_NAME içindeki Türkçe harfleri UTF-8 JSON ile eksiksiz taşır", async () => {
+    const appName = "ÇĞİÖŞÜ çğıöşü";
+    const previous = loadEnv().APP_NAME;
+    try {
+      loadEnv({ fresh: true, overrides: { APP_NAME: appName } });
+      for (const url of ["/", "/v1/overview?days=7"]) {
+        const res = await app.inject({ method: "GET", url });
+        expect(res.statusCode).toBe(200);
+        expect(res.headers["content-type"]).toMatch(/application\/json; charset=utf-8/i);
+        expect(JSON.parse(res.rawPayload.toString("utf8")).appName).toBe(appName);
+      }
+    } finally {
+      loadEnv({ fresh: true, overrides: { APP_NAME: previous } });
+    }
+  });
+
   it.skipIf(!dbEnabled)("GET /v1/overview → tek kiracılı çalışma alanı + 7g metrikler + kampanya listesi", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/overview?days=7" });
     expect(res.statusCode).toBe(200);

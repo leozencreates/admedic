@@ -1,4 +1,4 @@
-# 0018 — "Bugün" ana sayfası, birleşik Onaylar kutusu ve aşama şeridi (Faz 3)
+﻿# 0018 — "Bugün" ana sayfası, birleşik Onaylar kutusu ve aşama şeridi (Faz 3)
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, Faz 3 planı)

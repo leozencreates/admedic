@@ -1,4 +1,4 @@
-# 0010 — Haftalık E-posta Raporu (PDF + Resend)
+﻿# 0010 — Haftalık E-posta Raporu (PDF + Resend)
 
 - Tarih: 2026-09-26
 - Durum: Kabul

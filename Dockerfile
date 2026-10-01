@@ -42,6 +42,7 @@ FROM base AS web
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/web/.next/static ./web/.next/static
+COPY --from=build --chown=node:node /app/web/public ./web/public
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

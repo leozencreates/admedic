@@ -1,4 +1,4 @@
-# 0023 — Sunucu merkezli mimari ve canlıya hazırlık (Faz 7-A)
+﻿# 0023 — Sunucu merkezli mimari ve canlıya hazırlık (Faz 7-A)
 
 - Tarih: 2026-09-29
 - Durum: Kabul (ürün sahibi onayı: 2026-09-29, Faz 7 planı; veri konumu: Türkiye)

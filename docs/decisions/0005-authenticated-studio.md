@@ -1,4 +1,4 @@
-# ADR 0005 — Oturumlu reklam kütüphanesi
+﻿# ADR 0005 — Oturumlu reklam kütüphanesi
 
 2026-09-20 — Kabul edildi (kullanıcının ikinci geliştirme fazı onayı).
 

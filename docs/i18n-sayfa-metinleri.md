@@ -1,4 +1,4 @@
-# Sayfa metinlerinin çevirisi — altyapı taslağı (Faz 6)
+﻿# Sayfa metinlerinin çevirisi — altyapı taslağı (Faz 6)
 
 - Durum: Taslak (uygulanmadı; ürün sahibinin önceliklendirmesini bekliyor)
 - İlgili: spec §4 (arayüz dilleri TR ve EN), ADR-0009 §6 (reklam dilleri ayrıdır), ADR-0017, ADR-0021

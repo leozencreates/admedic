@@ -1,4 +1,4 @@
-# ADR-0008: Versioned global policy rules
+﻿# ADR-0008: Versioned global policy rules
 
 Date: 2026-09-24
 Status: Accepted

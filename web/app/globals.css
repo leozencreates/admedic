@@ -176,13 +176,9 @@
     height: 32px;
     flex-shrink: 0;
     border-radius: var(--radius-card);
-    background: var(--color-brand-600);
-    color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    font-weight: 600;
   }
   .app-brand__name {
     display: block;
@@ -295,6 +291,12 @@
     padding: 0 24px;
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-line);
+  }
+  .app-topbar__mark {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    margin-right: 8px;
   }
   .app-topbar__title {
     display: none;

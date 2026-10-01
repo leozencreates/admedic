@@ -1,4 +1,4 @@
-# 0022 — Altı fazın genel incelemesi: rol sınırları ve tutarlılık düzeltmeleri
+﻿# 0022 — Altı fazın genel incelemesi: rol sınırları ve tutarlılık düzeltmeleri
 
 - Tarih: 2026-09-29
 - Durum: Kabul (ürün sahibinin "bütün fazları genel olarak kontrol et" isteği üzerine)

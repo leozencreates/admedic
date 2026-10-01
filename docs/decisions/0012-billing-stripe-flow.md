@@ -1,4 +1,4 @@
-# ADR-0012: Faturalandırma akışı — Stripe Checkout, webhook dedupe ve mock ödeme simülasyonu
+﻿# ADR-0012: Faturalandırma akışı — Stripe Checkout, webhook dedupe ve mock ödeme simülasyonu
 
 - **Durum:** Kabul edildi
 - **Tarih:** 2026-09-26

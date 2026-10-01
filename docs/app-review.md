@@ -1,4 +1,4 @@
-# Meta App Review başvuru hazırlığı
+﻿# Meta App Review başvuru hazırlığı
 
 - İlgili: ADR-0023, `docs/meta-constraints.md` (2026-09-29 bölümü), `web/app/_lib/meta-scopes.ts`
 - Durum: Taslak. Başvuru metinleri ürün sahibinin onayından sonra Meta Uygulama Paneline girilir.

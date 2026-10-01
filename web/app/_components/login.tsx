@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { api } from "../_lib/client-api";
 import { DEFAULT_LANGUAGE, t, type Language } from "../_lib/i18n";
 import { safeNextPath } from "../_lib/navigation";
+import { BrandMark } from "./brand-mark";
 
 /** Oturum açma formu (ADR-0021): metinler `i18n.ts` sözlüğünden (TR/EN); uygulama adı `APP_NAME`'den gelir. */
 
@@ -38,7 +39,10 @@ export function Login({
   }
   return (
     <div className="mx-auto max-w-md space-y-6">
-      <p className="text-lg font-semibold text-ink">{appName}</p>
+      <div className="flex items-center gap-3">
+        <BrandMark size={48} />
+        <p className="text-lg font-semibold text-ink">{appName}</p>
+      </div>
       <section className="studio-card">
         <h1 className="text-xl font-semibold text-ink">{t("login.heading", lang)}</h1>
         <p className="mt-1 text-sm text-ink-2">{t("login.lead", lang)}</p>

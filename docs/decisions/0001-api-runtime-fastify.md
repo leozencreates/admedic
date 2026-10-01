@@ -1,4 +1,4 @@
-# ADR-0001: HTTP API çalışma zamanı olarak Fastify
+﻿# ADR-0001: HTTP API çalışma zamanı olarak Fastify
 
 - **Durum:** Kabul edildi
 - **Tarih:** 2026-09-16

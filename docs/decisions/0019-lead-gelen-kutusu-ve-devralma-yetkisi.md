@@ -1,4 +1,4 @@
-# 0019 — Lead gelen kutusu, 24 saat penceresi göstergesi ve devralma yetkisi (Faz 4)
+﻿# 0019 — Lead gelen kutusu, 24 saat penceresi göstergesi ve devralma yetkisi (Faz 4)
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, Faz 4 planı ve 6. madde "devralma yetkisi")

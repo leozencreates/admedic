@@ -1,4 +1,4 @@
-# 0013 — LLM katmanı: sürümlü prompt'lar, çağrı günlüğü, politika birleşimi ve AI asistan
+﻿# 0013 — LLM katmanı: sürümlü prompt'lar, çağrı günlüğü, politika birleşimi ve AI asistan
 
 - Tarih: 2026-09-26
 - Durum: Kabul

@@ -1,4 +1,4 @@
-# ADR 0004 — Reklam stüdyosu ve manuel deney analizi
+﻿# ADR 0004 — Reklam stüdyosu ve manuel deney analizi
 
 Tarih: 2026-09-20
 

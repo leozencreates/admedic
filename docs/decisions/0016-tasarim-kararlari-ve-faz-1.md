@@ -1,4 +1,4 @@
-# 0016 — Tasarım kararları (K1–K11) ve Faz 1 düzeltmeleri; aydınlatma / açık rıza ayrımı
+﻿# 0016 — Tasarım kararları (K1–K11) ve Faz 1 düzeltmeleri; aydınlatma / açık rıza ayrımı
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, "hepsi ekip önerisi, Faz 1'i de onaylıyorum")

@@ -1,4 +1,4 @@
-# 0015 — Instant Form rızası, bekleyen lead çekimi, reklam düzeyinde Meta incelemesi ve appsecret_proof
+﻿# 0015 — Instant Form rızası, bekleyen lead çekimi, reklam düzeyinde Meta incelemesi ve appsecret_proof
 
 - Tarih: 2026-09-27
 - Durum: Kabul

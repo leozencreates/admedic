@@ -1,4 +1,4 @@
-# ADR-0002: Onay-gated executor (ajanlar Meta'ya doğrudan yazamaz)
+﻿# ADR-0002: Onay-gated executor (ajanlar Meta'ya doğrudan yazamaz)
 
 - **Durum:** Kabul edildi
 - **Tarih:** 2026-09-16

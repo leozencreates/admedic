@@ -1,4 +1,4 @@
-# 0014 — Meta'ya eksiksiz PAUSED yayın ve harcama yetkisi (Owner + yetki devri, toplam aylık üst sınır)
+﻿# 0014 — Meta'ya eksiksiz PAUSED yayın ve harcama yetkisi (Owner + yetki devri, toplam aylık üst sınır)
 
 - Tarih: 2026-09-27
 - Durum: Kabul

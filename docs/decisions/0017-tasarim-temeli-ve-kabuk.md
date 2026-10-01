@@ -1,4 +1,4 @@
-# 0017 — Tasarım temeli, gruplu menü, üst çubuk ve mobil gezinme (Faz 2)
+﻿# 0017 — Tasarım temeli, gruplu menü, üst çubuk ve mobil gezinme (Faz 2)
 
 - Tarih: 2026-09-28
 - Durum: Kabul (ürün sahibi onayı: 2026-09-28, "Faz 2 planını onaylıyorum")

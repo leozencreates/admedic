@@ -1,0 +1,27 @@
+# ADMEDIC — editor yapilandirmasi
+#
+# Baglam: docs/decisions/0024-urun-adi-aktarimi-utf8.md
+# Sistem ANSI kod sayfasi Turkce (cp1254) oldugu icin BOM'suz UTF-8 Markdown,
+# konsola basildiginda veya kod sayfasina duyarsiz bir aracla acildiginda
+# bozuluyordu ("Stüdyosu" -> "StÃƒÂ¼dyosu"). BOM, kodlamayi dosyanin basinda
+# isaretledigi icin bu sinifi ortadan kaldirir.
+#
+# Kapsam bilincli olarak yalnizca dokumanlarla sinirli: BOM yalnizca Markdown'da
+# istenir. Kod dosyalarinda (.ts/.tsx/.js/.json/.rs) BOM bazi ayristiricilari
+# bozdugu icin kullanilmaz; bu dosyalar BOM'suz UTF-8 kalir.
+#
+# Istisna: AGENTS.md / CLAUDE.md dosyalari BOM'suz kalir. Bunlar ajan araclarinin
+# ayrustirdigi talimat dosyalaridir (Next.js `generate-agent-files.js` AGENTS.md
+# bloklarini yeniden yazar) ve BOM ilk satirda gorunur karaktere donusebilir.
+# Asagidaki iki bolum bunu acikca sabitler.
+
+root = true
+
+[*.md]
+charset = utf-8-bom
+
+[AGENTS.md]
+charset = utf-8
+
+[CLAUDE.md]
+charset = utf-8
